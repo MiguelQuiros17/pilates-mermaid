@@ -16,20 +16,12 @@ const nextConfig = {
   },
   // Variables de entorno públicas
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || process.env.NODE_ENV === 'production'
-      ? 'https://api.pilatesmermaid.com'
-      : 'http://localhost:3001',
+    // En producción, usar NEXT_PUBLIC_API_URL si está configurado, sino usar rutas relativas
+    // En Render, frontend y backend están en el mismo servidor, así que usamos rutas relativas
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '',
   },
-  // Rewrites para API
+  // Rewrites para API (solo en desarrollo)
   async rewrites() {
-    // En producción, si NEXT_PUBLIC_API_URL no está configurado, usar rutas relativas
-    // Esto permite que el frontend y backend estén en el mismo servidor
-    if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL) {
-      // Si no hay NEXT_PUBLIC_API_URL, asumimos que el backend está en el mismo servidor
-      // y Next.js servirá las rutas estáticas, mientras que el servidor Express manejará /api/*
-      return []
-    }
-    
     // En desarrollo, usar proxy a localhost:3001
     if (process.env.NODE_ENV === 'development') {
       return [
@@ -40,6 +32,7 @@ const nextConfig = {
       ]
     }
     
+    // En producción, no usar rewrites - el servidor Express manejará /api/* directamente
     return []
   },
   // Optimizaciones de compilación

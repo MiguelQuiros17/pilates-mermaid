@@ -21,6 +21,21 @@ import DashboardLayout from '@/components/DashboardLayout'
 import WhatsAppButton from '@/components/WhatsAppButton'
 import { useTranslation } from '@/hooks/useTranslation'
 
+// Configuración de API URL
+const API_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+
+// Helper para construir URLs de API
+const getApiUrl = (path: string) => {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+  if (path.startsWith('/api')) {
+    return path // Rutas relativas en producción
+  }
+  const baseUrl = API_URL || ''
+  return baseUrl ? `${baseUrl}${path.startsWith('/') ? path : `/${path}`}` : path
+}
+
 interface User {
   id: string
   nombre: string
@@ -267,21 +282,21 @@ export default function ClientDashboardPage() {
       console.log('🔍 [loadUserData] User ID value:', userId)
 
       // Cargar información actualizada del usuario desde el servidor
-      const userResponse = await fetch(`http://localhost:3001/api/users/${userId}`, {
+      const userResponse = await fetch(getApiUrl(`/api/users/${userId}`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
 
       // Cargar clases del usuario
-      const classesResponse = await fetch(`http://localhost:3001/api/users/${userId}/classes`, {
+      const classesResponse = await fetch(getApiUrl(`/api/users/${userId}/classes`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
 
       // Cargar reservas del usuario
-      const bookingsResponse = await fetch(`http://localhost:3001/api/users/${userId}/bookings`, {
+      const bookingsResponse = await fetch(getApiUrl(`/api/users/${userId}/bookings`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -289,8 +304,9 @@ export default function ClientDashboardPage() {
 
       // Cargar historial de paquetes
       console.log('🔍 [loadUserData] Fetching package history for user:', userId)
-      console.log('🔍 [loadUserData] URL:', `http://localhost:3001/api/users/${userId}/package-history`)
-      const packageResponse = await fetch(`http://localhost:3001/api/users/${userId}/package-history`, {
+      const packageHistoryUrl = getApiUrl(`/api/users/${userId}/package-history`)
+      console.log('🔍 [loadUserData] URL:', packageHistoryUrl)
+      const packageResponse = await fetch(packageHistoryUrl, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -392,7 +408,7 @@ export default function ClientDashboardPage() {
         return
       }
 
-      const response = await fetch('http://localhost:3001/api/classes', {
+      const response = await fetch(getApiUrl('/api/classes'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -648,7 +664,7 @@ export default function ClientDashboardPage() {
         return
       }
 
-      const response = await fetch('http://localhost:3001/api/bookings', {
+      const response = await fetch(getApiUrl('/api/bookings'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -693,7 +709,7 @@ export default function ClientDashboardPage() {
         return
       }
 
-      const response = await fetch('http://localhost:3001/api/bookings/cancel', {
+      const response = await fetch(getApiUrl('/api/bookings/cancel'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
