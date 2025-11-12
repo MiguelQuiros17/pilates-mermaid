@@ -6,6 +6,7 @@ export interface User {
   numero_de_telefono: string
   instagram?: string
   role: 'admin' | 'coach' | 'cliente'
+  password_hash?: string
   type_of_class: 'Cortesía' | 'Muestra' | 'Individual' | '4' | '8' | '12' | 'Ilimitado'
   expiration_date?: string
   cumpleanos?: string

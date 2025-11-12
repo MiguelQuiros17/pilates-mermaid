@@ -342,19 +342,23 @@ export default function CoachesPage() {
             <form onSubmit={async (e) => {
               e.preventDefault()
               const formData = new FormData(e.target as HTMLFormElement)
-              const updates = {
-                nombre: formData.get('nombre'),
-                correo: formData.get('correo'),
-                numero_de_telefono: formData.get('numero_de_telefono'),
-                instagram: formData.get('instagram'),
-                cumpleanos: formData.get('cumpleanos'),
-                lesion_o_limitacion_fisica: formData.get('lesion_o_limitacion_fisica'),
-                genero: formData.get('genero')
+              const updates: Partial<Coach> = {
+                nombre: formData.get('nombre') as string,
+                correo: formData.get('correo') as string,
+                numero_de_telefono: formData.get('numero_de_telefono') as string,
+                instagram: (formData.get('instagram') as string) || undefined,
+                cumpleanos: (formData.get('cumpleanos') as string) || undefined,
+                lesion_o_limitacion_fisica: (formData.get('lesion_o_limitacion_fisica') as string) || undefined,
+                genero: (formData.get('genero') as string) || undefined,
               }
 
               try {
                 // Por ahora actualizamos solo el estado local
-                setCoaches(coaches.map(c => c.id === selectedCoach.id ? { ...c, ...updates } : c))
+                setCoaches(prev =>
+                    prev.map(c =>
+                        c.id === selectedCoach.id ? { ...c, ...updates } : c
+                    )
+                )
                 setShowEditModal(false)
                 alert('Coach actualizado exitosamente')
               } catch (error) {

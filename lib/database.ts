@@ -1,5 +1,4 @@
 import sqlite3 from 'sqlite3'
-import { promisify } from 'util'
 import path from 'path'
 import { User, Class, Package, Attendance, Payment, FinancialRecord } from '@/types'
 
@@ -20,11 +19,9 @@ class Database {
     this.initTables()
   }
 
-  private async initTables() {
-    const run = promisify(this.db.run.bind(this.db))
-
-    // Users table
-    await run(`
+    private async initTables() {
+        // Users table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         unique_identifier TEXT UNIQUE NOT NULL,
@@ -44,8 +41,8 @@ class Database {
       )
     `)
 
-    // Classes table
-    await run(`
+        // Classes table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS classes (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -64,8 +61,8 @@ class Database {
       )
     `)
 
-    // Packages table
-    await run(`
+        // Packages table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS packages (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -79,8 +76,8 @@ class Database {
       )
     `)
 
-    // Class history table
-    await run(`
+        // Class history table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS class_history (
         id TEXT PRIMARY KEY,
         class_id TEXT NOT NULL,
@@ -94,8 +91,8 @@ class Database {
       )
     `)
 
-    // Attendance table
-    await run(`
+        // Attendance table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS attendance (
         id TEXT PRIMARY KEY,
         class_id TEXT NOT NULL,
@@ -111,8 +108,8 @@ class Database {
       )
     `)
 
-    // Payments table
-    await run(`
+        // Payments table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS payments (
         id TEXT PRIMARY KEY,
         coach_id TEXT NOT NULL,
@@ -128,8 +125,8 @@ class Database {
       )
     `)
 
-    // Financial records table
-    await run(`
+        // Financial records table
+        await this.run(`
       CREATE TABLE IF NOT EXISTS financial_records (
         id TEXT PRIMARY KEY,
         date TEXT NOT NULL,
@@ -143,55 +140,98 @@ class Database {
       )
     `)
 
-    // Create indexes for better performance
-    await run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`)
-    await run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users (correo)`)
-    await run(`CREATE INDEX IF NOT EXISTS idx_classes_coach ON classes (coach_id)`)
-    await run(`CREATE INDEX IF NOT EXISTS idx_classes_date ON classes (date)`)
-    await run(`CREATE INDEX IF NOT EXISTS idx_class_history_user ON class_history (user_id)`)
-    await run(`CREATE INDEX IF NOT EXISTS idx_attendance_class ON attendance (class_id)`)
-    await run(`CREATE INDEX IF NOT EXISTS idx_payments_coach ON payments (coach_id)`)
+        // Create indexes for better performance
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)`)
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users (correo)`)
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_classes_coach ON classes (coach_id)`)
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_classes_date ON classes (date)`)
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_class_history_user ON class_history (user_id)`)
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_attendance_class ON attendance (class_id)`)
+        await this.run(`CREATE INDEX IF NOT EXISTS idx_payments_coach ON payments (coach_id)`)
 
-    console.log('Database tables initialized successfully')
-  }
+        console.log('Database tables initialized successfully')
+    }
 
-  // Generic query methods
-  async run(sql: string, params: any[] = []): Promise<any> {
-    const run = promisify(this.db.run.bind(this.db))
-    return await run(sql, params)
-  }
+    // Generic query methods
+    async run(sql: string, params: any[] = []): Promise<any> {
+        return new Promise((resolve, reject) => {
+            this.db.run(sql, params, function (err) {
+                if (err) return reject(err)
+                // `this` is the RunResult (lastID, changes, etc.)
+                resolve(this)
+            })
+        })
+    }
 
-  async get(sql: string, params: any[] = []): Promise<any> {
-    const get = promisify(this.db.get.bind(this.db))
-    return await get(sql, params)
-  }
+    async get(sql: string, params: any[] = []): Promise<any> {
+        return new Promise((resolve, reject) => {
+            this.db.get(sql, params, (err, row) => {
+                if (err) return reject(err)
+                resolve(row)
+            })
+        })
+    }
 
-  async all(sql: string, params: any[] = []): Promise<any[]> {
-    const all = promisify(this.db.all.bind(this.db))
-    return await all(sql, params)
-  }
+    async all(sql: string, params: any[] = []): Promise<any[]> {
+        return new Promise((resolve, reject) => {
+            this.db.all(sql, params, (err, rows) => {
+                if (err) return reject(err)
+                resolve(rows)
+            })
+        })
+    }
 
   // User methods
-  async createUser(user: Partial<User> & { password_hash: string }): Promise<User> {
-    const id = require('uuid').v4()
-    const unique_identifier = require('uuid').v4()
-    
-    await this.run(`
-      INSERT INTO users (
-        id, unique_identifier, nombre, correo, numero_de_telefono, instagram,
-        role, type_of_class, expiration_date, cumpleanos, lesion_o_limitacion_fisica,
-        genero, clases_tomadas, clases_restantes, total_pagado, password_hash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id, unique_identifier, user.nombre, user.correo, user.numero_de_telefono,
-      user.instagram, user.role, user.type_of_class, user.expiration_date,
-      user.cumpleanos, user.lesion_o_limitacion_fisica, user.genero,
-      user.clases_tomadas || 0, user.clases_restantes || 0, user.total_pagado || 0,
-      user.password_hash
-    ])
+    // User methods
+    async createUser(
+        user: Partial<User> & { password_hash: string }
+    ): Promise<User> {
+        const id = require('uuid').v4()
+        const unique_identifier = require('uuid').v4()
 
-    return this.getUserById(id)
-  }
+        await this.run(
+            `
+      INSERT INTO users (
+        id,
+        unique_identifier,
+        nombre,
+        correo,
+        numero_de_telefono,
+        instagram,
+        role,
+        type_of_class,
+        expiration_date,
+        cumpleanos,
+        lesion_o_limitacion_fisica,
+        genero,
+        password_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+            [
+                id,
+                unique_identifier,
+                user.nombre,
+                user.correo,
+                user.numero_de_telefono,
+                user.instagram,
+                user.role,
+                user.type_of_class,
+                user.expiration_date,
+                user.cumpleanos,
+                user.lesion_o_limitacion_fisica,
+                user.genero,
+                user.password_hash
+            ]
+        )
+
+        const createdUser = await this.getUserById(id)
+
+        if (!createdUser) {
+            throw new Error('Failed to retrieve created user from database')
+        }
+
+        return createdUser
+    }
 
   async getUserById(id: string): Promise<User | null> {
     const user = await this.get('SELECT * FROM users WHERE id = ?', [id])
@@ -263,24 +303,39 @@ class Database {
     return users
   }
 
-  // Class methods
-  async createClass(classData: Partial<Class>): Promise<Class> {
-    const id = require('uuid').v4()
-    
-    await this.run(`
+    async createClass(classData: Partial<Class>): Promise<Class> {
+        const id = require('uuid').v4()
+
+        await this.run(
+            `
       INSERT INTO classes (
         id, title, type, coach_id, date, time, duration, max_capacity,
         current_bookings, status, description
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id, classData.title, classData.type, classData.coach_id,
-      classData.date, classData.time, classData.duration, classData.max_capacity,
-      classData.current_bookings || 0, classData.status || 'scheduled',
-      classData.description
-    ])
-    
-    return this.getClassById(id)
-  }
+      `,
+            [
+                id,
+                classData.title,
+                classData.type,
+                classData.coach_id,
+                classData.date,
+                classData.time,
+                classData.duration,
+                classData.max_capacity,
+                classData.current_bookings || 0,
+                classData.status || 'scheduled',
+                classData.description
+            ]
+        )
+
+        const createdClass = await this.getClassById(id)
+
+        if (!createdClass) {
+            throw new Error('Failed to retrieve created class from database')
+        }
+
+        return createdClass
+    }
 
   async getClassById(id: string): Promise<Class | null> {
     return await this.get('SELECT * FROM classes WHERE id = ?', [id])
@@ -322,21 +377,34 @@ class Database {
     return this.getClassById(id)
   }
 
-  // Package methods
-  async createPackage(packageData: Partial<Package>): Promise<Package> {
-    const id = require('uuid').v4()
-    
-    await this.run(`
+    async createPackage(packageData: Partial<Package>): Promise<Package> {
+        const id = require('uuid').v4()
+
+        await this.run(
+            `
       INSERT INTO packages (
         id, name, type, classes_included, price, validity_days, is_active
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id, packageData.name, packageData.type, packageData.classes_included,
-      packageData.price, packageData.validity_days, packageData.is_active || true
-    ])
-    
-    return this.getPackageById(id)
-  }
+      `,
+            [
+                id,
+                packageData.name,
+                packageData.type,
+                packageData.classes_included,
+                packageData.price,
+                packageData.validity_days,
+                packageData.is_active ?? true
+            ]
+        )
+
+        const createdPackage = await this.getPackageById(id)
+
+        if (!createdPackage) {
+            throw new Error('Failed to retrieve created package from database')
+        }
+
+        return createdPackage
+    }
 
   async getPackageById(id: string): Promise<Package | null> {
     return await this.get('SELECT * FROM packages WHERE id = ?', [id])
@@ -362,20 +430,34 @@ class Database {
   }
 
   // Attendance methods
-  async recordAttendance(attendance: Partial<Attendance>): Promise<Attendance> {
-    const id = require('uuid').v4()
-    
-    await this.run(`
+    async recordAttendance(attendance: Partial<Attendance>): Promise<Attendance> {
+        const id = require('uuid').v4()
+
+        await this.run(
+            `
       INSERT INTO attendance (
         id, class_id, user_id, coach_id, status, cancellation_reason, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id, attendance.class_id, attendance.user_id, attendance.coach_id,
-      attendance.status, attendance.cancellation_reason, attendance.notes
-    ])
-    
-    return this.getAttendanceById(id)
-  }
+      `,
+            [
+                id,
+                attendance.class_id,
+                attendance.user_id,
+                attendance.coach_id,
+                attendance.status,
+                attendance.cancellation_reason,
+                attendance.notes
+            ]
+        )
+
+        const createdAttendance = await this.getAttendanceById(id)
+
+        if (!createdAttendance) {
+            throw new Error('Failed to retrieve created attendance from database')
+        }
+
+        return createdAttendance
+    }
 
   async getAttendanceById(id: string): Promise<Attendance | null> {
     return await this.get('SELECT * FROM attendance WHERE id = ?', [id])
@@ -385,21 +467,35 @@ class Database {
     return await this.all('SELECT * FROM attendance WHERE class_id = ?', [classId])
   }
 
-  // Payment methods
-  async createPayment(payment: Partial<Payment>): Promise<Payment> {
-    const id = require('uuid').v4()
-    
-    await this.run(`
+    async createPayment(payment: Partial<Payment>): Promise<Payment> {
+        const id = require('uuid').v4()
+
+        await this.run(
+            `
       INSERT INTO payments (
         id, coach_id, class_id, amount, type, status, payment_date, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id, payment.coach_id, payment.class_id, payment.amount,
-      payment.type, payment.status || 'pending', payment.payment_date, payment.notes
-    ])
-    
-    return this.getPaymentById(id)
-  }
+      `,
+            [
+                id,
+                payment.coach_id,
+                payment.class_id,
+                payment.amount,
+                payment.type,
+                payment.status || 'pending',
+                payment.payment_date,
+                payment.notes
+            ]
+        )
+
+        const createdPayment = await this.getPaymentById(id)
+
+        if (!createdPayment) {
+            throw new Error('Failed to retrieve created payment from database')
+        }
+
+        return createdPayment
+    }
 
   async getPaymentById(id: string): Promise<Payment | null> {
     return await this.get('SELECT * FROM payments WHERE id = ?', [id])
@@ -413,21 +509,35 @@ class Database {
     return await this.all('SELECT * FROM payments WHERE status = "pending" ORDER BY created_at DESC')
   }
 
-  // Financial records methods
-  async createFinancialRecord(record: Partial<FinancialRecord>): Promise<FinancialRecord> {
-    const id = require('uuid').v4()
-    
-    await this.run(`
+    async createFinancialRecord(record: Partial<FinancialRecord>): Promise<FinancialRecord> {
+        const id = require('uuid').v4()
+
+        await this.run(
+            `
       INSERT INTO financial_records (
         id, date, concept, amount, type, method, note, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id, record.date, record.concept, record.amount,
-      record.type, record.method, record.note, record.status || 'pending'
-    ])
-    
-    return this.getFinancialRecordById(id)
-  }
+      `,
+            [
+                id,
+                record.date,
+                record.concept,
+                record.amount,
+                record.type,
+                record.method,
+                record.note,
+                record.status || 'pending'
+            ]
+        )
+
+        const createdRecord = await this.getFinancialRecordById(id)
+
+        if (!createdRecord) {
+            throw new Error('Failed to retrieve created financial record from database')
+        }
+
+        return createdRecord
+    }
 
   async getFinancialRecordById(id: string): Promise<FinancialRecord | null> {
     return await this.get('SELECT * FROM financial_records WHERE id = ?', [id])

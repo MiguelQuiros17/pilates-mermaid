@@ -16,13 +16,14 @@ import DashboardLayout from '@/components/DashboardLayout'
 import WhatsAppButton, { WhatsAppTemplates } from '@/components/WhatsAppButton'
 
 interface Package {
-  id: string
-  name: string
-  type: string
-  classes_included: number
-  price: number
-  validity_days: number
-  is_active: boolean
+    id: string
+    name: string
+    type: string
+    classes_included: number
+    price: number
+    validity_days: number
+    is_active: boolean
+    category: 'Grupal' | 'Privada'
 }
 
 interface Client {
@@ -73,8 +74,8 @@ export default function PackagesPage() {
       }
     }
 
-    // Paquetes reales de Pilates Mermaid
-    const samplePackages = [
+      // Paquetes reales de Pilates Mermaid
+      const samplePackages: Package[] = [
       // Clases Grupales
       {
         id: '1',
@@ -84,7 +85,7 @@ export default function PackagesPage() {
         price: 300,
         validity_days: 30,
         is_active: true,
-        category: 'Grupal'
+        category: 'Grupal',
       },
       {
         id: '2',
@@ -94,7 +95,7 @@ export default function PackagesPage() {
         price: 400,
         validity_days: 30,
         is_active: true,
-        category: 'Grupal'
+        category: 'Grupal',
       },
       {
         id: '3',
@@ -350,10 +351,15 @@ export default function PackagesPage() {
       } else {
         alert(data.message || 'Error al asignar paquete')
       }
-    } catch (error) {
-      console.error('Error assigning package:', error)
-      alert('Error al conectar con el servidor: ' + error.message)
-    }
+      } catch (error) {
+          console.error('Error assigning package:', error)
+
+          if (error instanceof Error) {
+              alert('Error al conectar con el servidor: ' + error.message)
+          } else {
+              alert('Error al conectar con el servidor')
+          }
+      }
   }
 
   if (isLoading) {
