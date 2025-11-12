@@ -7,6 +7,7 @@ import { Mail, ArrowLeft, CheckCircle, XCircle } from 'lucide-react'
 import Image from 'next/image'
 
 export default function ForgotPasswordPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -19,7 +20,7 @@ export default function ForgotPasswordPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/forgot-password', {
+      const response = await fetch('${API_BASE_URL}/api/auth/forgot-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

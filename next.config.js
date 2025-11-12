@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+
 // Define CSP once so it's easy to tweak later
 const ContentSecurityPolicy = `
   default-src 'self';
@@ -47,7 +49,7 @@ const nextConfig = {
             return [
                 {
                     source: '/api/:path*',
-                    destination: 'http://localhost:3001/api/:path*',
+                    destination: '${API_BASE_URL}/api/:path*',
                 },
             ]
         }

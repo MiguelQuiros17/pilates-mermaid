@@ -14,11 +14,15 @@ EMAIL_USER=tu-email@gmail.com
 EMAIL_PASSWORD=tu-app-password-aqui
 
 # Frontend URL (para enlaces de recuperación de contraseña)
-FRONTEND_URL=http://localhost:3000
+# 👇 DESARROLLO (local)
+# FRONTEND_URL=http://localhost:3000
+
+# 👇 PRODUCCIÓN (NO usar localhost aquí)
+# En producción, configura esta variable en tu panel (Railway, etc.) como:
+FRONTEND_URL=https://pilatesmermaid.com
 
 # Logo URL (opcional, por defecto usa el logo local)
 LOGO_URL=https://pilatesmermaid.com/Logo.png
-```
 
 ### 2. Configurar Gmail
 

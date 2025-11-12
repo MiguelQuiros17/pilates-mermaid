@@ -33,6 +33,7 @@ interface CoachStats {
 }
 
 export default function CoachDashboard() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [user, setUser] = useState<any>(null)
   const [classes, setClasses] = useState<CoachClass[]>([])
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
@@ -57,7 +58,7 @@ export default function CoachDashboard() {
       const token = localStorage.getItem('token')
       
       // Cargar clases del coach
-      const classesResponse = await fetch('http://localhost:3001/api/classes', {
+      const classesResponse = await fetch('${API_BASE_URL}/api/classes', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -72,7 +73,7 @@ export default function CoachDashboard() {
       }
 
       // Cargar estadísticas de asistencia
-      const attendanceResponse = await fetch('http://localhost:3001/api/attendance', {
+      const attendanceResponse = await fetch('${API_BASE_URL}/api/attendance', {
         headers: {
           'Authorization': `Bearer ${token}`
         }

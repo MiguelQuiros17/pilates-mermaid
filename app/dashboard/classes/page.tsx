@@ -7,6 +7,8 @@ import DashboardLayout from '@/components/DashboardLayout'
 import { Class, User } from '@/types'
 
 export default function ClassesPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+
   // State declarations
   const [user, setUser] = useState<User | null>(null)
   const [classes, setClasses] = useState<Class[]>([])
@@ -48,7 +50,7 @@ export default function ClassesPage() {
       const token = localStorage.getItem('token')
       if (!token) return
       
-      const response = await fetch('http://localhost:3001/api/classes', {
+      const response = await fetch('${API_BASE_URL}/api/classes', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -78,7 +80,7 @@ export default function ClassesPage() {
 
   const loadClients = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/users/clients')
+      const response = await fetch('${API_BASE_URL}/api/users/clients')
       if (response.ok) {
         const data = await response.json()
         setClients(data.users || [])
@@ -92,7 +94,7 @@ export default function ClassesPage() {
     try {
       const token = localStorage.getItem('token')
       if (!user?.id) return
-      const response = await fetch(`http://localhost:3001/api/users/${user.id}/bookings`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/bookings`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -135,7 +137,7 @@ export default function ClassesPage() {
   const bookClass = async (classId: string) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('http://localhost:3001/api/bookings', {
+      const response = await fetch('${API_BASE_URL}/api/bookings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,7 +167,7 @@ export default function ClassesPage() {
   const cancelBooking = async (classId: string) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('http://localhost:3001/api/bookings/cancel', {
+      const response = await fetch('${API_BASE_URL}/api/bookings/cancel', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -73,7 +73,7 @@ async function testEndpointWithAuth() {
       }
     }
     
-    console.log(`📡 Haciendo petición a: http://localhost:3001${options.path}`)
+    console.log(`📡 Haciendo petición a: ${API_BASE_URL}${options.path}`)
     console.log(`   - Method: ${options.method}`)
     console.log(`   - Headers: Authorization: Bearer ${token.substring(0, 20)}...`)
     console.log('')

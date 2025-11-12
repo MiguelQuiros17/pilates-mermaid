@@ -35,6 +35,7 @@ interface User {
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
@@ -54,7 +55,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       try {
         // Verify token is valid by making a request to the backend
-        const response = await fetch('http://localhost:3001/api/auth/verify', {
+        const response = await fetch('${API_BASE_URL}/api/auth/verify', {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`

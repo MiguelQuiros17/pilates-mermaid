@@ -35,6 +35,7 @@ interface Client {
 }
 
 export default function PackagesPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [packages, setPackages] = useState<Package[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -55,7 +56,7 @@ export default function PackagesPage() {
             const token = localStorage.getItem('token')
             if (!token) return
 
-            const response = await fetch('http://localhost:3001/api/users/clients', {
+            const response = await fetch('${API_BASE_URL}/api/users/clients', {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
@@ -248,7 +249,7 @@ export default function PackagesPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch('http://localhost:3001/api/users/clients', {
+      const response = await fetch('${API_BASE_URL}/api/users/clients', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -281,7 +282,7 @@ export default function PackagesPage() {
         packageId: selectedPackage
       })
 
-      const response = await fetch('http://localhost:3001/api/packages/assign', {
+      const response = await fetch('${API_BASE_URL}/api/packages/assign', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

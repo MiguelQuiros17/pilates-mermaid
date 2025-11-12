@@ -33,6 +33,7 @@ interface User {
 }
 
 export default function DashboardPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -73,7 +74,7 @@ export default function DashboardPage() {
         return
       }
 
-      const response = await fetch('http://localhost:3001/api/dashboard/stats', {
+      const response = await fetch('${API_BASE_URL}/api/dashboard/stats', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -108,21 +109,21 @@ export default function DashboardPage() {
       if (!token) return
 
       // Cargar clases del usuario
-      const classesResponse = await fetch(`http://localhost:3001/api/users/${userId}/classes`, {
+      const classesResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/classes`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
 
       // Cargar reservas del usuario
-      const bookingsResponse = await fetch(`http://localhost:3001/api/users/${userId}/bookings`, {
+      const bookingsResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/bookings`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
 
       // Cargar historial de paquetes
-      const packageResponse = await fetch(`http://localhost:3001/api/users/${userId}/package-history`, {
+      const packageResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/package-history`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

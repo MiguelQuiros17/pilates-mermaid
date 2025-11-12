@@ -34,6 +34,7 @@ interface Client {
 }
 
 export default function ClientsPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -57,7 +58,7 @@ export default function ClientsPage() {
         return
       }
 
-      const response = await fetch('http://localhost:3001/api/users/clients', {
+      const response = await fetch('${API_BASE_URL}/api/users/clients', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -126,7 +127,7 @@ export default function ClientsPage() {
         return
       }
 
-      const response = await fetch(`http://localhost:3001/api/users/${client.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${client.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -154,7 +155,7 @@ export default function ClientsPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`http://localhost:3001/api/users/${client.id}/package-history`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${client.id}/package-history`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -598,7 +599,7 @@ export default function ClientsPage() {
                   return
                 }
 
-                const response = await fetch(`http://localhost:3001/api/users/${selectedClient.id}`, {
+                const response = await fetch(`${API_BASE_URL}/api/users/${selectedClient.id}`, {
                   method: 'PUT',
                   headers: {
                     'Content-Type': 'application/json',

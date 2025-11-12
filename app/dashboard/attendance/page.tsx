@@ -40,6 +40,7 @@ interface AttendanceRecord {
 }
 
 export default function AttendancePage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [user, setUser] = useState<any>(null)
   const [classes, setClasses] = useState<Class[]>([])
   const [selectedClass, setSelectedClass] = useState<Class | null>(null)
@@ -67,7 +68,7 @@ export default function AttendancePage() {
       const firstDayStr = firstDayOfMonth.toISOString().split('T')[0]
       const lastDayStr = lastDayOfMonth.toISOString().split('T')[0]
       
-      const response = await fetch(`http://localhost:3001/api/classes?filter=current_month`, {
+        const response = await fetch(`${API_BASE_URL}/api/classes?filter=current_month`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -93,7 +94,7 @@ export default function AttendancePage() {
   const loadClassBookings = async (classId: string) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`http://localhost:3001/api/classes/${classId}/bookings`, {
+        const response = await fetch(`${API_BASE_URL}/api/classes/${classId}/bookings`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

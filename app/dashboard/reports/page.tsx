@@ -37,6 +37,7 @@ interface User {
 }
 
 export default function ReportsPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [user, setUser] = useState<User | null>(null)
   const [reportData, setReportData] = useState<ReportData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -63,7 +64,7 @@ export default function ReportsPage() {
         return
       }
 
-      let url = 'http://localhost:3001/api/reports'
+      let url = '${API_BASE_URL}/api/reports'
       const params = new URLSearchParams()
       
       if (selectedPeriod === 'custom' && dateRange.start && dateRange.end) {

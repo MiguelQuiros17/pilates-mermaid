@@ -7,6 +7,7 @@ import { Lock, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react'
 import Image from 'next/image'
 
 function ResetPasswordContent() {
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
     const router = useRouter()
     const searchParams = useSearchParams()
     const [formData, setFormData] = useState({
@@ -71,7 +72,7 @@ function ResetPasswordContent() {
         }
 
         try {
-            const response = await fetch('http://localhost:3001/api/auth/reset-password', {
+            const response = await fetch('${API_BASE_URL}/api/auth/reset-password', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

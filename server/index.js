@@ -1,3 +1,4 @@
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
@@ -29,7 +30,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "http://localhost:3001", "http://127.0.0.1:3001"],
+      connectSrc: ["'self'", API_BASE_URL, "http://localhost:3001", "http://127.0.0.1:3001"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -2419,7 +2420,7 @@ app.post('/api/admin/send-expiration-notifications', requireAuth, requireRole(['
 // Helper function to send expiration notification email
 async function sendExpirationNotificationEmail(packageInfo) {
   try {
-    const response = await fetch('http://localhost:3001/api/email/send-expiration-notification', {
+    const response = await fetch('${API_BASE_URL}/api/email/send-expiration-notification', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
