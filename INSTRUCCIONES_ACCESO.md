@@ -102,3 +102,4 @@ netstat -ano | findstr :3001
 - Si no puedes iniciar sesión como cliente, inicia sesión como admin y verifica/crea la contraseña del cliente
 
 
+
