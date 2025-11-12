@@ -1,0 +1,380 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-white text-gray-900 antialiased;
+  }
+  
+  * {
+    @apply border-gray-200;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-black text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-secondary {
+    @apply bg-white text-black border border-gray-300 px-6 py-3 rounded-lg font-medium transition-all duration-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-danger {
+    @apply bg-red-600 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+  }
+  
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-md hover:border-gray-300;
+  }
+  
+  .sidebar-item {
+    @apply flex items-center px-4 py-3 text-gray-700 hover:bg-gray-100 hover:text-black transition-all duration-200 rounded-lg;
+  }
+  
+  .sidebar-item.active {
+    @apply bg-black text-white hover:bg-gray-800;
+  }
+  
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .status-active {
+    @apply bg-green-100 text-green-800;
+  }
+  
+  .status-pending {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+  
+  .status-cancelled {
+    @apply bg-red-100 text-red-800;
+  }
+  
+  .status-completed {
+    @apply bg-blue-100 text-blue-800;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Custom animations */
+.fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply animate-spin rounded-full h-6 w-6 border-2 border-gray-300 border-t-black;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Fix for sidebar links not working */
+.sidebar-item {
+  position: relative !important;
+  z-index: 1000 !important;
+  pointer-events: auto !important;
+}
+
+.sidebar-item * {
+  pointer-events: auto !important;
+}
+
+/* Ensure all sidebar links are clickable */
+nav a {
+  pointer-events: auto !important;
+  z-index: 1001 !important;
+  position: relative !important;
+}
+
+/* Force sidebar navigation to be always accessible */
+nav {
+  pointer-events: auto !important;
+  z-index: 1000 !important;
+  position: relative !important;
+}
+
+/* Ensure sidebar is always on top and clickable */
+.fixed.inset-y-0.left-0 {
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+}
+
+.fixed.inset-y-0.left-0 * {
+  pointer-events: auto !important;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  /* Sidebar mobile behavior */
+  .dashboard-sidebar {
+    width: 280px !important;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+  }
+  
+  .dashboard-sidebar.open {
+    transform: translateX(0);
+  }
+  
+  /* Mobile-friendly buttons */
+  .btn-mobile {
+    min-height: 44px;
+    min-width: 44px;
+    font-size: 16px;
+  }
+  
+  /* Mobile-friendly forms */
+  .form-mobile input,
+  .form-mobile select,
+  .form-mobile textarea {
+    font-size: 16px;
+    padding: 12px;
+  }
+  
+  /* Mobile-friendly tables */
+  .table-mobile {
+    font-size: 14px;
+  }
+  
+  .table-mobile th,
+  .table-mobile td {
+    padding: 8px 4px;
+  }
+  
+  /* Mobile-friendly cards */
+  .card-mobile {
+    margin: 4px;
+    padding: 12px;
+  }
+  
+  /* Mobile-friendly modals */
+  .modal-mobile {
+    margin: 12px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+  }
+  
+  /* Mobile-friendly navigation */
+  .nav-mobile {
+    padding: 8px 12px;
+  }
+  
+  .nav-mobile .nav-item {
+    padding: 12px 16px;
+    margin: 4px 0;
+    border-radius: 8px;
+  }
+  
+  /* Mobile-friendly grid */
+  .grid-mobile {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  /* Mobile-friendly stats */
+  .stats-mobile {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  
+  /* Mobile-friendly spacing */
+  .space-mobile {
+    margin: 12px 0;
+  }
+  
+  /* Mobile-friendly text */
+  .text-mobile {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  
+  /* Mobile-friendly icons */
+  .icon-mobile {
+    width: 18px;
+    height: 18px;
+  }
+  
+  /* Mobile-friendly buttons in groups */
+  .btn-group-mobile {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .btn-group-mobile button {
+    width: 100%;
+  }
+  
+  /* Mobile-friendly calendar */
+  .calendar-mobile {
+    font-size: 11px;
+  }
+  
+  .calendar-mobile .calendar-cell {
+    min-height: 50px;
+    padding: 2px;
+  }
+  
+  /* Mobile-friendly dropdowns */
+  .dropdown-mobile {
+    position: relative;
+    width: 100%;
+  }
+  
+  /* Mobile-friendly toast notifications */
+  .toast-mobile {
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    margin: 0;
+  }
+  
+  /* Mobile-friendly loading states */
+  .loading-mobile {
+    padding: 32px 16px;
+    text-align: center;
+  }
+  
+  /* Mobile-friendly error states */
+  .error-mobile {
+    padding: 16px;
+    text-align: center;
+  }
+  
+  /* Mobile-friendly success states */
+  .success-mobile {
+    padding: 16px;
+    text-align: center;
+  }
+  
+  /* Optimize animations for mobile */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  /* Prevent text selection on mobile buttons */
+  button, a {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Tablet optimizations */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .dashboard-sidebar {
+    width: 240px !important;
+  }
+  
+  .grid-tablet {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  
+  .stats-tablet {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+}
+
+/* Touch-friendly interactions */
+@media (hover: none) and (pointer: coarse) {
+  .btn-touch {
+    min-height: 44px;
+    min-width: 44px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  .link-touch {
+    padding: 12px;
+    display: block;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  .input-touch {
+    font-size: 16px;
+    padding: 12px;
+  }
+  
+  /* Optimize scrolling on mobile */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Reduce motion on mobile for better performance */
+  @media (prefers-reduced-motion: no-preference) {
+    * {
+      transition-duration: 0.15s;
+      animation-duration: 0.15s;
+    }
+  }
+}
+
+/* Touch manipulation utility */
+.touch-manipulation {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+

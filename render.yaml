@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: pilates-mermaid
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        value: ./data/pilates_mermaid.db
+      - key: STUDIO_WHATSAPP_PHONE
+        value: 5259581062606
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+
