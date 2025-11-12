@@ -28,7 +28,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'", API_BASE_URL, "http://localhost:3001", "http://127.0.0.1:3001"],
       fontSrc: ["'self'"],
@@ -56,36 +56,53 @@ app.use(helmet({
   originAgentCluster: true
 }))
 
-// CORS configuration - Enhanced security
+const DEFAULT_DEV_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
+const DEFAULT_PROD_ORIGINS = [
+    'https://pilatesmermaid.com',
+    'https://www.pilatesmermaid.com',
+    // 👇 IMPORTANT: allow the Railway app host too
+    'https://pilates-mermaid-production.up.railway.app'
+]
+
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true)
-    }
-    
-    const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-      : process.env.NODE_ENV === 'production' 
-        ? ['https://pilatesmermaid.com', 'https://www.pilatesmermaid.com'] 
-        : ['http://localhost:3000', 'http://127.0.0.1:3000']
-    
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      // Log unauthorized origin attempt
-      SecurityService.logSecurityEvent('UNAUTHORIZED_ORIGIN', {
-        origin,
-        ip: SecurityService.getClientIP({ headers: { origin }, ip: origin })
-      })
-      callback(new Error('Not allowed by CORS'))
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: [],
-  maxAge: 86400 // 24 hours
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, curl, server-to-server)
+        if (!origin) {
+            return callback(null, true)
+        }
+
+        const allowedFromEnv = process.env.CORS_ORIGIN
+            ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+            : null
+
+        const allowedOrigins = allowedFromEnv || (
+            process.env.NODE_ENV === 'production'
+                ? DEFAULT_PROD_ORIGINS
+                : DEFAULT_DEV_ORIGINS
+        )
+
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true)
+        }
+
+        // In non-prod, be permissive so you don't lock yourself out while testing
+        if (process.env.NODE_ENV !== 'production') {
+            console.warn('[CORS] Temporarily allowing unknown origin in non-prod:', origin)
+            return callback(null, true)
+        }
+
+        // Prod: log and reject
+        SecurityService.logSecurityEvent('UNAUTHORIZED_ORIGIN', {
+            origin,
+            ip: SecurityService.getClientIP({ headers: { origin }, ip: origin })
+        })
+        return callback(new Error('Not allowed by CORS'))
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: [],
+    maxAge: 86400 // 24 hours
 }))
 
 // Rate limiting por IP
@@ -2420,7 +2437,7 @@ app.post('/api/admin/send-expiration-notifications', requireAuth, requireRole(['
 // Helper function to send expiration notification email
 async function sendExpirationNotificationEmail(packageInfo) {
   try {
-    const response = await fetch('${API_BASE_URL}/api/email/send-expiration-notification', {
+    const response = await fetch(`${API_BASE_URL || ''}/api/email/send-expiration-notification`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
