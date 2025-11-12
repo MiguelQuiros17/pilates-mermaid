@@ -101,3 +101,4 @@ netstat -ano | findstr :3001
 - El estado del paquete en la base de datos es: **active**
 - Si no puedes iniciar sesión como cliente, inicia sesión como admin y verifica/crea la contraseña del cliente
 
+

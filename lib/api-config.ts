@@ -29,3 +29,4 @@ export const getApiUrl = (path: string) => {
   return `${baseUrl}${apiPath}`
 }
 
+

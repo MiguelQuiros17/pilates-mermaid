@@ -26,3 +26,4 @@ console.log('Comparison (endDate < today):', endDate < today)
 console.log('Result: Package is', endDate >= today ? 'ACTIVE' : 'EXPIRED')
 
 
+

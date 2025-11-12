@@ -56,3 +56,4 @@ hasActivePackage: true
 3. Selecciona "Save as..." o "Copy"
 4. Pega los logs aquí
 
+
