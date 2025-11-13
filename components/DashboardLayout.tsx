@@ -55,7 +55,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       try {
         // Verify token is valid by making a request to the backend
-        const response = await fetch('${API_BASE_URL}/api/auth/verify', {
+        const response = await fetch('/api/auth/verify', {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`

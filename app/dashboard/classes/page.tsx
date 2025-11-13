@@ -50,7 +50,7 @@ export default function ClassesPage() {
       const token = localStorage.getItem('token')
       if (!token) return
       
-      const response = await fetch('${API_BASE_URL}/api/classes', {
+      const response = await fetch('/api/classes', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -80,7 +80,7 @@ export default function ClassesPage() {
 
   const loadClients = useCallback(async () => {
     try {
-      const response = await fetch('${API_BASE_URL}/api/users/clients')
+      const response = await fetch('/api/users/clients')
       if (response.ok) {
         const data = await response.json()
         setClients(data.users || [])
@@ -137,7 +137,7 @@ export default function ClassesPage() {
   const bookClass = async (classId: string) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('${API_BASE_URL}/api/bookings', {
+      const response = await fetch('/api/bookings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -167,7 +167,7 @@ export default function ClassesPage() {
   const cancelBooking = async (classId: string) => {
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch('${API_BASE_URL}/api/bookings/cancel', {
+      const response = await fetch('/api/bookings/cancel', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

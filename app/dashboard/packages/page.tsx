@@ -56,7 +56,7 @@ export default function PackagesPage() {
             const token = localStorage.getItem('token')
             if (!token) return
 
-            const response = await fetch('${API_BASE_URL}/api/users/clients', {
+            const response = await fetch('/api/users/clients', {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
@@ -249,7 +249,7 @@ export default function PackagesPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch('${API_BASE_URL}/api/users/clients', {
+      const response = await fetch('/api/users/clients', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -282,7 +282,7 @@ export default function PackagesPage() {
         packageId: selectedPackage
       })
 
-      const response = await fetch('${API_BASE_URL}/api/packages/assign', {
+      const response = await fetch('/api/packages/assign', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

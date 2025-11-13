@@ -58,7 +58,7 @@ export default function ClientsPage() {
         return
       }
 
-      const response = await fetch('${API_BASE_URL}/api/users/clients', {
+      const response = await fetch('/api/users/clients', {
         headers: {
           'Authorization': `Bearer ${token}`
         }

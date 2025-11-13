@@ -74,7 +74,7 @@ export default function DashboardPage() {
         return
       }
 
-      const response = await fetch('${API_BASE_URL}/api/dashboard/stats', {
+      const response = await fetch('/api/dashboard/stats', {
         headers: {
           'Authorization': `Bearer ${token}`
         }

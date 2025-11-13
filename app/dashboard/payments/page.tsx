@@ -118,7 +118,7 @@ export default function PaymentsPage() {
         return
       }
 
-      const response = await fetch('${API_BASE_URL}/api/payments', {
+      const response = await fetch('/api/payments', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -151,7 +151,7 @@ export default function PaymentsPage() {
         return
       }
 
-      const response = await fetch('${API_BASE_URL}/api/coach-payments', {
+      const response = await fetch('/api/coach-payments', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -181,7 +181,7 @@ export default function PaymentsPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch('${API_BASE_URL}/api/users/coaches', {
+      const response = await fetch('/api/users/coaches', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -204,7 +204,7 @@ export default function PaymentsPage() {
       if (!token) return
 
       const selectedCoachName = coachFilter || coaches[0]?.nombre || 'Esmeralda García'
-      const response = await fetch('${API_BASE_URL}/api/coach-payments/calculate', {
+      const response = await fetch('/api/coach-payments/calculate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -376,7 +376,7 @@ export default function PaymentsPage() {
         amount: parseFloat(newPayment.amount)
       }
 
-      const response = await fetch('${API_BASE_URL}/api/payments', {
+      const response = await fetch('/api/payments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

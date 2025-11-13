@@ -58,7 +58,7 @@ export default function CoachDashboard() {
       const token = localStorage.getItem('token')
       
       // Cargar clases del coach
-      const classesResponse = await fetch('${API_BASE_URL}/api/classes', {
+      const classesResponse = await fetch('/api/classes', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -73,7 +73,7 @@ export default function CoachDashboard() {
       }
 
       // Cargar estadísticas de asistencia
-      const attendanceResponse = await fetch('${API_BASE_URL}/api/attendance', {
+      const attendanceResponse = await fetch('/api/attendance', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
