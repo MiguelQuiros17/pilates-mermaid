@@ -103,18 +103,18 @@ export default function RegisterPage() {
 
       const data = await response.json()
 
-      if (data.success) {
+      if (response.ok && data.success) {
         setSuccess('¡Cuenta creada exitosamente!')
         
         // Store token and user data
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         
-        // Redirect to dashboard (no package selection page exists)
-        setTimeout(() => {
-          router.push('/dashboard')
-        }, 2000)
+        // Redirect to dashboard immediately
+        setIsLoading(false)
+        router.push('/dashboard')
       } else {
+        setIsLoading(false)
         // Show specific error messages
         if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
           // Show first error or format multiple errors
@@ -131,9 +131,8 @@ export default function RegisterPage() {
       }
     } catch (error: any) {
       console.error('Registration error:', error)
-      setError('Error de conexión. Intenta de nuevo.')
-    } finally {
       setIsLoading(false)
+      setError('Error de conexión. Intenta de nuevo.')
     }
   }
 
@@ -404,7 +403,7 @@ export default function RegisterPage() {
               <div>
                 <span className="text-sm font-medium">{success}</span>
                 <p className="text-xs text-green-700 mt-1">
-                  Te redirigiremos a la página de selección de paquetes...
+                  Redirigiendo al dashboard...
                 </p>
               </div>
             </motion.div>

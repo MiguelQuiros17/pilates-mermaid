@@ -187,48 +187,6 @@ export default function LoginPage() {
             </div>
           </div>
         </form>
-
-        {/* Quick Access - Para Pruebas */}
-        <div className="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-          <h3 className="text-sm font-semibold text-amber-900 mb-3">🔐 Acceso Rápido (Para Pruebas):</h3>
-          <div className="space-y-2">
-            <button 
-              onClick={() => {
-                setFormData({ correo: 'admin@pilatesmermaid.com', password: 'admin123' })
-              }}
-              className="w-full text-left p-3 bg-white rounded-lg border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors text-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-gray-900">👑 Administrador</div>
-                  <div className="text-xs text-gray-600 mt-1">admin@pilatesmermaid.com</div>
-                  <div className="text-xs text-gray-500">Contraseña: admin123</div>
-                </div>
-                <div className="text-xs text-amber-600 font-medium">Click para llenar</div>
-              </div>
-            </button>
-            <button 
-              onClick={() => {
-                setFormData({ correo: 'esmeralda@pilatesmermaid.com', password: 'coach123' })
-              }}
-              className="w-full text-left p-3 bg-white rounded-lg border border-amber-200 hover:bg-amber-50 hover:border-amber-300 transition-colors text-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-gray-900">🏋️ Coach (Esmeralda García)</div>
-                  <div className="text-xs text-gray-600 mt-1">esmeralda@pilatesmermaid.com</div>
-                  <div className="text-xs text-gray-500">Contraseña: coach123</div>
-                </div>
-                <div className="text-xs text-amber-600 font-medium">Click para llenar</div>
-              </div>
-            </button>
-          </div>
-          <div className="mt-3 pt-3 border-t border-amber-200">
-            <p className="text-xs text-amber-800">
-              💡 <strong>Nota:</strong> La base de datos está limpia para pruebas. Los clientes pueden registrarse desde el botón "Regístrate aquí" arriba.
-            </p>
-          </div>
-        </div>
       </motion.div>
     </div>
   )
