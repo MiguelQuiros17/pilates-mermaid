@@ -78,11 +78,57 @@ export default function SettingsPage() {
   const handleSaveProfile = async () => {
     setSaveStatus('saving')
     try {
-      // Simular guardado
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setSaveStatus('saved')
-      setTimeout(() => setSaveStatus('idle'), 2000)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setSaveStatus('error')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+        return
+      }
+
+      if (!user?.id) {
+        setSaveStatus('error')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+        return
+      }
+
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+      
+      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          nombre: profileData.nombre,
+          correo: profileData.correo,
+          numero_de_telefono: profileData.numero_de_telefono,
+          instagram: profileData.instagram || null
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Update user in localStorage
+        const updatedUser = { ...user, ...data.user }
+        localStorage.setItem('user', JSON.stringify(updatedUser))
+        setUser(updatedUser)
+        
+        // If a new token was provided (email was updated), save it
+        if (data.token) {
+          localStorage.setItem('token', data.token)
+          console.log('✅ New token saved after email update')
+        }
+        
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } else {
+        setSaveStatus('error')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      }
     } catch (error) {
+      console.error('Error saving profile:', error)
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 2000)
     }

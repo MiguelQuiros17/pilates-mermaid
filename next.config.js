@@ -46,10 +46,11 @@ const nextConfig = {
     // Rewrites para API (solo en desarrollo)
     async rewrites() {
         if (process.env.NODE_ENV === 'development') {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
             return [
                 {
                     source: '/api/:path*',
-                    destination: '${API_BASE_URL}/api/:path*',
+                    destination: `${apiUrl}/api/:path*`,
                 },
             ]
         }

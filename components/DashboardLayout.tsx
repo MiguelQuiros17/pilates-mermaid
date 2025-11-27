@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
@@ -34,12 +34,25 @@ interface User {
   role: 'admin' | 'coach' | 'cliente'
 }
 
+interface Notification {
+  id: string
+  user_id: string
+  type: string
+  subject: string
+  sent_at: string
+  status: string
+  error_message?: string
+}
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
 
   const [isLoading, setIsLoading] = useState(true)
 
@@ -102,6 +115,82 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     verifyAuth()
   }, [router])
 
+  const loadNotifications = useCallback(async () => {
+    if (!user?.id) return
+    
+    setNotificationsLoading(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) return
+
+      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setNotifications(data.notifications || [])
+        }
+      }
+    } catch (error) {
+      console.error('Error loading notifications:', error)
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [user?.id, API_BASE_URL])
+
+  // Load notifications when user is available
+  useEffect(() => {
+    if (user?.id) {
+      loadNotifications()
+    }
+  }, [user?.id, loadNotifications])
+
+  // Close notifications dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (notificationsOpen && !target.closest('.notification-dropdown-container')) {
+        setNotificationsOpen(false)
+      }
+    }
+
+    if (notificationsOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [notificationsOpen])
+
+  const getNotificationTypeLabel = (type: string) => {
+    const labels: { [key: string]: string } = {
+      'birthday': 'Cumpleaños',
+      'expiration': 'Vencimiento de paquete',
+      'class_confirmation': 'Confirmación de clase',
+      'class_reminder': 'Recordatorio de clase',
+      'payment_received': 'Pago recibido',
+      'package_assigned': 'Paquete asignado'
+    }
+    return labels[type] || type
+  }
+
+  const formatNotificationDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Hace un momento'
+    if (diffMins < 60) return `Hace ${diffMins} minuto${diffMins > 1 ? 's' : ''}`
+    if (diffHours < 24) return `Hace ${diffHours} hora${diffHours > 1 ? 's' : ''}`
+    if (diffDays < 7) return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`
+    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -118,6 +207,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { name: 'Asistencia', href: '/dashboard/attendance', icon: BarChart3, roles: ['admin', 'coach'] },
     { name: 'Pagos', href: '/dashboard/payments', icon: CreditCard, roles: ['admin', 'coach'] },
     { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, roles: ['admin'] },
+    { name: 'Asignación de Roles', href: '/dashboard/role-assignments', icon: Settings, roles: ['admin'] },
     { name: 'Configuración', href: '/dashboard/settings', icon: Settings, roles: ['admin', 'coach', 'cliente'] },
   ]
 
@@ -275,10 +365,89 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               )}
 
               {/* Notifications */}
-              <button className="p-2 text-gray-400 hover:text-gray-600 active:text-gray-700 relative touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center">
-                <Bell className="h-5 w-5 sm:h-6 sm:w-6" />
-                <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
-              </button>
+              <div className="relative notification-dropdown-container">
+                <button 
+                  onClick={() => {
+                    setNotificationsOpen(!notificationsOpen)
+                    if (!notificationsOpen && notifications.length === 0) {
+                      loadNotifications()
+                    }
+                  }}
+                  className="p-2 text-gray-400 hover:text-gray-600 active:text-gray-700 relative touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                >
+                  <Bell className="h-5 w-5 sm:h-6 sm:w-6" />
+                  {notifications.length > 0 && (
+                    <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
+                  )}
+                </button>
+
+                {/* Notifications Dropdown */}
+                <AnimatePresence>
+                  {notificationsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[10001] max-h-[500px] overflow-hidden flex flex-col"
+                    >
+                        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                          <h3 className="text-lg font-semibold text-gray-900">Notificaciones</h3>
+                          <button
+                            onClick={() => setNotificationsOpen(false)}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        </div>
+                        
+                        <div className="overflow-y-auto flex-1">
+                          {notificationsLoading ? (
+                            <div className="p-8 text-center">
+                              <div className="spinner mx-auto"></div>
+                              <p className="text-sm text-gray-500 mt-2">Cargando notificaciones...</p>
+                            </div>
+                          ) : notifications.length === 0 ? (
+                            <div className="p-8 text-center">
+                              <Bell className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                              <p className="text-sm text-gray-500">No hay notificaciones</p>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-gray-100">
+                              {notifications.map((notification) => (
+                                <div
+                                  key={notification.id}
+                                  className="p-4 hover:bg-gray-50 transition-colors"
+                                >
+                                  <div className="flex items-start space-x-3">
+                                    <div className={`flex-shrink-0 h-2 w-2 rounded-full mt-2 ${
+                                      notification.status === 'sent' ? 'bg-green-500' : 'bg-red-500'
+                                    }`}></div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {getNotificationTypeLabel(notification.type)}
+                                      </p>
+                                      <p className="text-sm text-gray-600 mt-1">
+                                        {notification.subject}
+                                      </p>
+                                      <p className="text-xs text-gray-400 mt-2">
+                                        {formatNotificationDate(notification.sent_at)}
+                                      </p>
+                                      {notification.error_message && (
+                                        <p className="text-xs text-red-600 mt-1">
+                                          Error: {notification.error_message}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
               {/* User menu */}
               <div className="flex items-center space-x-2 sm:space-x-3">

@@ -43,6 +43,31 @@ export default function PackagesPage() {
   const [selectedClient, setSelectedClient] = useState<string>('')
   const [selectedPackage, setSelectedPackage] = useState<string>('')
 
+  const fetchClients = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) return
+
+      const response = await fetch('/api/users/clients', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📋 Fetched clients:', data.clients?.length || 0, 'clients')
+        setClients(data.clients || [])
+      } else {
+        console.error('Error fetching clients:', response.status, response.statusText)
+        const errorData = await response.json().catch(() => ({ message: 'Error fetching clients' }))
+        console.error('Error details:', errorData)
+      }
+    } catch (error) {
+      console.error('Error fetching clients:', error)
+    }
+  }
+
   useEffect(() => {
     const userData = localStorage.getItem('user')
     if (userData) {
@@ -51,32 +76,14 @@ export default function PackagesPage() {
 
       // Solo hacer fetch si es admin
       if (parsedUser?.role === 'admin') {
-        const fetchClients = async () => {
-          try {
-            const token = localStorage.getItem('token')
-            if (!token) return
-
-            const response = await fetch('/api/users/clients', {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
-            })
-
-            if (response.ok) {
-              const data = await response.json()
-              setClients(data.clients || [])
-            }
-          } catch (error) {
-            console.error('Error fetching clients:', error)
-          }
-        }
-
         fetchClients()
       }
     }
+  }, []) // Empty dependency array - only run once on mount
 
-      // Paquetes reales de Pilates Mermaid
-      const samplePackages: Package[] = [
+  useEffect(() => {
+    // Paquetes reales de Pilates Mermaid
+    const samplePackages: Package[] = [
       // Clases Grupales
       {
         id: '1',
@@ -395,16 +402,31 @@ export default function PackagesPage() {
         {/* Assign Package Section - Only for Admin */}
         {user?.role === 'admin' && (
           <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Asignar Paquete a Cliente</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Asignar Paquete a Cliente</h3>
+              <button
+                onClick={fetchClients}
+                className="text-sm text-gray-600 hover:text-gray-900 underline"
+                title="Actualizar lista de clientes"
+              >
+                🔄 Actualizar
+              </button>
+            </div>
+            {clients.length === 0 && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                ⚠️ No hay clientes disponibles. Asegúrate de que los usuarios tengan el rol "cliente".
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Seleccionar Cliente
+                  Seleccionar Cliente {clients.length > 0 && `(${clients.length} disponible${clients.length !== 1 ? 's' : ''})`}
                 </label>
                 <select
                   className="input-field"
                   value={selectedClient}
                   onChange={(e) => setSelectedClient(e.target.value)}
+                  disabled={clients.length === 0}
                 >
                   <option value="">Seleccionar cliente...</option>
                   {clients.map(client => (

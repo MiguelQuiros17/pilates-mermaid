@@ -368,11 +368,52 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// Root endpoint - API information
+app.get('/', (req, res) => {
+  res.json({
+    service: 'PilatesMermaid API Server',
+    status: 'running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        verify: 'GET /api/auth/verify'
+      },
+      info: 'This is the API server. The frontend runs on port 3000 in development mode.'
+    },
+    timestamp: new Date().toISOString()
+  })
+})
 
 // Auth endpoints
-app.post('/api/auth/register', [
+// Middleware to preserve original email before validation
+const preserveOriginalEmail = (req, res, next) => {
+  if (req.body.correo) {
+    req.originalEmail = String(req.body.correo)
+    console.log('📧 [preserveOriginalEmail] Captured correo:', req.originalEmail)
+  }
+  if (req.body.email) {
+    req.originalEmail = String(req.body.email)
+    console.log('📧 [preserveOriginalEmail] Captured email:', req.originalEmail)
+  }
+  next()
+}
+
+app.post('/api/auth/register', preserveOriginalEmail, [
   body('nombre').notEmpty().withMessage('El nombre es requerido').isLength({ min: 2, max: 100 }).withMessage('El nombre debe tener entre 2 y 100 caracteres'),
-  body('correo').isEmail().withMessage('Email inválido').normalizeEmail(),
+  body('correo').custom((value) => {
+    if (!value || typeof value !== 'string') {
+      throw new Error('Email inválido')
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(value.trim())) {
+      throw new Error('Email inválido')
+    }
+    // CRITICAL: Return true without modifying the value
+    return true
+  }).withMessage('Email inválido'),
   body('numero_de_telefono').notEmpty().withMessage('El teléfono es requerido').custom((value) => {
     const cleanPhone = value.replace(/\D/g, '')
     if (cleanPhone.length < 10 || cleanPhone.length > 15) {
@@ -417,14 +458,34 @@ app.post('/api/auth/register', [
       })
     }
 
-    let { nombre, correo, numero_de_telefono, password, role, type_of_class = 'Sin paquete', instagram, cumpleanos, lesion_o_limitacion_fisica, genero } = req.body
+    let { nombre, numero_de_telefono, password, role, type_of_class = 'Sin paquete', instagram, cumpleanos, lesion_o_limitacion_fisica, genero } = req.body
+    
+    // CRITICAL: Use original email preserved before validation middleware
+    let correo = req.originalEmail ? req.originalEmail.trim() : (req.body.correo ? String(req.body.correo).trim() : '')
 
-    // Force role to 'cliente' for registration (prevent role escalation)
-    role = 'cliente'
+    // Check role assignments from JSON file
+    const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
+    let assignedRole = 'cliente' // Default role
+    
+    try {
+      if (fs.existsSync(roleAssignmentsPath)) {
+        const roleData = JSON.parse(fs.readFileSync(roleAssignmentsPath, 'utf8'))
+        const assignment = roleData.assignments?.find((a) => a.email.toLowerCase() === correo.toLowerCase())
+        if (assignment && ['admin', 'coach', 'cliente'].includes(assignment.role)) {
+          assignedRole = assignment.role
+        }
+      }
+    } catch (error) {
+      console.error('Error reading role assignments:', error)
+      // Continue with default 'cliente' role if file read fails
+    }
+    
+    // Use assigned role from JSON file, or default to 'cliente'
+    role = assignedRole
 
     // Basic sanitization - only trim strings, don't escape HTML
     nombre = nombre ? nombre.trim() : ''
-    correo = correo ? correo.trim().toLowerCase() : ''
+    // Email is already trimmed from originalEmail - preserve exactly as entered
     numero_de_telefono = numero_de_telefono ? numero_de_telefono.trim() : ''
     if (instagram) instagram = instagram.trim()
     if (genero) genero = genero.trim()
@@ -558,8 +619,17 @@ app.post('/api/auth/register', [
   }
 })
 
-app.post('/api/auth/login', [
-  body('correo').isEmail().withMessage('Email inválido').normalizeEmail(),
+app.post('/api/auth/login', preserveOriginalEmail, [
+  body('correo').custom((value) => {
+    if (!value || typeof value !== 'string') {
+      throw new Error('Email inválido')
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(value.trim())) {
+      throw new Error('Email inválido')
+    }
+    return true
+  }).withMessage('Email inválido'),
   body('password').notEmpty().withMessage('Contraseña requerida')
 ], async (req, res) => {
   try {
@@ -579,12 +649,11 @@ app.post('/api/auth/login', [
       })
     }
 
-    let { correo, password } = req.body
+    let { password } = req.body
 
-    // Validate and sanitize email
-    try {
-      correo = SecurityService.validateAndSanitize(correo, 'email')
-    } catch (error) {
+    // CRITICAL: Use original email preserved before validation middleware
+    let correo = req.originalEmail ? req.originalEmail.trim() : (req.body.correo ? String(req.body.correo).trim() : '')
+    if (!correo || !SecurityService.validateEmail(correo)) {
       SecurityService.logSecurityEvent('LOGIN_INVALID_EMAIL', {
         email: correo,
         ip: clientIP
@@ -748,8 +817,17 @@ app.get('/api/auth/verify', requireAuth, async (req, res) => {
 })
 
 // Password reset endpoints
-app.post('/api/auth/forgot-password', [
-  body('correo').isEmail().withMessage('Email inválido').normalizeEmail()
+app.post('/api/auth/forgot-password', preserveOriginalEmail, [
+  body('correo').custom((value) => {
+    if (!value || typeof value !== 'string') {
+      throw new Error('Email inválido')
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(value.trim())) {
+      throw new Error('Email inválido')
+    }
+    return true
+  }).withMessage('Email inválido')
 ], async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
@@ -763,18 +841,9 @@ app.post('/api/auth/forgot-password', [
       })
     }
 
-    const { correo } = req.body
-
-    // Validate and sanitize email
-    try {
-      const sanitizedEmail = SecurityService.validateAndSanitize(correo, 'email')
-      if (!SecurityService.validateEmail(sanitizedEmail)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Formato de email inválido'
-        })
-      }
-    } catch (error) {
+    // CRITICAL: Use original email preserved before validation middleware
+    let correo = req.originalEmail ? req.originalEmail.trim() : (req.body.correo ? String(req.body.correo).trim() : '')
+    if (!correo || !SecurityService.validateEmail(correo)) {
       return res.status(400).json({
         success: false,
         message: 'Formato de email inválido'
@@ -850,9 +919,18 @@ app.post('/api/auth/forgot-password', [
   }
 })
 
-app.post('/api/auth/reset-password', [
+app.post('/api/auth/reset-password', preserveOriginalEmail, [
   body('token').notEmpty().withMessage('Token requerido'),
-  body('correo').isEmail().withMessage('Email inválido').normalizeEmail(),
+  body('correo').custom((value) => {
+    if (!value || typeof value !== 'string') {
+      throw new Error('Email inválido')
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(value.trim())) {
+      throw new Error('Email inválido')
+    }
+    return true
+  }).withMessage('Email inválido'),
   body('password').isLength({ min: 12 }).withMessage('La contraseña debe tener al menos 12 caracteres')
 ], async (req, res) => {
   try {
@@ -867,18 +945,11 @@ app.post('/api/auth/reset-password', [
       })
     }
 
-    const { token, correo, password } = req.body
+    const { token, password } = req.body
 
-    // Validate and sanitize inputs
-    try {
-      const sanitizedEmail = SecurityService.validateAndSanitize(correo, 'email')
-      if (!SecurityService.validateEmail(sanitizedEmail)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Formato de email inválido'
-        })
-      }
-    } catch (error) {
+    // CRITICAL: Use original email preserved before validation middleware
+    let correo = req.originalEmail ? req.originalEmail.trim() : (req.body.correo ? String(req.body.correo).trim() : '')
+    if (!correo || !SecurityService.validateEmail(correo)) {
       return res.status(400).json({
         success: false,
         message: 'Formato de email inválido'
@@ -1032,7 +1103,11 @@ app.get('/api/users', requireAuth, requireRole(['admin']), async (req, res) => {
 // Get all clients (admin only)
 app.get('/api/users/clients', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
-    const clients = await database.getUsersByRole('cliente')
+    // Fetch all users with role 'cliente' (case-insensitive matching)
+    const allUsers = await database.all('SELECT * FROM users ORDER BY created_at DESC', [])
+    const clients = allUsers.filter(user => user.role && user.role.toLowerCase() === 'cliente')
+    
+    console.log(`📋 [GET /api/users/clients] Found ${clients.length} clients out of ${allUsers.length} total users`)
     
     // Remove sensitive data
     const safeClients = clients.map(client => ({
@@ -1165,7 +1240,8 @@ app.get('/api/users/:id', requireAuth, async (req, res) => {
 })
 
 // Update user - Enhanced security
-app.put('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+// Allow admin to update any user, or allow any user to update themselves
+app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
     const { id } = req.params
@@ -1183,54 +1259,110 @@ app.put('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) 
       })
     }
     
-    let updates = req.body
+    // Check if user is admin OR updating themselves
+    const isAdmin = req.user.role === 'admin'
+    const isUpdatingSelf = req.user.id === id
+    
+    if (!isAdmin && !isUpdatingSelf) {
+      SecurityService.logSecurityEvent('UNAUTHORIZED_USER_UPDATE_ATTEMPT', {
+        userId: req.user.id,
+        userRole: req.user.role,
+        targetId: id,
+        ip: clientIP
+      })
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para actualizar este usuario'
+      })
+    }
+    
+    // Log incoming request
+    console.log('📥 [UPDATE USER] Incoming request body:', JSON.stringify(req.body, null, 2))
+    console.log('📥 [UPDATE USER] Original email from middleware:', req.originalEmail)
+    
+    let updates = { ...req.body }
+    
+    // CRITICAL: Preserve original email format if updating email (use preserved value)
+    // Always use preserved email if available, otherwise use from body
+    if (req.originalEmail) {
+      updates.correo = req.originalEmail.trim()
+      console.log('🔍 [UPDATE USER] Using preserved original email:', updates.correo)
+    } else if (updates.correo) {
+      updates.correo = String(updates.correo).trim()
+      console.log('🔍 [UPDATE USER] Using email from request body:', updates.correo)
+    }
+    
+    // Ensure email is not empty if it was provided
+    if (updates.correo === '') {
+      delete updates.correo
+      console.log('⚠️ [UPDATE USER] Email was empty string, removing from updates')
+    }
+    
+    console.log('📦 [UPDATE USER] Updates object after email processing:', JSON.stringify(updates, null, 2))
 
+    // Get target user once at the beginning (needed for multiple validations)
+    const targetUser = await database.getUserById(id)
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      })
+    }
+    
+    console.log('👤 [UPDATE USER] Target user loaded:', targetUser.id, 'Current email:', targetUser.correo)
+    
     // Prevent role escalation - Only admin can change roles, and only to valid roles
     if (updates.role) {
-      if (!SecurityService.validateRole(updates.role)) {
-        SecurityService.logSecurityEvent('INVALID_ROLE_ATTEMPT', {
+      // Non-admin users cannot change roles at all (including their own)
+      if (!isAdmin) {
+        SecurityService.logSecurityEvent('ROLE_ESCALATION_ATTEMPT', {
           userId: req.user.id,
+          userRole: req.user.role,
           targetId: id,
           attemptedRole: updates.role,
           ip: clientIP
         })
-        return res.status(400).json({
-          success: false,
-          message: 'Rol inválido'
-        })
-      }
-      
-      // Get target user
-      const targetUser = await database.getUserById(id)
-      if (!targetUser) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuario no encontrado'
-        })
-      }
-      
-      // Prevent changing own role
-      if (req.user.id === id && updates.role !== targetUser.role) {
-        SecurityService.logSecurityEvent('SELF_ROLE_CHANGE_ATTEMPT', {
-          userId: req.user.id,
-          attemptedRole: updates.role,
-          ip: clientIP
-        })
-        return res.status(403).json({
-          success: false,
-          message: 'No puedes cambiar tu propio rol'
-        })
-      }
-      
-      // Log role changes
-      if (updates.role !== targetUser.role) {
-        SecurityService.logSecurityEvent('ROLE_CHANGED', {
-          adminId: req.user.id,
-          targetUserId: id,
-          oldRole: targetUser.role,
-          newRole: updates.role,
-          ip: clientIP
-        })
+        // Remove role from updates - users can't change their own role
+        delete updates.role
+        console.log('⚠️ [UPDATE USER] Non-admin user attempted to change role, removing from updates')
+      } else {
+        // Admin users can change roles
+        if (!SecurityService.validateRole(updates.role)) {
+          SecurityService.logSecurityEvent('INVALID_ROLE_ATTEMPT', {
+            userId: req.user.id,
+            targetId: id,
+            attemptedRole: updates.role,
+            ip: clientIP
+          })
+          return res.status(400).json({
+            success: false,
+            message: 'Rol inválido'
+          })
+        }
+        
+        // Prevent changing own role (even admins)
+        if (req.user.id === id && updates.role !== targetUser.role) {
+          SecurityService.logSecurityEvent('SELF_ROLE_CHANGE_ATTEMPT', {
+            userId: req.user.id,
+            attemptedRole: updates.role,
+            ip: clientIP
+          })
+          return res.status(403).json({
+            success: false,
+            message: 'No puedes cambiar tu propio rol'
+          })
+        }
+        
+        // Log role changes
+        if (updates.role !== targetUser.role) {
+          SecurityService.logSecurityEvent('ROLE_CHANGED', {
+            adminId: req.user.id,
+            targetUserId: id,
+            oldRole: targetUser.role,
+            newRole: updates.role,
+            ip: clientIP
+          })
+        }
       }
     }
 
@@ -1246,22 +1378,16 @@ app.put('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) 
     }
 
 
-    // Validate and sanitize email if provided
+    // Validate email format if provided (email already preserved above, just validate)
     if (updates.correo) {
-      try {
-        updates.correo = SecurityService.validateAndSanitize(updates.correo, 'email')
-        if (!SecurityService.validateEmail(updates.correo)) {
-          return res.status(400).json({
-            success: false,
-            message: 'Email inválido'
-          })
-        }
-      } catch (error) {
+      // Email is already trimmed and preserved above, just validate format
+      if (!SecurityService.validateEmail(updates.correo)) {
         return res.status(400).json({
           success: false,
           message: 'Email inválido'
         })
       }
+      console.log('✅ [UPDATE USER] Email validated:', updates.correo)
     }
 
     // Validate and sanitize phone if provided
@@ -1316,6 +1442,82 @@ app.put('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) 
       }
     }
 
+    // Check if email is being changed and if new email already exists
+    // Note: targetUser was already fetched above
+    if (updates.correo) {
+      // Normalize emails for comparison (remove dots from local part for Gmail, lowercase)
+      const normalizeEmailForComparison = (email) => {
+        if (!email) return ''
+        const lower = email.toLowerCase().trim()
+        // For Gmail addresses, remove dots from local part before @
+        const [localPart, domain] = lower.split('@')
+        if (domain === 'gmail.com' || domain === 'googlemail.com') {
+          return localPart.replace(/\./g, '') + '@' + domain
+        }
+        return lower
+      }
+      
+      const currentEmailNormalized = normalizeEmailForComparison(targetUser.correo)
+      const newEmailNormalized = normalizeEmailForComparison(updates.correo)
+      const emailIsChanging = currentEmailNormalized !== newEmailNormalized
+      
+      console.log('📧 [UPDATE USER] Email comparison:', {
+        current: targetUser.correo,
+        currentNormalized: currentEmailNormalized,
+        new: updates.correo,
+        newNormalized: newEmailNormalized,
+        isChanging: emailIsChanging,
+        updatingSelf: req.user.id === id
+      })
+      
+      if (emailIsChanging) {
+        // Email is actually changing to a different email account
+        // Check for duplicates using normalized comparison
+        const allUsers = await database.all('SELECT id, correo FROM users', [])
+        
+        // Check if any other user (not the current user) has the same normalized email
+        const duplicateUser = allUsers.find(u => {
+          if (u.id === id) return false // Skip current user
+          const existingNormalized = normalizeEmailForComparison(u.correo)
+          return existingNormalized === newEmailNormalized
+        })
+        
+        if (duplicateUser) {
+          console.log('❌ [UPDATE USER] Duplicate email detected:', {
+            duplicateUserId: duplicateUser.id,
+            duplicateEmail: duplicateUser.correo,
+            duplicateNormalized: normalizeEmailForComparison(duplicateUser.correo),
+            requestedEmail: updates.correo,
+            requestedNormalized: newEmailNormalized
+          })
+          return res.status(409).json({
+            success: false,
+            message: 'Ya existe un usuario con este email'
+          })
+        }
+        console.log('✅ [UPDATE USER] Email change allowed, no duplicates found')
+      } else {
+        // Email is same (normalized comparison) but might have different format (periods, case)
+        // This is the same user updating their own email format - always allow
+        console.log('ℹ️ [UPDATE USER] Email format update (same email account, different format). Preserving exact format:', updates.correo)
+      }
+    }
+    
+    // Ensure email is in updates if it was provided
+    if (!updates.correo && req.originalEmail) {
+      console.log('⚠️ [UPDATE USER] Email was in request but missing from updates, adding it back')
+      updates.correo = req.originalEmail.trim()
+    }
+    
+    // Final check: ensure email field exists and is not empty
+    if (updates.correo) {
+      console.log('✅ [UPDATE USER] Email confirmed in updates object:', updates.correo)
+    } else {
+      console.log('⚠️ [UPDATE USER] No email in updates object')
+    }
+    
+    console.log('💾 [UPDATE USER] Final updates object before save:', JSON.stringify(updates, null, 2))
+    console.log('💾 [UPDATE USER] Fields to update:', Object.keys(updates).filter(k => k !== 'id' && k !== 'historial_de_clases'))
     const updatedUser = await database.updateUser(id, updates)
     
     if (!updatedUser) {
@@ -1324,6 +1526,8 @@ app.put('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) 
         message: 'Usuario no encontrado'
       })
     }
+    
+    console.log('✅ [UPDATE USER] User updated successfully. New email:', updatedUser.correo)
 
     // Remove sensitive data
     const { password_hash, ...safeUser } = updatedUser
@@ -1336,10 +1540,27 @@ app.put('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) 
       ip: clientIP
     })
 
-    res.json({
+    // If email was updated, generate a new token with the updated email
+    // This ensures login credentials work with the new email immediately
+    let newToken = null
+    if (updates.correo && req.user.id === id) {
+      // Current user updated their own email - generate new token
+      newToken = AuthService.generateToken(updatedUser)
+      console.log('🔄 [UPDATE USER] Generated new token for user with updated email')
+    }
+
+    const responseData = {
       success: true,
       user: safeUser
-    })
+    }
+
+    // Include new token if email was updated by the current user
+    if (newToken) {
+      responseData.token = newToken
+      responseData.message = 'Email actualizado. Tu sesión ha sido renovada.'
+    }
+
+    res.json(responseData)
   } catch (error) {
     console.error('Update user error:', error)
     const clientIP = SecurityService.getClientIP(req)
@@ -1578,6 +1799,444 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin']), async (req,
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Role assignments management endpoints (Admin only)
+app.get('/api/admin/role-assignments', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
+    const dataDir = path.dirname(roleAssignmentsPath)
+    
+    // Ensure data directory exists
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true })
+    }
+    
+    if (!fs.existsSync(roleAssignmentsPath)) {
+      // Create default file if it doesn't exist
+      const defaultData = { assignments: [] }
+      fs.writeFileSync(roleAssignmentsPath, JSON.stringify(defaultData, null, 2), 'utf8')
+      return res.json({
+        success: true,
+        assignments: []
+      })
+    }
+
+    const fileContent = fs.readFileSync(roleAssignmentsPath, 'utf8')
+    let roleData
+    try {
+      roleData = JSON.parse(fileContent)
+    } catch (parseError) {
+      console.error('Error parsing role assignments file:', parseError)
+      // If corrupted, create a new one
+      roleData = { assignments: [] }
+      fs.writeFileSync(roleAssignmentsPath, JSON.stringify(roleData, null, 2), 'utf8')
+    }
+    
+    if (!Array.isArray(roleData.assignments)) {
+      roleData.assignments = []
+    }
+    
+    res.json({
+      success: true,
+      assignments: roleData.assignments || []
+    })
+  } catch (error) {
+    console.error('Error reading role assignments:', error)
+    console.error('Error stack:', error.stack)
+    res.status(500).json({
+      success: false,
+      message: 'Error al leer asignaciones de roles',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    })
+  }
+})
+
+app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin']), preserveOriginalEmail, [
+  body('email').custom((value) => {
+    if (!value || typeof value !== 'string') {
+      throw new Error('Email inválido')
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(value.trim())) {
+      throw new Error('Email inválido')
+    }
+    return true
+  }).withMessage('Email inválido'),
+  body('role').isIn(['admin', 'coach', 'cliente']).withMessage('Rol inválido')
+], async (req, res) => {
+  console.log('========== ROLE ASSIGNMENT POST REQUEST ==========')
+  console.log('Request body:', JSON.stringify(req.body, null, 2))
+  console.log('User:', req.user?.correo)
+  console.log('User role:', req.user?.role)
+  console.log('NODE_ENV:', process.env.NODE_ENV)
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Datos inválidos',
+        errors: errors.array()
+      })
+    }
+
+    let { role } = req.body
+    
+    // CRITICAL: Use original email preserved before validation middleware
+    let email = req.originalEmail ? req.originalEmail.trim() : (req.body.email ? String(req.body.email).trim() : '')
+    
+    // Validate user is authenticated
+    if (!req.user) {
+      console.error('User not authenticated - req.user is:', req.user)
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      })
+    }
+    
+    // Get user email - check both email and correo properties
+    const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
+    
+    if (!userEmail) {
+      console.error('User object missing email property. User object:', JSON.stringify(req.user, null, 2))
+      console.error('User object keys:', Object.keys(req.user))
+      return res.status(400).json({
+        success: false,
+        message: 'Información de usuario incompleta'
+      })
+    }
+    
+    // Preserve email as-is (just trim whitespace, preserve periods and original case structure)
+    email = email ? email.trim() : ''
+    const protectedEmail = 'pilatesmermaidweb@gmail.com'
+    const emailLower = email.toLowerCase()
+    
+    // Validate email is provided
+    if (!email || !emailLower) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email es requerido'
+      })
+    }
+    
+    // Check if trying to modify protected email
+    if (emailLower === protectedEmail.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        message: 'No se puede modificar el email principal del sistema'
+      })
+    }
+    
+    // Check if trying to modify own email
+    if (emailLower === userEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'No puedes modificar tu propio rol'
+      })
+    }
+
+    const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
+    const dataDir = path.dirname(roleAssignmentsPath)
+    
+    // Ensure data directory exists
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true })
+    }
+    
+    // Read existing assignments
+    let roleData = { assignments: [] }
+    if (fs.existsSync(roleAssignmentsPath)) {
+      try {
+        const fileContent = fs.readFileSync(roleAssignmentsPath, 'utf8')
+        if (fileContent.trim()) {
+          roleData = JSON.parse(fileContent)
+        }
+      } catch (parseError) {
+        console.error('Error parsing role assignments file:', parseError)
+        // If file is corrupted, reset to empty structure
+        roleData = { assignments: [] }
+      }
+    }
+
+    // Ensure assignments array exists
+    if (!Array.isArray(roleData.assignments)) {
+      roleData.assignments = []
+    }
+
+    // Check if email already exists
+    const existingIndex = roleData.assignments.findIndex(
+      (a) => a.email && a.email.toLowerCase() === emailLower
+    )
+
+    if (existingIndex >= 0) {
+      // Check if existing assignment is protected
+      const existingAssignment = roleData.assignments[existingIndex]
+      if (existingAssignment.email.toLowerCase() === protectedEmail.toLowerCase() ||
+          existingAssignment.email.toLowerCase() === userEmail) {
+        return res.status(403).json({
+          success: false,
+          message: 'No se puede modificar este email'
+        })
+      }
+      // Update existing assignment
+      roleData.assignments[existingIndex].role = role
+    } else {
+      // Add new assignment - preserve original email with periods
+      roleData.assignments.push({ email: email, role })
+    }
+
+    // Write back to file
+    try {
+      console.log('Attempting to write role assignments to:', roleAssignmentsPath)
+      console.log('Data directory exists:', fs.existsSync(dataDir))
+      console.log('Role data to write:', JSON.stringify(roleData, null, 2))
+      fs.writeFileSync(roleAssignmentsPath, JSON.stringify(roleData, null, 2), 'utf8')
+      console.log('Successfully wrote role assignments file')
+    } catch (writeError) {
+      console.error('Error writing role assignments file:', writeError)
+      console.error('Write error details:', {
+        code: writeError?.code,
+        path: writeError?.path,
+        message: writeError?.message,
+        errno: writeError?.errno
+      })
+      throw writeError
+    }
+
+    // CRITICAL: If user exists in database, update their role there too (whether updating or adding)
+    try {
+      console.log(`🔄 Checking if user exists in database for email: ${email}`)
+      const existingUser = await database.getUserByEmail(email)
+      if (existingUser) {
+        // Update the user's role in the database
+        await database.updateUser(existingUser.id, { role: role })
+        console.log(`✅ Updated user ${existingUser.id} (${email}) role to "${role}" in database`)
+      } else {
+        console.log(`ℹ️ User with email ${email} not found in database - will use role on next registration`)
+      }
+    } catch (dbError) {
+      console.error('⚠️ Error updating user role in database:', dbError)
+      // Don't fail the request - the JSON file was updated successfully
+      // The role will be applied on next registration or manual update
+    }
+
+    console.log('Sending success response')
+    res.json({
+      success: true,
+      message: existingIndex >= 0 ? 'Asignación actualizada' : 'Asignación agregada',
+      assignments: roleData.assignments
+    })
+  } catch (error) {
+    console.error('========== ERROR SAVING ROLE ASSIGNMENT ==========')
+    console.error('Error object:', error)
+    console.error('Error type:', typeof error)
+    console.error('Error is null?', error === null)
+    console.error('Error is undefined?', error === undefined)
+    
+    if (error) {
+      console.error('Error message:', error.message)
+      console.error('Error name:', error.name)
+      console.error('Error code:', error.code)
+      console.error('Error stack:', error.stack)
+    } else {
+      console.error('ERROR OBJECT IS NULL OR UNDEFINED!')
+    }
+    console.error('=================================================')
+    
+    // Always include error details - convert error to string safely
+    let errorMessage = 'Unknown error'
+    let errorType = 'Error'
+    let errorCode = 'NO_CODE'
+    let errorStack = undefined
+    
+    if (error) {
+      try {
+        errorMessage = error.message || String(error) || JSON.stringify(error) || 'Unknown error'
+        errorType = error.name || 'Error'
+        errorCode = error.code || String(error.errno) || 'NO_CODE'
+        errorStack = error.stack
+      } catch (e) {
+        errorMessage = String(error) || 'Unknown error'
+        console.error('Error converting error to string:', e)
+      }
+    } else {
+      errorMessage = 'Error object is null or undefined'
+    }
+    
+    const errorResponse = {
+      success: false,
+      message: 'Error al guardar asignación de rol',
+      error: errorMessage,
+      errorType: errorType,
+      errorCode: errorCode
+    }
+    
+    // Add full error info in development/non-production
+    if (process.env.NODE_ENV !== 'production') {
+      if (errorStack) {
+        errorResponse.stack = errorStack
+      }
+      if (error) {
+        errorResponse.fullError = {
+          name: error.name,
+          code: error.code,
+          errno: error.errno,
+          path: error.path,
+          syscall: error.syscall,
+          message: error.message
+        }
+      }
+    }
+    
+    console.log('Sending error response:', JSON.stringify(errorResponse, null, 2))
+    
+    // Make sure response hasn't been sent yet
+    if (!res.headersSent) {
+      res.status(500).json(errorResponse)
+    } else {
+      console.error('ERROR: Response already sent, cannot send error response!')
+    }
+  }
+})
+
+app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin']), [
+  body('role').isIn(['admin', 'coach', 'cliente']).withMessage('Rol inválido')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Datos inválidos',
+        errors: errors.array()
+      })
+    }
+
+    const { email } = req.params
+    const { role } = req.body
+    const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
+    const protectedEmail = 'pilatesmermaidweb@gmail.com'
+    const emailLower = email.toLowerCase()
+    
+    // Prevent changing role of protected email or self
+    if (emailLower === protectedEmail.toLowerCase() || emailLower === userEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'No puedes modificar el rol de este email'
+      })
+    }
+    
+    const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
+    
+    if (!fs.existsSync(roleAssignmentsPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Archivo de asignaciones no encontrado'
+      })
+    }
+
+    const roleData = JSON.parse(fs.readFileSync(roleAssignmentsPath, 'utf8'))
+    
+    // Find and update assignment
+    const assignmentIndex = roleData.assignments.findIndex(
+      (a) => a.email.toLowerCase() === emailLower
+    )
+    
+    if (assignmentIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Asignación no encontrada'
+      })
+    }
+    
+    roleData.assignments[assignmentIndex].role = role
+    
+    // Write back to file
+    fs.writeFileSync(roleAssignmentsPath, JSON.stringify(roleData, null, 2), 'utf8')
+
+    // CRITICAL: Also update the user's role in the database
+    try {
+      console.log(`🔄 Updating user role in database for email: ${email}`)
+      const existingUser = await database.getUserByEmail(email)
+      if (existingUser) {
+        await database.updateUser(existingUser.id, { role: role })
+        console.log(`✅ Updated user ${existingUser.id} (${email}) role to "${role}" in database`)
+      } else {
+        console.log(`ℹ️ User with email ${email} not found in database - will use role on next registration`)
+      }
+    } catch (dbError) {
+      console.error('⚠️ Error updating user role in database:', dbError)
+      // Don't fail the request - the JSON file was updated successfully
+    }
+
+    res.json({
+      success: true,
+      message: 'Rol actualizado exitosamente',
+      assignments: roleData.assignments
+    })
+  } catch (error) {
+    console.error('Error updating role assignment:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar asignación de rol'
+    })
+  }
+})
+
+app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { email } = req.params
+    const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
+    const protectedEmail = 'pilatesmermaidweb@gmail.com'
+    const emailLower = email.toLowerCase()
+    
+    // Prevent deletion of protected email
+    if (emailLower === protectedEmail.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        message: 'No se puede eliminar el email principal del sistema'
+      })
+    }
+    
+    // Prevent deletion of own email
+    if (emailLower === userEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'No puedes eliminar tu propio email'
+      })
+    }
+    
+    const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
+    
+    if (!fs.existsSync(roleAssignmentsPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Archivo de asignaciones no encontrado'
+      })
+    }
+
+    const roleData = JSON.parse(fs.readFileSync(roleAssignmentsPath, 'utf8'))
+    
+    // Remove assignment
+    roleData.assignments = roleData.assignments.filter(
+      (a) => a.email.toLowerCase() !== emailLower
+    )
+
+    // Write back to file
+    fs.writeFileSync(roleAssignmentsPath, JSON.stringify(roleData, null, 2), 'utf8')
+
+    res.json({
+      success: true,
+      message: 'Asignación eliminada',
+      assignments: roleData.assignments
+    })
+  } catch (error) {
+    console.error('Error deleting role assignment:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar asignación de rol'
     })
   }
 })
@@ -2239,6 +2898,32 @@ app.get('/api/users/:id/notification-settings', requireAuth, requireRole(['admin
   }
 })
 
+// Get user notifications
+app.get('/api/users/:id/notifications', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const user = req.user
+    const limit = parseInt(req.query.limit) || 50
+
+    if (user.id !== id && user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para ver estas notificaciones'
+      })
+    }
+
+    const notifications = await database.getUserNotifications(id, limit)
+
+    res.json({
+      success: true,
+      notifications
+    })
+  } catch (error) {
+    console.error('Get notifications error:', error)
+    res.status(500).json({ success: false, message: 'Error al obtener notificaciones' })
+  }
+})
+
 app.put('/api/users/:id/notification-settings', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
@@ -2331,7 +3016,7 @@ app.post('/api/admin/security/unblock-ip', requireAuth, requireRole(['admin']), 
     SecurityService.logSecurityEvent('IP_UNBLOCKED', {
       ip,
       adminId: req.user.id,
-      adminEmail: req.user.correo
+      adminEmail: req.user.email || req.user.correo || req.user._user?.correo
     })
     
     res.json({
@@ -2353,7 +3038,7 @@ app.post('/api/admin/security/clear-blocked-ips', requireAuth, requireRole(['adm
     
     SecurityService.logSecurityEvent('ALL_IPS_UNBLOCKED', {
       adminId: req.user.id,
-      adminEmail: req.user.correo
+      adminEmail: req.user.email || req.user.correo || req.user._user?.correo
     })
     
     res.json({
@@ -2548,8 +3233,8 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
     // Enviar email de confirmación
     try {
       await emailService.sendClassConfirmation(
-        req.user.correo,
-        req.user.nombre,
+        req.user.email || req.user.correo || req.user._user?.correo,
+        req.user.nombre || req.user._user?.nombre,
         classInfo.title,
         classInfo.date,
         classInfo.time,
