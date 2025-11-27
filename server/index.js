@@ -1,3 +1,9 @@
+// Ensure NODE_ENV is set for Railway/production deployments
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production'
+  console.log('⚠️ NODE_ENV not set, defaulting to production')
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 const express = require('express')
 const cors = require('cors')

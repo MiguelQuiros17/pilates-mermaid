@@ -20,8 +20,8 @@ const nextConfig = {
     //   appDir: true,
     // },
 
-    // Optimización para producción
-    output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
+    // Don't use standalone mode - we serve Next.js from Express in production
+    // output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
 
     // Configuración de imágenes
     images: {
