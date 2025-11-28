@@ -35,11 +35,13 @@ export interface Class {
   coach_name?: string
   date: string
   time: string
+  end_time?: string
   duration: number // in minutes
   max_capacity: number
   current_bookings: number
   status: 'scheduled' | 'completed' | 'cancelled'
   description?: string
+  instructors?: string[] | string
   created_at: string
   updated_at: string
 }

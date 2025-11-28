@@ -1,9 +1,3 @@
-// Ensure NODE_ENV is set for Railway/production deployments
-if (!process.env.NODE_ENV) {
-  process.env.NODE_ENV = 'production'
-  console.log('⚠️ NODE_ENV not set, defaulting to production')
-}
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 const express = require('express')
 const cors = require('cors')
@@ -762,7 +756,10 @@ app.post('/api/auth/login', preserveOriginalEmail, [
     })
     res.status(500).json({
       success: false,
-      message: 'Error interno del servidor'
+      message: 'Error interno del servidor',
+      // Always include error details in this environment to help debugging
+      error: error.message,
+      stack: error.stack
     })
   }
 })
@@ -1141,6 +1138,38 @@ app.get('/api/users/clients', requireAuth, requireRole(['admin']), async (req, r
     res.status(500).json({
       success: false,
       message: 'Error al obtener los clientes'
+    })
+  }
+})
+
+// Get all coaches (admin only)
+app.get('/api/users/coaches', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const allUsers = await database.all('SELECT * FROM users ORDER BY created_at DESC', [])
+    const coaches = allUsers.filter(user => user.role && user.role.toLowerCase() === 'coach')
+
+    console.log(`📋 [GET /api/users/coaches] Found ${coaches.length} coaches out of ${allUsers.length} total users`)
+
+    const safeCoaches = coaches.map(coach => ({
+      id: coach.id,
+      nombre: coach.nombre,
+      correo: coach.correo,
+      numero_de_telefono: coach.numero_de_telefono,
+      instagram: coach.instagram,
+      role: coach.role,
+      created_at: coach.created_at,
+      updated_at: coach.updated_at
+    }))
+
+    res.json({
+      success: true,
+      coaches: safeCoaches
+    })
+  } catch (error) {
+    console.error('Error fetching coaches:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener los coaches'
     })
   }
 })
@@ -3558,7 +3587,21 @@ app.put('/api/private-class-requests/:id/status', requireAuth, requireRole(['adm
 // Classes endpoints
 app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
-    const { title, type, coach_id, coach_name, client_id, client_name, date, time, duration, description, status } = req.body
+    const {
+      title,
+      type,
+      coach_id,
+      coach_name,
+      client_id,
+      client_name,
+      date,
+      time,
+      end_time,
+      duration,
+      description,
+      status,
+      instructors
+    } = req.body
 
     if (!title || !type || !coach_id || !date || !time || !duration) {
       return res.status(400).json({
@@ -3570,12 +3613,32 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
     const id = require('uuid').v4()
     const maxCapacity = type === 'private' ? 1 : 9
     const currentBookings = type === 'private' ? 1 : 0
+    const normalizedInstructors = Array.isArray(instructors)
+      ? JSON.stringify(instructors.slice(0, 10))
+      : instructors
+        ? JSON.stringify([instructors])
+        : null
 
     await database.run(`
       INSERT INTO classes (
-        id, title, type, coach_id, date, time, duration, max_capacity, current_bookings, status, description, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `, [id, title, type, coach_id, date, time, duration, maxCapacity, currentBookings, status || 'scheduled', description])
+        id, title, type, coach_id, date, time, end_time, duration, max_capacity,
+        current_bookings, status, description, instructors, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `, [
+      id,
+      title,
+      type,
+      coach_id,
+      date,
+      time,
+      end_time || null,
+      duration,
+      maxCapacity,
+      currentBookings,
+      status || 'scheduled',
+      description,
+      normalizedInstructors
+    ])
 
     // Si es una clase privada, agregar al historial de clases del cliente
     if (type === 'private' && client_id) {
@@ -3601,6 +3664,7 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
         type,
         coach_id,
         coach_name,
+        end_time: end_time || null,
         client_id,
         client_name,
         date,
@@ -3609,7 +3673,8 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
         max_capacity: maxCapacity,
         current_bookings: currentBookings,
         status: status || 'scheduled',
-        description
+        description,
+        instructors: normalizedInstructors ? JSON.parse(normalizedInstructors) : []
       }
     })
   } catch (error) {
@@ -3658,11 +3723,29 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
     // Aumentar el límite para incluir todas las clases hasta diciembre 2026
     query += ` WHERE c.date >= ? ORDER BY c.date ASC, c.time ASC LIMIT 5000`
     
-    const classes = await database.all(query, [todayStr])
+    const rawClasses = await database.all(query, [todayStr])
+
+    // Normalizar campo instructors a arreglo
+    const classes = rawClasses.map(cls => {
+      let instructors = []
+      if (cls.instructors) {
+        if (Array.isArray(cls.instructors)) {
+          instructors = cls.instructors
+        } else if (typeof cls.instructors === 'string') {
+          try {
+            const parsed = JSON.parse(cls.instructors)
+            instructors = Array.isArray(parsed) ? parsed : []
+          } catch {
+            instructors = []
+          }
+        }
+      }
+      return { ...cls, instructors }
+    })
     
     res.json({
       success: true,
-      classes: classes
+      classes
     })
   } catch (error) {
     console.error('Get classes error:', error)
@@ -3695,6 +3778,134 @@ app.get('/api/classes/:id/bookings', requireAuth, requireRole(['admin', 'coach']
     res.status(500).json({
       success: false,
       message: 'Error al obtener las reservas de la clase'
+    })
+  }
+})
+
+// Update class (admin/coach)
+app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const {
+      title,
+      date,
+      time,
+      end_time,
+      duration,
+      status,
+      description,
+      instructors
+    } = req.body
+
+    const updates = {}
+    if (title !== undefined) updates.title = title
+    if (date !== undefined) updates.date = date
+    if (time !== undefined) updates.time = time
+    if (end_time !== undefined) updates.end_time = end_time
+    if (duration !== undefined) updates.duration = duration
+    if (status !== undefined) updates.status = status
+    if (description !== undefined) updates.description = description
+    if (instructors !== undefined) updates.instructors = instructors
+
+    const updatedClass = await database.updateClass(id, updates)
+
+    if (!updatedClass) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    // Normalizar instructors a arreglo
+    let normalizedInstructors = []
+    if (updatedClass.instructors) {
+      try {
+        const parsed = JSON.parse(updatedClass.instructors)
+        normalizedInstructors = Array.isArray(parsed) ? parsed : []
+      } catch {
+        normalizedInstructors = []
+      }
+    }
+
+    res.json({
+      success: true,
+      class: { ...updatedClass, instructors: normalizedInstructors }
+    })
+  } catch (error) {
+    console.error('Update class error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Assign/change client for a private class
+app.post('/api/classes/:id/assign-client', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { client_id } = req.body
+
+    if (!client_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'client_id es requerido'
+      })
+    }
+
+    // Verify class exists
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    // Update class history to new client
+    await database.updateClassHistoryClient(id, client_id)
+
+    res.json({
+      success: true,
+      message: 'Cliente asignado exitosamente a la clase'
+    })
+  } catch (error) {
+    console.error('Assign client to class error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Delete class (admin only)
+app.delete('/api/classes/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Ensure class exists
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    // Delete related records
+    await database.run('DELETE FROM class_history WHERE class_id = ?', [id])
+    await database.run('DELETE FROM bookings WHERE class_id = ?', [id])
+    await database.run('DELETE FROM classes WHERE id = ?', [id])
+
+    res.json({
+      success: true,
+      message: 'Clase eliminada correctamente'
+    })
+  } catch (error) {
+    console.error('Delete class error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
     })
   }
 })

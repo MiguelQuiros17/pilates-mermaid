@@ -13,11 +13,33 @@ export default function ClassesPage() {
   const [user, setUser] = useState<User | null>(null)
   const [classes, setClasses] = useState<Class[]>([])
   const [clients, setClients] = useState<User[]>([])
+  const [coaches, setCoaches] = useState<User[]>([])
   const [activeView, setActiveView] = useState<'calendar' | 'list'>('calendar')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showPrivateClassModal, setShowPrivateClassModal] = useState(false)
+  const [privateClassClientId, setPrivateClassClientId] = useState<string>('')
+  const [privateClassDate, setPrivateClassDate] = useState<string>('')
+  const [privateClassTime, setPrivateClassTime] = useState<string>('')
+  const [privateClassEndTime, setPrivateClassEndTime] = useState<string>('')
+  const [isCreatingPrivateClass, setIsCreatingPrivateClass] = useState(false)
   const [userBookings, setUserBookings] = useState<any[]>([])
+
+  const [showEditClassModal, setShowEditClassModal] = useState(false)
+  const [editingClass, setEditingClass] = useState<Class | null>(null)
+  const [editDate, setEditDate] = useState<string>('')
+  const [editTime, setEditTime] = useState<string>('')
+  const [editEndTime, setEditEndTime] = useState<string>('')
+  const [editClientId, setEditClientId] = useState<string>('')
+  const [editInstructors, setEditInstructors] = useState<string[]>([])
+  const [editInstructorInput, setEditInstructorInput] = useState<string>('')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'cancel' | 'delete'
+    cls: Class
+  } | null>(null)
 
   // Helper function to get days in month
   const getDaysInMonth = (date: Date) => {
@@ -80,15 +102,52 @@ export default function ClassesPage() {
 
   const loadClients = useCallback(async () => {
     try {
-      const response = await fetch('/api/users/clients')
+      const token = localStorage.getItem('token')
+      if (!token) return
+
+      const response = await fetch(`${API_BASE_URL}/api/users/clients`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
       if (response.ok) {
         const data = await response.json()
-        setClients(data.users || [])
+        // Backend returns { success, clients: [...] }
+        const list = data.clients || data.users || []
+        setClients(list)
+      } else {
+        console.error('Error loading clients:', response.status, response.statusText)
+        setClients([])
       }
     } catch (error) {
       console.error('Error loading clients:', error)
+      setClients([])
     }
-  }, [])
+  }, [API_BASE_URL])
+
+  const loadCoaches = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) return
+
+      const response = await fetch(`${API_BASE_URL}/api/users/coaches`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const list = data.coaches || []
+        setCoaches(list)
+      } else {
+        console.error('Error loading coaches:', response.status, response.statusText)
+      }
+    } catch (error) {
+      console.error('Error loading coaches:', error)
+    }
+  }, [API_BASE_URL])
 
   const loadUserBookings = useCallback(async () => {
     try {
@@ -123,9 +182,15 @@ export default function ClassesPage() {
   useEffect(() => {
     if (user) {
       loadClasses()
-      loadClients()
+      // Solo admin necesita la lista completa de clientes y coaches
+      if (user.role === 'admin') {
+        loadClients()
+        loadCoaches()
+      } else if (user.role === 'coach') {
+        loadCoaches()
+      }
     }
-  }, [user, loadClasses, loadClients])
+  }, [user, loadClasses, loadClients, loadCoaches])
 
   useEffect(() => {
     if (user?.role === 'cliente') {
@@ -149,18 +214,27 @@ export default function ClassesPage() {
         })
       })
 
+      const data = await response.json().catch(() => ({}))
+
       if (response.ok) {
-        const data = await response.json()
-        alert('¡Clase reservada exitosamente!')
+        setNotification({
+          type: 'success',
+          message: '¡Clase reservada exitosamente!'
+        })
         loadClasses()
         loadUserBookings()
       } else {
-        const errorData = await response.json()
-        alert(errorData.message || 'Error al reservar la clase')
+        setNotification({
+          type: 'error',
+          message: data.message || 'Error al reservar la clase.'
+        })
       }
     } catch (error) {
       console.error('Error booking class:', error)
-      alert('Error al reservar la clase')
+      setNotification({
+        type: 'error',
+        message: 'Error al reservar la clase.'
+      })
     }
   }
 
@@ -178,22 +252,341 @@ export default function ClassesPage() {
         })
       })
 
+      const data = await response.json().catch(() => ({}))
+
       if (response.ok) {
-        alert('Reserva cancelada exitosamente')
+        setNotification({
+          type: 'success',
+          message: 'Reserva cancelada exitosamente.'
+        })
         loadClasses()
         loadUserBookings()
       } else {
-        const errorData = await response.json()
-        alert(errorData.message || 'Error al cancelar la reserva')
+        setNotification({
+          type: 'error',
+          message: data.message || 'Error al cancelar la reserva.'
+        })
       }
     } catch (error) {
       console.error('Error canceling booking:', error)
-      alert('Error al cancelar la reserva')
+      setNotification({
+        type: 'error',
+        message: 'Error al cancelar la reserva.'
+      })
     }
   }
 
   const isUserBooked = (classId: string) => {
     return userBookings.some(booking => booking.class_id === classId && booking.status === 'confirmed')
+  }
+
+  const autoFillEndTime = (startTime: string, currentEndTime: string, setEndTime: (value: string) => void) => {
+    if (!startTime || currentEndTime) return
+    const [hourStr, minuteStr] = startTime.split(':')
+    const hour = parseInt(hourStr, 10)
+    const minute = parseInt(minuteStr, 10) || 0
+    if (isNaN(hour)) return
+    const endHour = (hour + 1) % 24
+    const endTime = `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+    setEndTime(endTime)
+  }
+
+  const handleCreatePrivateClass = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+
+    if (!privateClassClientId || !privateClassDate || !privateClassTime) {
+      setNotification({
+        type: 'error',
+        message: 'Por favor selecciona un cliente, fecha y hora para la clase privada.'
+      })
+      return
+    }
+
+    if (coaches.length === 0) {
+      setNotification({
+        type: 'error',
+        message: 'No hay coaches disponibles para asignar a la sesión privada.'
+      })
+      return
+    }
+
+    try {
+      setIsCreatingPrivateClass(true)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('No hay token de autenticación')
+        return
+      }
+
+      const client = clients.find(c => c.id === privateClassClientId)
+
+      // Auto-add scheduling coach/admin to coaches list by name
+      const schedulingCoachName = user.nombre
+      let sessionCoaches = [schedulingCoachName]
+
+      // Ensure at least one coach and no more than 10
+      sessionCoaches = Array.from(new Set(sessionCoaches)).slice(0, 10)
+
+      let finalEndTime = privateClassEndTime
+      if (!finalEndTime && privateClassTime) {
+        // Auto-calc end time if missing
+        const [hourStr, minuteStr] = privateClassTime.split(':')
+        const hour = parseInt(hourStr, 10)
+        const minute = parseInt(minuteStr, 10) || 0
+        if (!isNaN(hour)) {
+          const endHour = (hour + 1) % 24
+          finalEndTime = `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+        }
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/classes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: 'Clase Privada',
+          type: 'private',
+          coach_id: user.id,
+          coach_name: user.nombre,
+          client_id: privateClassClientId,
+          client_name: client?.nombre || '',
+          date: privateClassDate,
+          time: privateClassTime,
+          end_time: finalEndTime || null,
+          duration: 60,
+          description: `Sesión privada dirigida por ${schedulingCoachName} para ${client?.nombre || 'cliente'}.`,
+          status: 'scheduled'
+        })
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (response.ok && data.success) {
+        setNotification({
+          type: 'success',
+          message: 'Sesión privada creada exitosamente.'
+        })
+        setShowPrivateClassModal(false)
+        setPrivateClassClientId('')
+        setPrivateClassDate('')
+        setPrivateClassTime('')
+        setPrivateClassEndTime('')
+        loadClasses()
+      } else {
+        setNotification({
+          type: 'error',
+          message: data.message || 'Error al crear la clase privada.'
+        })
+      }
+    } catch (error) {
+      console.error('Error creating private class:', error)
+      setNotification({
+        type: 'error',
+        message: 'Error de conexión al crear la clase privada.'
+      })
+    } finally {
+      setIsCreatingPrivateClass(false)
+    }
+  }
+
+  const openEditModal = (cls: Class) => {
+    setEditingClass(cls)
+    setEditDate(cls.date || '')
+    setEditTime(cls.time || '')
+    setEditEndTime(cls.end_time || '')
+
+    // For private classes, try to infer client from existing bookings if available
+    setEditClientId('') // Will be managed via separate API if needed
+
+    let instructorsList: string[] = []
+    if (Array.isArray(cls.instructors)) {
+      instructorsList = cls.instructors as string[]
+    } else if (typeof (cls as any).instructors === 'string') {
+      try {
+        const parsed = JSON.parse((cls as any).instructors)
+        instructorsList = Array.isArray(parsed) ? parsed : []
+      } catch {
+        instructorsList = []
+      }
+    }
+    setEditInstructors(instructorsList.slice(0, 10))
+    setEditInstructorInput('')
+    setShowEditClassModal(true)
+  }
+
+  const handleSaveEditClass = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingClass) return
+
+    try {
+      setIsSavingEdit(true)
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('No hay token de autenticación')
+        return
+      }
+
+      let finalEndTime = editEndTime
+      if (!finalEndTime && editTime) {
+        const [hourStr, minuteStr] = editTime.split(':')
+        const hour = parseInt(hourStr, 10)
+        const minute = parseInt(minuteStr, 10) || 0
+        if (!isNaN(hour)) {
+          const endHour = (hour + 1) % 24
+          finalEndTime = `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+        }
+      }
+
+      const updates: any = {
+        date: editDate,
+        time: editTime,
+        end_time: finalEndTime || null,
+        instructors: editInstructors
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updates)
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.success) {
+        setNotification({
+          type: 'error',
+          message: data.message || 'Error al actualizar la clase.'
+        })
+        return
+      }
+
+      // If client changed for private class, assign new client
+      if (editingClass.type === 'private' && editClientId) {
+        await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}/assign-client`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ client_id: editClientId })
+        }).catch(err => {
+          console.error('Error assigning client to class:', err)
+        })
+      }
+
+      setNotification({
+        type: 'success',
+        message: 'Clase actualizada exitosamente.'
+      })
+      setShowEditClassModal(false)
+      setEditingClass(null)
+      loadClasses()
+    } catch (error) {
+      console.error('Error saving class edit:', error)
+      setNotification({
+        type: 'error',
+        message: 'Error de conexión al actualizar la clase.'
+      })
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleCancelClass = async (cls: Class) => {
+    setConfirmAction({ type: 'cancel', cls })
+  }
+
+  const performCancelClass = async (cls: Class) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('No hay token de autenticación')
+        return
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: 'cancelled' })
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.success) {
+        setNotification({
+          type: 'error',
+          message: data.message || 'Error al cancelar la clase.'
+        })
+        return
+      }
+
+      setNotification({
+        type: 'success',
+        message: 'Clase cancelada exitosamente.'
+      })
+      loadClasses()
+    } catch (error) {
+      console.error('Error cancelling class:', error)
+      setNotification({
+        type: 'error',
+        message: 'Error de conexión al cancelar la clase.'
+      })
+    }
+  }
+
+  const handleDeleteClass = (cls: Class) => {
+    setConfirmAction({ type: 'delete', cls })
+  }
+
+  const performDeleteClass = async (cls: Class) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setNotification({
+          type: 'error',
+          message: 'No hay token de autenticación.'
+        })
+        return
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.success) {
+        setNotification({
+          type: 'error',
+          message: data.message || 'Error al eliminar la clase.'
+        })
+        return
+      }
+
+      setNotification({
+        type: 'success',
+        message: 'Clase eliminada exitosamente.'
+      })
+      loadClasses()
+    } catch (error) {
+      console.error('Error deleting class:', error)
+      setNotification({
+        type: 'error',
+        message: 'Error de conexión al eliminar la clase.'
+      })
+    }
   }
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -242,6 +635,51 @@ export default function ClassesPage() {
             <p className="text-gray-600">Cargando...</p>
           </div>
         </div>
+
+        {/* Modal de confirmación para cancelar / eliminar clase */}
+        {confirmAction && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9500]" onClick={() => setConfirmAction(null)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                {confirmAction.type === 'cancel' ? 'Confirmar cancelación' : 'Confirmar eliminación'}
+              </h3>
+              <p className="text-sm text-gray-700 mb-4">
+                {confirmAction.type === 'cancel'
+                  ? '¿Estás seguro de que deseas cancelar esta clase? Los clientes verán esta sesión como cancelada en su calendario.'
+                  : '¿Estás seguro de que deseas eliminar esta clase? Esta acción la removerá de todos los calendarios y registros visibles, lo que podría generar confusión en los clientes si la sesión ya estaba acordada. Se recomienda usar esta opción solo para corregir errores de programación evidentes.'}
+              </p>
+              <div className="mt-4 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction(null)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
+                >
+                  Volver
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = confirmAction
+                    setConfirmAction(null)
+                    if (!action) return
+                    if (action.type === 'cancel') {
+                      performCancelClass(action.cls)
+                    } else {
+                      performDeleteClass(action.cls)
+                    }
+                  }}
+                  className={`px-4 py-2 text-sm rounded-lg ${
+                    confirmAction.type === 'cancel'
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'bg-red-700 text-white hover:bg-red-800'
+                  }`}
+                >
+                  {confirmAction.type === 'cancel' ? 'Cancelar clase' : 'Eliminar clase'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </DashboardLayout>
     )
   }
@@ -308,6 +746,19 @@ export default function ClassesPage() {
           <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/5 rounded-full"></div>
         </div>
 
+
+        {/* Notificaciones */}
+        {notification && (
+          <div
+            className={`mt-4 p-3 rounded-lg text-sm ${
+              notification.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            {notification.message}
+          </div>
+        )}
 
         {/* Calendar View */}
         {activeView === 'calendar' && (
@@ -381,14 +832,21 @@ export default function ClassesPage() {
                         {day.getDate()}
                       </div>
                       <div className="space-y-1">
-                        {dayClasses.slice(0, user.role === 'cliente' ? 2 : 3).map(cls => (
-                          <div key={cls.id} className="space-y-1">
+                        {dayClasses.slice(0, user.role === 'cliente' ? 2 : 3).map(cls => {
+                          const isCancelled = cls.status === 'cancelled'
+                          return (
+                          <div
+                            key={cls.id}
+                            className={`space-y-1 rounded-lg p-1 ${
+                              isCancelled ? 'bg-red-50 border border-red-200' : ''
+                            }`}
+                          >
                             {user.role === 'cliente' ? (
                               <>
                                 <div
-                                  className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate`}
+                                  className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate ${isCancelled ? 'line-through opacity-70' : ''}`}
                                 >
-                                  {cls.time}
+                                  {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
                                 </div>
                                 <div className="flex justify-center">
                                   {isUserBooked(cls.id) ? (
@@ -421,14 +879,14 @@ export default function ClassesPage() {
                               </>
                             ) : (
                               <div 
-                                className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
-                                title={`${cls.time} - ${cls.current_bookings}/${cls.max_capacity} reservas - ${cls.coach_name}`}
+                                className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity ${isCancelled ? 'line-through bg-red-400/80' : ''}`}
+                                title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''} - ${cls.current_bookings}/${cls.max_capacity} reservas - ${cls.coach_name}`}
                               >
-                                {cls.time} ({cls.current_bookings}/{cls.max_capacity})
+                                {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} ({cls.current_bookings}/{cls.max_capacity})
                               </div>
                             )}
                           </div>
-                        ))}
+                          )})}
                         {dayClasses.length > (user.role === 'cliente' ? 2 : 3) && (
                           <div className="text-xs text-gray-500 font-medium">
                             +{dayClasses.length - (user.role === 'cliente' ? 2 : 3)} más
@@ -500,7 +958,7 @@ export default function ClassesPage() {
                             </span>
                           </div>
                         </div>
-                        <div className="ml-4 text-right">
+                        <div className="ml-4 text-right space-y-2">
                           <div className="text-sm font-semibold text-gray-900 mb-1">
                             {cls.current_bookings}/{cls.max_capacity} reservas
                           </div>
@@ -516,6 +974,31 @@ export default function ClassesPage() {
                             ></div>
                           </div>
                         </div>
+                        {(user.role === 'admin' || user.role === 'coach') && (
+                          <div className="mt-3 flex items-center justify-end space-x-3 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(cls)}
+                              className="px-3 py-1 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelClass(cls)}
+                              className="px-3 py-1 rounded-lg border border-red-300 text-red-600 hover:bg-red-50"
+                            >
+                              Cancelar clase
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClass(cls)}
+                              className="px-3 py-1 rounded-lg border border-red-500 text-red-700 hover:bg-red-50"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
@@ -548,10 +1031,16 @@ export default function ClassesPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {classes.map((cls, index) => (
+                  {classes.map((cls, index) => {
+                    const isCancelled = cls.status === 'cancelled'
+                    return (
                     <motion.div 
                       key={cls.id} 
-                      className="group relative bg-white border-2 border-gray-200 rounded-xl p-6 hover:shadow-lg hover:border-gray-300 transition-all duration-300"
+                      className={`group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 ${
+                        isCancelled
+                          ? 'bg-red-50 border-red-300 hover:border-red-400'
+                          : 'bg-white border-gray-200 hover:border-gray-300'
+                      }`}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
@@ -559,7 +1048,11 @@ export default function ClassesPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-4 mb-3">
-                            <h4 className="text-lg font-semibold text-gray-900">{cls.title}</h4>
+                            <h4 className={`text-lg font-semibold ${isCancelled ? 'text-red-800 line-through' : 'text-gray-900'}`}>
+                              {cls.title || (cls.type === 'private'
+                                ? `${(clients.find(c => c.id === (cls as any).client_id)?.nombre || 'Cliente')} - Sesión Privada`
+                                : 'Clase')}
+                            </h4>
                             <span className={`px-3 py-1 text-xs font-medium rounded-full ${
                               cls.type === 'group' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
                             }`}>
@@ -568,7 +1061,7 @@ export default function ClassesPage() {
                             <span className={`px-3 py-1 text-xs font-medium rounded-full ${
                               cls.status === 'scheduled' ? 'bg-green-100 text-green-800' :
                               cls.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                              'bg-red-100 text-red-800'
+                              'bg-red-200 text-red-900 border border-red-400'
                             }`}>
                               {cls.status === 'scheduled' ? 'Programada' :
                                cls.status === 'completed' ? 'Completada' : 'Cancelada'}
@@ -576,7 +1069,7 @@ export default function ClassesPage() {
                           </div>
                           
                           <div className="flex items-center flex-wrap gap-4 text-sm text-gray-600">
-                            <span className="flex items-center">
+                            <span className={`flex items-center ${isCancelled ? 'line-through text-red-700' : ''}`}>
                               <Calendar className="h-4 w-4 mr-1.5 text-gray-500" />
                               {new Date(cls.date + 'T00:00:00').toLocaleDateString('es-ES', { 
                                 weekday: 'long', 
@@ -585,10 +1078,15 @@ export default function ClassesPage() {
                                 day: 'numeric' 
                               })}
                             </span>
-                            <span className="flex items-center">
+                            <span className={`flex items-center ${isCancelled ? 'line-through text-red-700' : ''}`}>
                               <Clock className="h-4 w-4 mr-1.5 text-gray-500" />
-                              {cls.time}
+                              {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
                             </span>
+                            {isCancelled && (
+                              <span className="text-xs text-red-700 font-medium">
+                                Esta clase ha sido cancelada.
+                              </span>
+                            )}
                             <span>Duración: {cls.duration} min</span>
                             <span>Coach: {cls.coach_name || 'No asignado'}</span>
                           </div>
@@ -639,7 +1137,7 @@ export default function ClassesPage() {
                           )}
                           
                           {(user.role === 'admin' || user.role === 'coach') && (
-                            <div className="text-sm text-gray-500">
+                            <div className="text-sm text-gray-500 space-y-1">
                               <div className="flex items-center space-x-2">
                                 <div className={`w-3 h-3 rounded-full ${
                                   (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
@@ -651,6 +1149,16 @@ export default function ClassesPage() {
                                   {Math.round((cls.current_bookings / cls.max_capacity) * 100)}% ocupación
                                 </span>
                               </div>
+                              {Array.isArray((cls as any).instructors) && (cls as any).instructors.length > 0 && (
+                                <div className="flex flex-wrap gap-1 text-xs text-gray-500">
+                                  <span className="font-medium mr-1">Instructores:</span>
+                                  {(cls as any).instructors.map((inst: string, idx: number) => (
+                                    <span key={idx} className="px-2 py-0.5 bg-gray-100 rounded-full">
+                                      {inst}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -669,13 +1177,17 @@ export default function ClassesPage() {
             <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Crear Clase Privada</h3>
               
-              <form onSubmit={(e) => e.preventDefault()}>
+              <form onSubmit={handleCreatePrivateClass}>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Cliente
                     </label>
-                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassClientId}
+                      onChange={(e) => setPrivateClassClientId(e.target.value)}
+                    >
                       <option value="">Seleccionar cliente</option>
                       {clients.map(client => (
                         <option key={client.id} value={client.id}>
@@ -692,17 +1204,37 @@ export default function ClassesPage() {
                     <input
                       type="date"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassDate}
+                      onChange={(e) => setPrivateClassDate(e.target.value)}
                     />
                   </div>
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Hora
+                      Hora de inicio
                     </label>
                     <input
                       type="time"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassTime}
+                      onChange={(e) => setPrivateClassTime(e.target.value)}
+                      onBlur={() => autoFillEndTime(privateClassTime, privateClassEndTime, setPrivateClassEndTime)}
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hora de término
+                    </label>
+                    <input
+                      type="time"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassEndTime}
+                      onChange={(e) => setPrivateClassEndTime(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Si dejas este campo vacío, se establecerá automáticamente 1 hora después de la hora de inicio.
+                    </p>
                   </div>
                 </div>
                 
@@ -716,9 +1248,158 @@ export default function ClassesPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    disabled={isCreatingPrivateClass}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
-                    Crear Clase
+                    {isCreatingPrivateClass ? 'Creando...' : 'Crear Clase'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal para editar clase */}
+        {showEditClassModal && editingClass && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9000]" onClick={() => setShowEditClassModal(false)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Editar Clase</h3>
+              
+              <form onSubmit={handleSaveEditClass}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Fecha
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hora de inicio
+                    </label>
+                    <input
+                      type="time"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={editTime}
+                      onChange={(e) => setEditTime(e.target.value)}
+                      onBlur={() => autoFillEndTime(editTime, editEndTime, setEditEndTime)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hora de término
+                    </label>
+                    <input
+                      type="time"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={editEndTime}
+                      onChange={(e) => setEditEndTime(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Si dejas este campo vacío, se establecerá automáticamente 1 hora después de la hora de inicio.
+                    </p>
+                  </div>
+
+                  {editingClass.type === 'private' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Cliente (para quién es la clase)
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editClientId}
+                        onChange={(e) => setEditClientId(e.target.value)}
+                      >
+                        <option value="">(No cambiar)</option>
+                        {clients.map(client => (
+                          <option key={client.id} value={client.id}>
+                            {client.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Si no seleccionas un cliente, se mantendrá el actual.
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Instructores (máx. 10)
+                    </label>
+                    <div className="flex space-x-2 mb-2">
+                      <input
+                        type="text"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editInstructorInput}
+                        onChange={(e) => setEditInstructorInput(e.target.value)}
+                        placeholder="Nombre del instructor"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const name = editInstructorInput.trim()
+                          if (!name) return
+                          if (editInstructors.length >= 10) {
+                            alert('Máximo 10 instructores por sesión')
+                            return
+                          }
+                          setEditInstructors([...editInstructors, name])
+                          setEditInstructorInput('')
+                        }}
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        Añadir
+                      </button>
+                    </div>
+                    {editInstructors.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {editInstructors.map((inst, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-700"
+                          >
+                            {inst}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditInstructors(editInstructors.filter((_, i) => i !== idx))
+                              }}
+                              className="ml-1 text-gray-500 hover:text-gray-700"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditClassModal(false)
+                      setEditingClass(null)
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {isSavingEdit ? 'Guardando...' : 'Guardar cambios'}
                   </button>
                 </div>
               </form>

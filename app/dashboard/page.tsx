@@ -446,44 +446,119 @@ export default function DashboardPage() {
           >
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Tu Resumen</h3>
             
-            {/* Show message if no package */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-              <div className="flex items-center space-x-2 mb-2">
-                <AlertCircle className="h-5 w-5 text-yellow-600" />
-                <h4 className="text-sm font-medium text-yellow-900">Sin Paquete Activo</h4>
+            {/* Package status */}
+            {activePackage ? (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <div>
+                      <h4 className="text-sm font-medium text-green-900">Paquete Activo</h4>
+                      <p className="text-sm text-green-800">
+                        {activePackage.package_name || activePackage.package_type || userStats?.packageType || 'Paquete de clases'}
+                      </p>
+                    </div>
+                  </div>
+                  {activePackage.end_date && (
+                    <p className="text-xs text-green-800">
+                      Válido hasta:{' '}
+                      {new Date(activePackage.end_date).toLocaleDateString('es-ES')}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-green-700">
+                  Disfruta tus clases. Puedes ver tu paquete completo en la sección &quot;Mi Paquete&quot;.
+                </p>
               </div>
-              <p className="text-sm text-yellow-700 mb-3">
-                Aún no tienes un paquete de clases activo. Contacta por WhatsApp para elegir y comprar tu paquete.
-              </p>
-              <button
-                onClick={() => {
-                  const message = `Hola, soy ${user.nombre}. Quiero comprar un paquete de clases. ¿Podrían ayudarme a elegir el paquete que más me convenga?`
-                  const url = `https://wa.me/5259581062606?text=${encodeURIComponent(message)}`
-                  window.open(url, '_blank')
-                }}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
-              >
-                Contactar por WhatsApp
-              </button>
-            </div>
+            ) : (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                  <h4 className="text-sm font-medium text-yellow-900">Sin Paquete Activo</h4>
+                </div>
+                <p className="text-sm text-yellow-700 mb-3">
+                  Aún no tienes un paquete de clases activo. Contacta por WhatsApp para elegir y comprar tu paquete.
+                </p>
+                <button
+                  onClick={() => {
+                    const message = `Hola, soy ${user.nombre}. Quiero comprar un paquete de clases. ¿Podrían ayudarme a elegir el paquete que más me convenga?`
+                    const url = `https://wa.me/5259581062606?text=${encodeURIComponent(message)}`
+                    window.open(url, '_blank')
+                  }}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
+                >
+                  Contactar por WhatsApp
+                </button>
+              </div>
+            )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <Calendar className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">0</p>
-                <p className="text-sm text-gray-600">Clases Restantes</p>
-              </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">0</p>
-                <p className="text-sm text-gray-600">Clases Asistidas</p>
-              </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                <Clock className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">-</p>
-                <p className="text-sm text-gray-600">Días Restantes</p>
-              </div>
-            </div>
+            {(() => {
+              const remaining = userStats?.remaining ?? 0
+              const totalClasses =
+                activePackage && typeof activePackage.classes_included === 'number'
+                  ? activePackage.classes_included
+                  : activePackage && activePackage.package_type
+                  ? // Fallback: try to infer from package type using the same mapping as backend
+                    ({
+                      'Clase Prueba': 1,
+                      '1 Clase Grupal': 1,
+                      '4 Clases Grupales': 4,
+                      '8 Clases Grupales': 8,
+                      '12 Clases Grupales': 12,
+                      'Clases Grupales Ilimitadas': 999,
+                      '1 Clase Privada': 1,
+                      '4 Clases Privadas': 4,
+                      '8 Clases Privadas': 8,
+                      '12 Clases Privadas': 12,
+                      '16 Clases Privadas': 16,
+                      '20 Clases Privadas': 20
+                    } as any)[activePackage.package_type] || 0
+                  : 0
+
+              const isUnlimited =
+                activePackage?.package_type === 'Clases Grupales Ilimitadas' ||
+                totalClasses === 999
+
+              const taken =
+                isUnlimited || totalClasses === 0
+                  ? null
+                  : Math.max(0, totalClasses - remaining)
+
+              let daysRemainingDisplay: string | number = '-'
+              if (activePackage?.end_date) {
+                const today = new Date()
+                const end = new Date(activePackage.end_date)
+                const diffMs = end.getTime() - today.getTime()
+                const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+                daysRemainingDisplay = diffDays < 0 ? 0 : diffDays
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <Calendar className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-gray-900">
+                      {isUnlimited ? '∞' : remaining}
+                    </p>
+                    <p className="text-sm text-gray-600">Clases Restantes</p>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-gray-900">
+                      {taken === null ? '-' : taken}
+                    </p>
+                    <p className="text-sm text-gray-600">Clases Asistidas (estimadas)</p>
+                  </div>
+                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                    <Clock className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-gray-900">
+                      {daysRemainingDisplay}
+                    </p>
+                    <p className="text-sm text-gray-600">Días Restantes</p>
+                  </div>
+                </div>
+              )
+            })()}
           </motion.div>
         )}
 
