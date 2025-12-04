@@ -696,15 +696,26 @@ export default function ClassesPage(): JSX.Element {
           : []
         if (Array.isArray(assigned)) {
           setGroupClassClientIds(assigned)
+        } else {
+          setGroupClassClientIds([])
         }
       } catch {
         setGroupClassClientIds([])
       }
-      setIsPublic((cls as any).is_public !== 0)
-      setWalkInsWelcome((cls as any).walk_ins_welcome !== 0)
-      setIsRecurring(!!Number((cls as any).is_recurring || 0))
+      // Properly handle SQLite boolean values (can be 0, 1, "0", "1", null, undefined)
+      setIsPublic(Number((cls as any).is_public || 0) === 1)
+      setWalkInsWelcome(Number((cls as any).walk_ins_welcome || 0) === 1)
+      setIsRecurring(Number((cls as any).is_recurring || 0) === 1)
       setRecurrenceEndDate((cls as any).recurrence_end_date || '')
-      setGroupMaxCapacity((cls as any).max_capacity || 10)
+      setGroupMaxCapacity(Number((cls as any).max_capacity) || 10)
+    } else {
+      // Reset group-specific states when editing a private class
+      setGroupClassClientIds([])
+      setIsPublic(true)
+      setWalkInsWelcome(true)
+      setIsRecurring(false)
+      setRecurrenceEndDate('')
+      setGroupMaxCapacity(10)
     }
 
     // Set the coach ID if available
@@ -756,7 +767,7 @@ export default function ClassesPage(): JSX.Element {
         description: editDescription
       }
 
-      // If coach changed, update coach_id and coach_name
+      // Always update coach_id and coach_name if a coach is selected
       if (editCoachId) {
         const selectedCoach = coaches.find(c => c.id === editCoachId)
         if (selectedCoach) {
@@ -767,11 +778,23 @@ export default function ClassesPage(): JSX.Element {
 
       // If editing a group class, allow updating group options
       if (editingClass.type === 'group') {
+        // Always send all group-specific fields explicitly
         updates.assigned_client_ids = JSON.stringify(groupClassClientIds || [])
-        updates.is_public = isPublic
-        updates.walk_ins_welcome = walkInsWelcome
-        updates.is_recurring = isRecurring
-        updates.recurrence_end_date = isRecurring && recurrenceEndDate ? recurrenceEndDate : null
+        updates.is_public = Boolean(isPublic)
+        updates.walk_ins_welcome = Boolean(walkInsWelcome)
+        updates.is_recurring = Boolean(isRecurring)
+        // Always send recurrence_end_date - null if not recurring or no end date
+        updates.recurrence_end_date = (updates.is_recurring && recurrenceEndDate) ? recurrenceEndDate : null
+        updates.max_capacity = Number(groupMaxCapacity) || 10
+        
+        console.log('Saving group class updates:', {
+          assigned_client_ids: updates.assigned_client_ids,
+          is_public: updates.is_public,
+          walk_ins_welcome: updates.walk_ins_welcome,
+          is_recurring: updates.is_recurring,
+          recurrence_end_date: updates.recurrence_end_date,
+          max_capacity: updates.max_capacity
+        })
       }
 
       const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
@@ -1694,6 +1717,22 @@ export default function ClassesPage(): JSX.Element {
                           <span className="text-sm text-gray-700">Clase recurrente (semanal)</span>
                         </label>
                       </div>
+                      {isRecurring && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Fecha de finalización de recurrencia
+                          </label>
+                          <input
+                            type="date"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={recurrenceEndDate}
+                            onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                          />
+                          <p className="mt-1 text-xs text-gray-500">
+                            Deja este campo vacío para que la clase se repita indefinidamente.
+                          </p>
+                        </div>
+                      )}
                       <div className="mt-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           Máximo de asistentes
@@ -1808,141 +1847,6 @@ export default function ClassesPage(): JSX.Element {
                       </p>
                     )}
                   </div>
-
-                  {editingClass && editingClass.type === 'group' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Agregar / Editar Clientes (Opcional)
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Buscar cliente..."
-                            value={groupClassClientSearch}
-                            onChange={(e) => setGroupClassClientSearch(e.target.value)}
-                          />
-                          {groupClassClientSearch && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                              {clients
-                                .filter(c =>
-                                  c.nombre.toLowerCase().includes(groupClassClientSearch.toLowerCase()) &&
-                                  !groupClassClientIds.includes(c.id)
-                                )
-                                .map(client => (
-                                  <div
-                                    key={client.id}
-                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                                    onClick={() => {
-                                      setGroupClassClientIds([...groupClassClientIds, client.id])
-                                      setGroupClassClientSearch('')
-                                    }}
-                                  >
-                                    {client.nombre}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                        {groupClassClientIds.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {groupClassClientIds.map(clientId => {
-                              const client = clients.find(c => c.id === clientId)
-                              return client ? (
-                                <span
-                                  key={clientId}
-                                  className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                                >
-                                  {client.nombre}
-                                  <button
-                                    type="button"
-                                    onClick={() => setGroupClassClientIds(groupClassClientIds.filter(id => id !== clientId))}
-                                    className="ml-2 text-blue-600 hover:text-blue-800"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ) : null
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-4">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={isPublic}
-                            onChange={(e) => setIsPublic(e.target.checked)}
-                            className="mr-2"
-                          />
-                          <span className="text-sm text-gray-700">Clase pública (visible y unirse)</span>
-                        </label>
-                      </div>
-                      <div className="flex items-center space-x-4">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={walkInsWelcome}
-                            onChange={(e) => setWalkInsWelcome(e.target.checked)}
-                            className="mr-2"
-                          />
-                          <span className="text-sm text-gray-700">Walk-ins bienvenidos</span>
-                        </label>
-                      </div>
-
-                      <div className="flex items-center space-x-4">
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={isRecurring}
-                            onChange={(e) => setIsRecurring(e.target.checked)}
-                            className="mr-2"
-                          />
-                          <span className="text-sm text-gray-700">Clase recurrente (semanal)</span>
-                        </label>
-                      </div>
-
-                      {isRecurring && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Fecha de finalización de recurrencia
-                          </label>
-                          <input
-                            type="date"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={recurrenceEndDate}
-                            onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                          />
-                        </div>
-                      )}
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Máximo de asistentes
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={9999}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={groupMaxCapacity}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value, 10)
-                            if (isNaN(value)) {
-                              setGroupMaxCapacity(10)
-                            } else {
-                              setGroupMaxCapacity(Math.max(1, Math.min(value, 9999)))
-                            }
-                          }}
-                        />
-                        <p className="mt-1 text-xs text-gray-500">
-                          La capacidad mínima es de 1 asistente.
-                        </p>
-                      </div>
-                    </>
-                  )}
                 </div>
 
                 {/* Error message inside modal */}

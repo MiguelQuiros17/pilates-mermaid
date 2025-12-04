@@ -4169,6 +4169,8 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
       status,
       description,
       instructors,
+      coach_id,
+      coach_name,
       is_recurring,
       recurrence_end_date,
       is_public,
@@ -4186,12 +4188,16 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
     if (status !== undefined) updates.status = status
     if (description !== undefined) updates.description = description
     if (instructors !== undefined) updates.instructors = instructors
+    if (coach_id !== undefined) updates.coach_id = coach_id
+    if (coach_name !== undefined) updates.coach_name = coach_name
     if (is_recurring !== undefined) updates.is_recurring = is_recurring ? 1 : 0
     if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
     if (is_public !== undefined) updates.is_public = is_public ? 1 : 0
     if (walk_ins_welcome !== undefined) updates.walk_ins_welcome = walk_ins_welcome ? 1 : 0
     if (assigned_client_ids !== undefined) updates.assigned_client_ids = assigned_client_ids
     if (max_capacity !== undefined) updates.max_capacity = max_capacity
+
+    console.log('Updating class:', id, 'with updates:', JSON.stringify(updates, null, 2))
 
     const updatedClass = await database.updateClass(id, updates)
 
