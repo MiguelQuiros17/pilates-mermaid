@@ -33,6 +33,152 @@ interface Client {
   updated_at?: string
 }
 
+// Package Assignment Component
+function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: string, onPackageAdded: () => void }) {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const [selectedGroupPackage, setSelectedGroupPackage] = useState('')
+  const [selectedPrivatePackage, setSelectedPrivatePackage] = useState('')
+  const [groupAutoRenew, setGroupAutoRenew] = useState(false)
+  const [privateAutoRenew, setPrivateAutoRenew] = useState(false)
+  const [isAssigning, setIsAssigning] = useState(false)
+
+  const groupPackages = [
+    { id: '1', name: 'Clase Prueba', classes: 1 },
+    { id: '2', name: '1 Clase Grupal', classes: 1 },
+    { id: '3', name: '4 Clases Grupales', classes: 4 },
+    { id: '4', name: '8 Clases Grupales', classes: 8 },
+    { id: '5', name: '12 Clases Grupales', classes: 12 },
+    { id: '6', name: 'Clases Grupales Ilimitadas', classes: 999 }
+  ]
+
+  const privatePackages = [
+    { id: '7', name: '1 Clase Privada', classes: 1 },
+    { id: '8', name: '4 Clases Privadas', classes: 4 },
+    { id: '9', name: '8 Clases Privadas', classes: 8 },
+    { id: '10', name: '12 Clases Privadas', classes: 12 },
+    { id: '11', name: '15 Clases Privadas', classes: 15 },
+    { id: '12', name: '20 Clases Privadas', classes: 20 }
+  ]
+
+  const handleAssignPackage = async (packageId: string, category: 'Grupal' | 'Privada', autoRenew: boolean) => {
+    if (!clientId || !packageId) return
+
+    setIsAssigning(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('No hay token de autenticación')
+        return
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/packages/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          clientId,
+          packageId,
+          autoRenew,
+          overrideNegativeBalance: true // Default to override
+        })
+      })
+
+      if (response.ok) {
+        alert('Paquete asignado exitosamente')
+        onPackageAdded()
+        if (category === 'Grupal') {
+          setSelectedGroupPackage('')
+          setGroupAutoRenew(false)
+        } else {
+          setSelectedPrivatePackage('')
+          setPrivateAutoRenew(false)
+        }
+      } else {
+        const data = await response.json()
+        alert(data.message || 'Error al asignar paquete')
+      }
+    } catch (error) {
+      console.error('Error assigning package:', error)
+      alert('Error al asignar paquete')
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+      <h4 className="text-md font-semibold text-gray-900 mb-3">Agregar Nuevo Paquete</h4>
+      
+      {/* Group Package Assignment */}
+      <div className="border-b border-gray-200 pb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Paquete Grupal</label>
+        <div className="flex items-center space-x-2">
+          <select
+            value={selectedGroupPackage}
+            onChange={(e) => setSelectedGroupPackage(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">Seleccionar paquete grupal...</option>
+            {groupPackages.map(pkg => (
+              <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes} clases)</option>
+            ))}
+          </select>
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={groupAutoRenew}
+              onChange={(e) => setGroupAutoRenew(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-sm text-gray-700">Auto-renovar</span>
+          </label>
+          <button
+            onClick={() => handleAssignPackage(selectedGroupPackage, 'Grupal', groupAutoRenew)}
+            disabled={!selectedGroupPackage || isAssigning}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+          >
+            Agregar
+          </button>
+        </div>
+      </div>
+
+      {/* Private Package Assignment */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Paquete Privado</label>
+        <div className="flex items-center space-x-2">
+          <select
+            value={selectedPrivatePackage}
+            onChange={(e) => setSelectedPrivatePackage(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">Seleccionar paquete privado...</option>
+            {privatePackages.map(pkg => (
+              <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes} clases)</option>
+            ))}
+          </select>
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={privateAutoRenew}
+              onChange={(e) => setPrivateAutoRenew(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-sm text-gray-700">Auto-renovar</span>
+          </label>
+          <button
+            onClick={() => handleAssignPackage(selectedPrivatePackage, 'Privada', privateAutoRenew)}
+            disabled={!selectedPrivatePackage || isAssigning}
+            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+          >
+            Agregar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 export default function ClientsPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [clients, setClients] = useState<Client[]>([])
@@ -46,6 +192,13 @@ export default function ClientsPage() {
   const [showPackageModal, setShowPackageModal] = useState(false)
   const [packageHistory, setPackageHistory] = useState<any[]>([])
   const [activePackage, setActivePackage] = useState<any>(null)
+  const [activeGroupPackage, setActiveGroupPackage] = useState<any>(null)
+  const [activePrivatePackage, setActivePrivatePackage] = useState<any>(null)
+  const [classCounts, setClassCounts] = useState<{private: number, group: number}>({private: 0, group: 0})
+  const [editingPackageId, setEditingPackageId] = useState<string | null>(null)
+  const [editingPackageAutoRenew, setEditingPackageAutoRenew] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null)
 
   const fetchClients = async () => {
     try {
@@ -99,10 +252,22 @@ export default function ClientsPage() {
   }, [])
 
   const filteredClients = clients.filter(client => {
-    const matchesSearch = client.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         client.correo.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesPackage = !selectedPackage || client.type_of_class === selectedPackage
-    return matchesSearch && matchesPackage
+    const matchesSearch =
+      client.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      client.correo.toLowerCase().includes(searchTerm.toLowerCase())
+
+    if (!selectedPackage) return matchesSearch
+
+    // Filtros especiales por tipo de clase
+    if (selectedPackage === 'all_private') {
+      return matchesSearch && client.type_of_class?.toLowerCase().includes('privad')
+    }
+    if (selectedPackage === 'all_group') {
+      return matchesSearch && client.type_of_class?.toLowerCase().includes('grupal')
+    }
+
+    // Filtros por paquete específico (usando el texto guardado en type_of_class)
+    return matchesSearch && client.type_of_class === selectedPackage
   })
 
   const handleViewClient = (client: Client) => {
@@ -115,10 +280,13 @@ export default function ClientsPage() {
     setShowEditModal(true)
   }
 
-  const handleDeleteClient = async (client: Client) => {
-    if (!confirm(`¿Estás seguro de que quieres eliminar a ${client.nombre}? Esta acción no se puede deshacer.`)) {
-      return
-    }
+  const handleDeleteClientRequest = (client: Client) => {
+    setClientToDelete(client)
+    setShowDeleteModal(true)
+  }
+
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return
 
     try {
       const token = localStorage.getItem('token')
@@ -127,7 +295,7 @@ export default function ClientsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/users/${client.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${clientToDelete.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -135,10 +303,9 @@ export default function ClientsPage() {
       })
 
       if (response.ok) {
-        // Remove from local state
-        setClients(clients.filter(c => c.id !== client.id))
-        alert('Cliente eliminado exitosamente')
-        // Refresh clients list to get latest data
+        setClients(prev => prev.filter(c => c.id !== clientToDelete.id))
+        setShowDeleteModal(false)
+        setClientToDelete(null)
         fetchClients()
       } else {
         const errorData = await response.json().catch(() => ({ message: 'Error al eliminar el cliente' }))
@@ -164,9 +331,25 @@ export default function ClientsPage() {
       if (response.ok) {
         const data = await response.json()
         setPackageHistory(data.packageHistory || [])
-        setActivePackage(data.activePackage)
+        setActivePackage(data.activePackage) // For backward compatibility
+        setActiveGroupPackage(data.activeGroupPackage)
+        setActivePrivatePackage(data.activePrivatePackage)
         setSelectedClient(client)
         setShowPackageModal(true)
+
+        // Load class counts
+        const countsResponse = await fetch(`${API_BASE_URL}/api/users/${client.id}/class-counts`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        if (countsResponse.ok) {
+          const countsData = await countsResponse.json()
+          setClassCounts({
+            private: countsData.private_classes_remaining || 0,
+            group: countsData.group_classes_remaining || 0
+          })
+        }
       } else {
         alert('Error al cargar el historial de paquetes')
       }
@@ -234,10 +417,6 @@ export default function ClientsPage() {
               Administra todos los clientes del estudio
             </p>
           </div>
-          <button className="btn-primary mt-4 sm:mt-0">
-            <Plus className="h-5 w-5 mr-2" />
-            Nuevo Cliente
-          </button>
         </div>
 
         {/* Filters */}
@@ -255,20 +434,27 @@ export default function ClientsPage() {
                 />
               </div>
             </div>
-            <div className="sm:w-48">
+            <div className="sm:w-64">
               <select
                 className="input-field"
                 value={selectedPackage}
                 onChange={(e) => setSelectedPackage(e.target.value)}
               >
-                <option value="">Todos los paquetes</option>
-                <option value="Cortesía">Cortesía</option>
-                <option value="Muestra">Muestra</option>
-                <option value="Individual">Individual</option>
-                <option value="4">4 clases</option>
-                <option value="8">8 clases</option>
-                <option value="12">12 clases</option>
-                <option value="Ilimitado">Ilimitado</option>
+                <option value="">Todos los clientes</option>
+                <option value="all_private">Clientes con paquete privado</option>
+                <option value="all_group">Clientes con paquete grupal</option>
+                <option disabled>──────────</option>
+                <option value="1 Clase Grupal">1 Clase Grupal</option>
+                <option value="4 Clases Grupales">4 Clases Grupales</option>
+                <option value="8 Clases Grupales">8 Clases Grupales</option>
+                <option value="12 Clases Grupales">12 Clases Grupales</option>
+                <option value="Clases Grupales Ilimitadas">Clases Grupales Ilimitadas</option>
+                <option value="1 Clase Privada">1 Clase Privada</option>
+                <option value="4 Clases Privadas">4 Clases Privadas</option>
+                <option value="8 Clases Privadas">8 Clases Privadas</option>
+                <option value="12 Clases Privadas">12 Clases Privadas</option>
+                <option value="15 Clases Privadas">15 Clases Privadas</option>
+                <option value="20 Clases Privadas">20 Clases Privadas</option>
               </select>
             </div>
           </div>
@@ -417,7 +603,7 @@ export default function ClientsPage() {
                         <Package className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteClient(client)}
+                        onClick={() => handleDeleteClientRequest(client)}
                         className="text-red-600 hover:text-red-900"
                         title="Eliminar cliente"
                       >
@@ -585,8 +771,6 @@ export default function ClientsPage() {
                 correo: String(formData.get('correo') || ''),
                 numero_de_telefono: String(formData.get('numero_de_telefono') || ''),
                 instagram: formData.get('instagram') ? String(formData.get('instagram')) : undefined,
-                type_of_class: String(formData.get('type_of_class') || 'Sin paquete'),
-                expiration_date: formData.get('expiration_date') ? String(formData.get('expiration_date')) : null,
                 cumpleanos: formData.get('cumpleanos') ? String(formData.get('cumpleanos')) : null,
                 lesion_o_limitacion_fisica: formData.get('lesion_o_limitacion_fisica') ? String(formData.get('lesion_o_limitacion_fisica')) : null,
                 genero: formData.get('genero') ? String(formData.get('genero')) : null
@@ -709,43 +893,6 @@ export default function ClientsPage() {
                   </div>
                 </div>
 
-                {/* Información del Paquete */}
-                <div>
-                  <h4 className="text-md font-semibold text-gray-900 mb-3">Paquete de Clases</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Paquete</label>
-                      <select
-                        name="type_of_class"
-                        defaultValue={selectedClient.type_of_class || ''}
-                        className="input-field"
-                      >
-                        <option value="Sin paquete">Sin paquete</option>
-                        <option value="Clase Prueba">Clase Prueba</option>
-                        <option value="1 Clase Grupal">1 Clase Grupal</option>
-                        <option value="4 Clases Grupales">4 Clases Grupales</option>
-                        <option value="8 Clases Grupales">8 Clases Grupales</option>
-                        <option value="12 Clases Grupales">12 Clases Grupales</option>
-                        <option value="Clases Grupales Ilimitadas">Clases Grupales Ilimitadas</option>
-                        <option value="1 Clase Privada">1 Clase Privada</option>
-                        <option value="4 Clases Privadas">4 Clases Privadas</option>
-                        <option value="8 Clases Privadas">8 Clases Privadas</option>
-                        <option value="12 Clases Privadas">12 Clases Privadas</option>
-                        <option value="15 Clases Privadas">15 Clases Privadas</option>
-                        <option value="20 Clases Privadas">20 Clases Privadas</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de Expiración</label>
-                      <input
-                        type="date"
-                        name="expiration_date"
-                        defaultValue={selectedClient.expiration_date || ''}
-                        className="input-field"
-                      />
-                    </div>
-                  </div>
-                </div>
               </div>
               
               <div className="mt-6 flex justify-end space-x-3">
@@ -785,38 +932,207 @@ export default function ClientsPage() {
             </div>
             
             <div className="space-y-6">
-              {/* Paquete Activo */}
-              {activePackage && (
+              {/* Class Counts Management */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="text-md font-semibold text-blue-900 mb-3">Clases Disponibles</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-blue-700 mb-1">Clases Privadas Restantes</label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        value={classCounts.private}
+                        onChange={(e) => setClassCounts({...classCounts, private: parseInt(e.target.value) || 0})}
+                        className="w-24 px-2 py-1 border border-blue-300 rounded"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-blue-700 mb-1">Clases Grupales Restantes</label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        value={classCounts.group}
+                        onChange={(e) => setClassCounts({...classCounts, group: parseInt(e.target.value) || 0})}
+                        className="w-24 px-2 py-1 border border-blue-300 rounded"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    const token = localStorage.getItem('token')
+                    if (!token || !selectedClient) return
+                    try {
+                      const response = await fetch(`${API_BASE_URL}/api/users/${selectedClient.id}/update-class-counts`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                          private_classes_remaining: classCounts.private,
+                          group_classes_remaining: classCounts.group
+                        })
+                      })
+                      if (response.ok) {
+                        alert('Clases actualizadas exitosamente')
+                      } else {
+                        alert('Error al actualizar clases')
+                      }
+                    } catch (error) {
+                      console.error('Error updating class counts:', error)
+                      alert('Error al actualizar clases')
+                    }
+                  }}
+                  className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+
+              {/* Paquete Grupal Activo */}
+              {activeGroupPackage && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="text-md font-semibold text-green-900 mb-2">Paquete Activo</h4>
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="text-md font-semibold text-green-900">Paquete Grupal Activo</h4>
+                    <button
+                      onClick={() => {
+                        setEditingPackageId(activeGroupPackage.id)
+                        setEditingPackageAutoRenew(activeGroupPackage.auto_renew || false)
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Editar
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-green-700">Paquete</label>
-                      <p className="text-sm text-green-900">{activePackage.package_name}</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-green-700">Método de Pago</label>
-                      <p className="text-sm text-green-900">{activePackage.payment_method}</p>
+                      <p className="text-sm text-green-900">{activeGroupPackage.package_name}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-green-700">Vencimiento</label>
                       <p className="text-sm text-green-900">
-                        {new Date(activePackage.end_date).toLocaleDateString('es-ES')}
+                        {new Date(activeGroupPackage.end_date).toLocaleDateString('es-ES')}
                       </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-green-700">Clases Incluidas</label>
-                      <p className="text-sm text-green-900">{activePackage.classes_included}</p>
+                      <p className="text-sm text-green-900">{activeGroupPackage.classes_included}</p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-green-700">Monto Pagado</label>
-                      <p className="text-sm text-green-900">${activePackage.amount_paid} MXN</p>
+                      <label className="block text-sm font-medium text-green-700">Auto-Renovar</label>
+                      <p className="text-sm text-green-900">{activeGroupPackage.auto_renew ? 'Sí' : 'No'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Paquete Privado Activo */}
+              {activePrivatePackage && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="text-md font-semibold text-purple-900">Paquete Privado Activo</h4>
+                    <button
+                      onClick={() => {
+                        setEditingPackageId(activePrivatePackage.id)
+                        setEditingPackageAutoRenew(activePrivatePackage.auto_renew || false)
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Editar
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-purple-700">Paquete</label>
+                      <p className="text-sm text-purple-900">{activePrivatePackage.package_name}</p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-green-700">Estado</label>
-                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                        {activePackage.status}
-                      </span>
+                      <label className="block text-sm font-medium text-purple-700">Vencimiento</label>
+                      <p className="text-sm text-purple-900">
+                        {new Date(activePrivatePackage.end_date).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-purple-700">Clases Incluidas</label>
+                      <p className="text-sm text-purple-900">{activePrivatePackage.classes_included}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-purple-700">Auto-Renovar</label>
+                      <p className="text-sm text-purple-900">{activePrivatePackage.auto_renew ? 'Sí' : 'No'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Agregar Nuevo Paquete */}
+              <PackageAssignmentSection 
+                clientId={selectedClient?.id || ''}
+                onPackageAdded={() => {
+                  if (selectedClient) {
+                    handleManagePackages(selectedClient)
+                  }
+                }}
+              />
+
+              {/* Edit Package Auto-Renew Modal */}
+              {editingPackageId && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]">
+                  <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Editar Auto-Renovación</h3>
+                    <div className="space-y-4">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={editingPackageAutoRenew}
+                          onChange={(e) => setEditingPackageAutoRenew(e.target.checked)}
+                          className="rounded"
+                        />
+                        <span className="text-sm text-gray-700">Auto-renovar este paquete</span>
+                      </label>
+                      <div className="flex justify-end space-x-3">
+                        <button
+                          onClick={() => setEditingPackageId(null)}
+                          className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const token = localStorage.getItem('token')
+                            if (!token) return
+                            try {
+                              const response = await fetch(`${API_BASE_URL}/api/packages/${editingPackageId}/auto-renew`, {
+                                method: 'PUT',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                  auto_renew: editingPackageAutoRenew
+                                })
+                              })
+                              if (response.ok) {
+                                alert('Auto-renovación actualizada exitosamente')
+                                setEditingPackageId(null)
+                                if (selectedClient) {
+                                  handleManagePackages(selectedClient)
+                                }
+                              } else {
+                                alert('Error al actualizar auto-renovación')
+                              }
+                            } catch (error) {
+                              console.error('Error updating auto-renew:', error)
+                              alert('Error al actualizar auto-renovación')
+                            }
+                          }}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        >
+                          Guardar
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -871,6 +1187,42 @@ export default function ClientsPage() {
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Client Modal */}
+      {showDeleteModal && clientToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-red-700 mb-3">Eliminar Cliente</h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Esta acción <span className="font-semibold">ELIMINARÁ</span> permanentemente a{' '}
+              <span className="font-semibold">{clientToDelete.nombre}</span> y todos sus registros
+              (clases, reservas, historial de paquetes, pagos, etc.). Esta acción no se puede deshacer.
+            </p>
+            <p className="text-sm text-gray-700 mb-4">
+              ¿Estás seguro de que quieres continuar?
+            </p>
+            <div className="mt-4 flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setClientToDelete(null)
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteClient}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Sí, eliminar definitivamente
               </button>
             </div>
           </div>

@@ -1611,7 +1611,7 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
   }
 })
 
-// Delete user
+// Delete user (hard delete with related data)
 app.delete('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { id } = req.params
@@ -1625,12 +1625,29 @@ app.delete('/api/users/:id', requireAuth, requireRole(['admin']), async (req, re
       })
     }
 
-    // Delete user
-    await database.run('DELETE FROM users WHERE id = ?', [id])
+    const userId = id
+
+    // Attempt to delete all related records to fully remove the customer
+    try {
+      await database.run('DELETE FROM bookings WHERE user_id = ?', [userId])
+      await database.run('DELETE FROM class_history WHERE user_id = ?', [userId])
+      await database.run('DELETE FROM package_history WHERE user_id = ?', [userId])
+      await database.run('DELETE FROM payment_history WHERE user_id = ?', [userId])
+      await database.run('DELETE FROM notification_settings WHERE user_id = ?', [userId])
+      // Optional tables – ignore errors if they don't exist
+      await database.run('DELETE FROM notification_log WHERE user_id = ?', [userId]).catch(() => {})
+      await database.run('DELETE FROM private_class_requests WHERE user_id = ?', [userId]).catch(() => {})
+    } catch (cleanupError) {
+      console.error('Error cleaning up user-related data:', cleanupError)
+      // Continue with user deletion even if some cleanup fails
+    }
+
+    // Delete user record
+    await database.run('DELETE FROM users WHERE id = ?', [userId])
 
     res.json({
       success: true,
-      message: 'Usuario eliminado exitosamente'
+      message: 'Usuario y todos sus registros han sido eliminados exitosamente'
     })
   } catch (error) {
     console.error('Delete user error:', error)
@@ -2288,7 +2305,7 @@ app.use((error, req, res, next) => {
 // Assign package to client (admin only)
 app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
-    const { clientId, packageId } = req.body
+    const { clientId, packageId, autoRenew, overrideNegativeBalance } = req.body
 
     if (!clientId || !packageId) {
       return res.status(400).json({
@@ -2297,20 +2314,20 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
       })
     }
 
-    // Get package details
+    // Get package details with category
     const packages = {
-      '1': { name: 'Clase Prueba', type: 'Clase Prueba', classes_included: 1, validity_days: 30 },
-      '2': { name: '1 Clase Grupal', type: '1 Clase Grupal', classes_included: 1, validity_days: 30 },
-      '3': { name: '4 Clases Grupales', type: '4 Clases Grupales', classes_included: 4, validity_days: 30 },
-      '4': { name: '8 Clases Grupales', type: '8 Clases Grupales', classes_included: 8, validity_days: 30 },
-      '5': { name: '12 Clases Grupales', type: '12 Clases Grupales', classes_included: 12, validity_days: 30 },
-      '6': { name: 'Clases Grupales Ilimitadas', type: 'Clases Grupales Ilimitadas', classes_included: 999, validity_days: 30 },
-      '7': { name: '1 Clase Privada', type: '1 Clase Privada', classes_included: 1, validity_days: 30 },
-      '8': { name: '4 Clases Privadas', type: '4 Clases Privadas', classes_included: 4, validity_days: 30 },
-      '9': { name: '8 Clases Privadas', type: '8 Clases Privadas', classes_included: 8, validity_days: 30 },
-      '10': { name: '12 Clases Privadas', type: '12 Clases Privadas', classes_included: 12, validity_days: 30 },
-      '11': { name: '15 Clases Privadas', type: '15 Clases Privadas', classes_included: 15, validity_days: 30 },
-      '12': { name: '20 Clases Privadas', type: '20 Clases Privadas', classes_included: 20, validity_days: 30 }
+      '1': { name: 'Clase Prueba', type: 'Clase Prueba', classes_included: 1, validity_days: 30, category: 'Grupal' },
+      '2': { name: '1 Clase Grupal', type: '1 Clase Grupal', classes_included: 1, validity_days: 30, category: 'Grupal' },
+      '3': { name: '4 Clases Grupales', type: '4 Clases Grupales', classes_included: 4, validity_days: 30, category: 'Grupal' },
+      '4': { name: '8 Clases Grupales', type: '8 Clases Grupales', classes_included: 8, validity_days: 30, category: 'Grupal' },
+      '5': { name: '12 Clases Grupales', type: '12 Clases Grupales', classes_included: 12, validity_days: 30, category: 'Grupal' },
+      '6': { name: 'Clases Grupales Ilimitadas', type: 'Clases Grupales Ilimitadas', classes_included: 999, validity_days: 30, category: 'Grupal' },
+      '7': { name: '1 Clase Privada', type: '1 Clase Privada', classes_included: 1, validity_days: 30, category: 'Privada' },
+      '8': { name: '4 Clases Privadas', type: '4 Clases Privadas', classes_included: 4, validity_days: 30, category: 'Privada' },
+      '9': { name: '8 Clases Privadas', type: '8 Clases Privadas', classes_included: 8, validity_days: 30, category: 'Privada' },
+      '10': { name: '12 Clases Privadas', type: '12 Clases Privadas', classes_included: 12, validity_days: 30, category: 'Privada' },
+      '11': { name: '15 Clases Privadas', type: '15 Clases Privadas', classes_included: 15, validity_days: 30, category: 'Privada' },
+      '12': { name: '20 Clases Privadas', type: '20 Clases Privadas', classes_included: 20, validity_days: 30, category: 'Privada' }
     }
 
     const selectedPackage = packages[packageId]
@@ -2321,6 +2338,19 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
       })
     }
 
+    // Check for negative balance if adding package
+    const user = await database.get('SELECT * FROM users WHERE id = ?', [clientId])
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cliente no encontrado'
+      })
+    }
+
+    const currentCount = selectedPackage.category === 'Grupal' 
+      ? (user.group_classes_remaining || 0)
+      : (user.private_classes_remaining || 0)
+
     // Calculate dates
     const startDate = new Date()
     const expirationDate = new Date()
@@ -2328,33 +2358,52 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
     const startDateString = startDate.toISOString().split('T')[0]
     const expirationDateString = expirationDate.toISOString().split('T')[0]
 
-    // Desactivar paquetes anteriores si hay uno activo
-    const activePackage = await database.getActivePackageByUser(clientId)
+    // Desactivar paquetes anteriores del mismo tipo si hay uno activo
+    const activePackage = await database.getActivePackageByUser(clientId, selectedPackage.category)
     if (activePackage) {
       await database.updatePackageStatus(activePackage.id, 'expired')
     }
 
-    // Update client
-    await database.run(
-      `UPDATE users SET 
-        type_of_class = ?, 
-        expiration_date = ?,
-        updated_at = datetime('now')
-       WHERE id = ?`,
-      [selectedPackage.type, expirationDateString, clientId]
-    )
+    // Determine new class count
+    let newCount = selectedPackage.classes_included
+    if (currentCount < 0 && !overrideNegativeBalance) {
+      // Deduct negative balance
+      newCount = selectedPackage.classes_included + currentCount
+    }
+
+    // Update client class counts
+    if (selectedPackage.category === 'Grupal') {
+      await database.run(
+        `UPDATE users SET 
+          group_classes_remaining = ?,
+          updated_at = datetime('now')
+         WHERE id = ?`,
+        [newCount, clientId]
+      )
+    } else {
+      await database.run(
+        `UPDATE users SET 
+          private_classes_remaining = ?,
+          updated_at = datetime('now')
+         WHERE id = ?`,
+        [newCount, clientId]
+      )
+    }
 
     // Crear registro en package_history
     await database.addPackageHistory({
       user_id: clientId,
       package_name: selectedPackage.name,
       package_type: selectedPackage.type,
+      package_category: selectedPackage.category,
       classes_included: selectedPackage.classes_included,
       start_date: startDateString,
       end_date: expirationDateString,
-      payment_method: 'N/A', // Se puede actualizar después si se proporciona
-      amount_paid: 0, // Se puede actualizar después si se proporciona
-      status: 'active'
+      payment_method: 'N/A',
+      amount_paid: 0,
+      status: 'active',
+      auto_renew: autoRenew || false,
+      last_renewal_date: null
     })
 
     // Get updated client
@@ -2374,6 +2423,118 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
 
   } catch (error) {
     console.error('Assign package error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Get user class counts
+app.get('/api/users/:id/class-counts', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const user = req.user
+
+    // Only the user themselves, admin, or coach can view class counts
+    if (user.id !== id && user.role !== 'admin' && user.role !== 'coach') {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para ver estos datos'
+      })
+    }
+
+    // Ensure packages are up to date (auto-renewal check)
+    // Will read default behavior from admin settings
+    await database.ensureUserPackagesUpToDate(id)
+
+    const client = await database.get('SELECT * FROM users WHERE id = ?', [id])
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      })
+    }
+
+    res.json({
+      success: true,
+      private_classes_remaining: client.private_classes_remaining || 0,
+      group_classes_remaining: client.group_classes_remaining || 0
+    })
+  } catch (error) {
+    console.error('Get class counts error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener conteo de clases'
+    })
+  }
+})
+
+// Update user class counts (admin only)
+app.post('/api/users/:id/update-class-counts', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { private_classes_remaining, group_classes_remaining } = req.body
+
+    if (private_classes_remaining === undefined && group_classes_remaining === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debe proporcionar al menos un conteo de clases'
+      })
+    }
+
+    const updates = []
+    const params = []
+
+    if (private_classes_remaining !== undefined) {
+      updates.push('private_classes_remaining = ?')
+      params.push(private_classes_remaining)
+    }
+
+    if (group_classes_remaining !== undefined) {
+      updates.push('group_classes_remaining = ?')
+      params.push(group_classes_remaining)
+    }
+
+    params.push(id)
+
+    await database.run(`
+      UPDATE users 
+      SET ${updates.join(', ')}, updated_at = datetime('now')
+      WHERE id = ?
+    `, params)
+
+    res.json({
+      success: true,
+      message: 'Conteo de clases actualizado exitosamente'
+    })
+  } catch (error) {
+    console.error('Update class counts error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Update package auto-renew (admin only)
+app.put('/api/packages/:id/auto-renew', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { auto_renew } = req.body
+
+    await database.run(`
+      UPDATE package_history 
+      SET auto_renew = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `, [auto_renew ? 1 : 0, id])
+
+    res.json({
+      success: true,
+      message: 'Auto-renovación actualizada exitosamente'
+    })
+  } catch (error) {
+    console.error('Update package auto-renew error:', error)
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor'
@@ -2693,8 +2854,14 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
 
     console.log(`  - ✅ ACCESS GRANTED: Fetching package history for user ${id}`)
 
+    // Ensure packages are up to date (auto-renewal check)
+    // Will read default behavior from admin settings
+    await database.ensureUserPackagesUpToDate(id)
+
     const packageHistory = await database.getPackageHistoryByUser(id)
-    let activePackage = await database.getActivePackageByUser(id)
+    const activeGroupPackage = await database.getActivePackageByUser(id, 'Grupal')
+    const activePrivatePackage = await database.getActivePackageByUser(id, 'Privada')
+    let activePackage = activeGroupPackage || activePrivatePackage // For backward compatibility
     
     console.log(`[Package History] User ${id}:`)
     console.log(`  - Package history count: ${packageHistory ? packageHistory.length : 0}`)
@@ -2897,6 +3064,107 @@ app.post('/api/users/:id/package-history', requireAuth, requireRole(['admin']), 
   } catch (error) {
     console.error('Add package history error:', error)
     res.status(500).json({ success: false, message: 'Error al agregar paquete al historial' })
+  }
+})
+
+// Deactivate an active package (optionally purging remaining classes)
+app.post('/api/package-history/:id/deactivate', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { behavior } = req.body
+
+    const pkg = await database.get('SELECT * FROM package_history WHERE id = ?', [id])
+    if (!pkg) {
+      return res.status(404).json({ success: false, message: 'Paquete no encontrado' })
+    }
+
+    const userId = pkg.user_id
+
+    if (behavior === 'purge') {
+      if (pkg.package_category === 'Grupal') {
+        await database.run(
+          'UPDATE users SET group_classes_remaining = 0, updated_at = datetime("now") WHERE id = ?',
+          [userId]
+        )
+      } else if (pkg.package_category === 'Privada') {
+        await database.run(
+          'UPDATE users SET private_classes_remaining = 0, updated_at = datetime("now") WHERE id = ?',
+          [userId]
+        )
+      }
+    }
+
+    await database.run(
+      'UPDATE package_history SET status = "expired", updated_at = datetime("now") WHERE id = ?',
+      [id]
+    )
+
+    res.json({ success: true, message: 'Paquete desactivado exitosamente' })
+  } catch (error) {
+    console.error('Deactivate package error:', error)
+    res.status(500).json({ success: false, message: 'Error al desactivar paquete' })
+  }
+})
+
+// Renew an expired package starting today (or keep existing start_date if already in current period)
+app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const pkg = await database.get('SELECT * FROM package_history WHERE id = ?', [id])
+    if (!pkg) {
+      return res.status(404).json({ success: false, message: 'Paquete no encontrado' })
+    }
+
+    const validityDays = pkg.validity_days || 30
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const startDate = today
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + validityDays)
+
+    await database.run(
+      'UPDATE package_history SET start_date = ?, end_date = ?, status = "active", updated_at = datetime("now") WHERE id = ?',
+      [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0], id]
+    )
+
+    // Reset class counts for this package type
+    const userId = pkg.user_id
+    if (pkg.package_category === 'Grupal') {
+      await database.run(
+        'UPDATE users SET group_classes_remaining = ?, updated_at = datetime("now") WHERE id = ?',
+        [pkg.classes_included, userId]
+      )
+    } else if (pkg.package_category === 'Privada') {
+      await database.run(
+        'UPDATE users SET private_classes_remaining = ?, updated_at = datetime("now") WHERE id = ?',
+        [pkg.classes_included, userId]
+      )
+    }
+
+    res.json({ success: true, message: 'Paquete renovado exitosamente' })
+  } catch (error) {
+    console.error('Renew package error:', error)
+    res.status(500).json({ success: false, message: 'Error al renovar paquete' })
+  }
+})
+
+// Delete a package history entry
+app.delete('/api/package-history/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const pkg = await database.get('SELECT * FROM package_history WHERE id = ?', [id])
+    if (!pkg) {
+      return res.status(404).json({ success: false, message: 'Paquete no encontrado' })
+    }
+
+    await database.run('DELETE FROM package_history WHERE id = ?', [id])
+
+    res.json({ success: true, message: 'Registro de paquete eliminado exitosamente' })
+  } catch (error) {
+    console.error('Delete package history error:', error)
+    res.status(500).json({ success: false, message: 'Error al eliminar registro de paquete' })
   }
 })
 
@@ -3220,19 +3488,18 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
       })
     }
 
-    // Verificar que la clase existe y tiene espacio
-    const classInfo = await database.getClassById(class_id)
-    if (!classInfo) {
-      return res.status(404).json({
-        success: false,
-        message: 'Clase no encontrada'
-      })
-    }
-
     if (classInfo.current_bookings >= classInfo.max_capacity) {
       return res.status(400).json({
         success: false,
         message: 'Esta clase ya está llena'
+      })
+    }
+
+    // Check if class is public (for group classes)
+    if (classType === 'group' && classInfo.is_public === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Esta clase no está disponible para unirse públicamente'
       })
     }
 
@@ -3262,8 +3529,8 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
       WHERE id = ?
     `, [class_id])
 
-    // Descontar una clase del paquete del usuario
-    await database.deductClassFromUser(userId)
+    // Descontar una clase del paquete del usuario según el tipo
+    await database.deductClassFromUser(userId, classType)
 
     // Enviar email de confirmación
     try {
@@ -3334,6 +3601,17 @@ app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']),
       })
     }
 
+    // Get class info to determine type
+    const classInfo = await database.getClassById(class_id)
+    if (!classInfo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    const classType = classInfo.type || 'group'
+
     // Buscar la reserva del usuario
     const booking = await database.get(
       'SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND status = "confirmed"',
@@ -3346,6 +3624,12 @@ app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']),
         message: 'No se encontró una reserva activa para esta clase'
       })
     }
+
+    // Check if cancellation is within 10 minutes of class start
+    const classDateTime = new Date(`${classInfo.date}T${classInfo.time}`)
+    const now = new Date()
+    const minutesUntilClass = (classDateTime.getTime() - now.getTime()) / (1000 * 60)
+    const within10Minutes = minutesUntilClass <= 10
 
     // Actualizar el estado de la reserva a cancelada
     await database.run(
@@ -3360,16 +3644,21 @@ app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']),
       WHERE id = ?
     `, [class_id])
 
-    // Devolver una clase al paquete del usuario
-    await database.run(
-      'UPDATE users SET clases_restantes = clases_restantes + 1 WHERE id = ?',
-      [userId]
-    )
-
-    res.json({
-      success: true,
-      message: 'Reserva cancelada exitosamente'
-    })
+    // Devolver una clase al paquete del usuario solo if >10 minutes before
+    if (within10Minutes) {
+      res.json({
+        success: true,
+        message: 'Reserva cancelada exitosamente. Nota: No se reembolsó la clase automáticamente debido a la cancelación de último momento. Por favor, contacta con un coach si necesitas ayuda.',
+        refunded: false
+      })
+    } else {
+      await database.addClassToUser(userId, classType)
+      res.json({
+        success: true,
+        message: 'Reserva cancelada exitosamente',
+        refunded: true
+      })
+    }
   } catch (error) {
     console.error('Cancel booking error:', error)
     res.status(500).json({
@@ -3600,7 +3889,14 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       duration,
       description,
       status,
-      instructors
+      instructors,
+      is_recurring,
+      recurrence_end_date,
+      is_public,
+      walk_ins_welcome,
+      assigned_client_ids,
+      override_insufficient_classes,
+      override_type
     } = req.body
 
     if (!title || !type || !coach_id || !date || !time || !duration) {
@@ -3611,7 +3907,12 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
     }
 
     const id = require('uuid').v4()
-    const maxCapacity = type === 'private' ? 1 : 9
+    const requestedMax = parseInt(req.body.max_capacity, 10)
+    const maxCapacity = type === 'private'
+      ? 1
+      : (Number.isFinite(requestedMax) && requestedMax >= 1
+        ? Math.min(Math.max(requestedMax, 1), 9999)
+        : 10)
     const currentBookings = type === 'private' ? 1 : 0
     const normalizedInstructors = Array.isArray(instructors)
       ? JSON.stringify(instructors.slice(0, 10))
@@ -3622,8 +3923,9 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
     await database.run(`
       INSERT INTO classes (
         id, title, type, coach_id, date, time, end_time, duration, max_capacity,
-        current_bookings, status, description, instructors, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        current_bookings, status, description, instructors, is_recurring, 
+        recurrence_end_date, is_public, walk_ins_welcome, assigned_client_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
       id,
       title,
@@ -3637,11 +3939,41 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       currentBookings,
       status || 'scheduled',
       description,
-      normalizedInstructors
+      normalizedInstructors,
+      is_recurring ? 1 : 0,
+      recurrence_end_date || null,
+      is_public !== undefined ? (is_public ? 1 : 0) : (type === 'group' ? 1 : 1),
+      walk_ins_welcome !== undefined ? (walk_ins_welcome ? 1 : 0) : (type === 'group' ? 1 : 0),
+      assigned_client_ids || null
     ])
 
-    // Si es una clase privada, agregar al historial de clases del cliente
+    // Si es una clase privada, agregar al historial de clases del cliente y deducir clase
     if (type === 'private' && client_id) {
+      // Check if client has enough classes (unless override)
+      if (!override_insufficient_classes) {
+        const user = await database.get('SELECT * FROM users WHERE id = ?', [client_id])
+        if (user && (user.private_classes_remaining || 0) < 1) {
+          return res.status(400).json({
+            success: false,
+            message: 'El cliente no tiene suficientes clases privadas disponibles'
+          })
+        }
+      }
+
+      // Deduct private class (or set to negative if override)
+      if (override_insufficient_classes && override_type === 'negative') {
+        const user = await database.get('SELECT * FROM users WHERE id = ?', [client_id])
+        const newCount = (user.private_classes_remaining || 0) - 1
+        await database.run(`
+          UPDATE users 
+          SET private_classes_remaining = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `, [newCount, client_id])
+      } else if (!override_insufficient_classes) {
+        await database.deductClassFromUser(client_id, 'private')
+      }
+      // If override_type === 'free', don't deduct
+
       await database.addClassHistory({
         class_id: id,
         user_id: client_id,
@@ -3653,6 +3985,48 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
         cancellation_reason: null,
         notes: description
       })
+    }
+
+    // Si es una clase grupal con clientes asignados, deducir clases grupales
+    if (type === 'group' && assigned_client_ids) {
+      try {
+        const clientIds = JSON.parse(assigned_client_ids)
+        for (const assignedClientId of clientIds) {
+          // Check if client has enough classes (unless override)
+          if (!override_insufficient_classes) {
+            const user = await database.get('SELECT * FROM users WHERE id = ?', [assignedClientId])
+            if (user && (user.group_classes_remaining || 0) < 1) {
+              continue // Skip this client
+            }
+          }
+
+          // Deduct group class (or set to negative if override)
+          if (override_insufficient_classes && override_type === 'negative') {
+            const user = await database.get('SELECT * FROM users WHERE id = ?', [assignedClientId])
+            const newCount = (user.group_classes_remaining || 0) - 1
+            await database.run(`
+              UPDATE users 
+              SET group_classes_remaining = ?, updated_at = datetime('now')
+              WHERE id = ?
+            `, [newCount, assignedClientId])
+          } else if (!override_insufficient_classes) {
+            await database.deductClassFromUser(assignedClientId, 'group')
+          }
+          // If override_type === 'free', don't deduct
+
+          // Create booking for assigned client
+          await database.createBooking({
+            user_id: assignedClientId,
+            class_id: id,
+            booking_date: date,
+            status: 'confirmed',
+            payment_method: 'package',
+            notes: 'Asignado automáticamente por coach'
+          })
+        }
+      } catch (e) {
+        console.error('Error processing assigned clients:', e)
+      }
     }
 
     res.json({
@@ -3794,7 +4168,13 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
       duration,
       status,
       description,
-      instructors
+      instructors,
+      is_recurring,
+      recurrence_end_date,
+      is_public,
+      walk_ins_welcome,
+      assigned_client_ids,
+      max_capacity
     } = req.body
 
     const updates = {}
@@ -3806,6 +4186,12 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
     if (status !== undefined) updates.status = status
     if (description !== undefined) updates.description = description
     if (instructors !== undefined) updates.instructors = instructors
+    if (is_recurring !== undefined) updates.is_recurring = is_recurring ? 1 : 0
+    if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
+    if (is_public !== undefined) updates.is_public = is_public ? 1 : 0
+    if (walk_ins_welcome !== undefined) updates.walk_ins_welcome = walk_ins_welcome ? 1 : 0
+    if (assigned_client_ids !== undefined) updates.assigned_client_ids = assigned_client_ids
+    if (max_capacity !== undefined) updates.max_capacity = max_capacity
 
     const updatedClass = await database.updateClass(id, updates)
 

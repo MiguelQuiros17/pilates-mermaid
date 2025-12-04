@@ -1,0 +1,740 @@
+@using Aloha.Domain.Customization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Components
+@using System.Text.Json
+@using System.IO
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject AuthenticationStateProvider authStateProvider
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Env
+@inject IConfiguration Configuration
+@rendermode InteractiveServer
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, ContentManager, Audit">
+    <EditForm disabled="@isLoading"
+              EditContext="editContext"
+              FormName="EditAdditionalCssOverridesForm"
+              OnValidSubmit="ConfirmSaveStylesheetsAsync">
+
+        @if (!isLoading)
+        {
+            @if (isCustomBootstrapFileInDb)
+            {
+                <Alert Color="AlertColor.Warning">
+                    <Icon class="me-2" Name="IconName.ExclamationTriangleFill" />
+                    Info: A custom Bootstrap stylesheet is currently in-use.
+                </Alert>
+            }
+            else
+            {
+                <Alert Color="AlertColor.Primary">
+                    <Icon class="me-2" Name="IconName.InfoCircleFill" />
+                    Info: Default Bootstrap stylesheet is currently in-use.
+                </Alert>
+            }
+
+            @if (isCustomCssOverridesFileInDb)
+            {
+                <Alert Color="AlertColor.Warning">
+                    <Icon class="me-2" Name="IconName.ExclamationTriangleFill" />
+                    Info: A replacement CSS override file is currently in-use.
+                </Alert>
+            }
+            else
+            {
+                <Alert Color="AlertColor.Primary">
+                    <Icon class="me-2" Name="IconName.InfoCircleFill" />
+                    Info: Default CSS overrides are currently in-use.
+                </Alert>
+            }
+        }
+
+        @if (!IsReadOnly)
+        {
+            <div class="gap-3 vstack mt-3">
+                <div>
+                    <label class="form-label" for="bootstrap-file-input">Upload Bootstrap CSS File</label>
+                    <InputFile accept="text/css"
+                               class="form-control"
+                               disabled="@isLoading"
+                               id="bootstrap-file-input"
+                               OnChange="HandleBootstrapFileChange" />
+                </div>
+
+                <div>
+                    <label class="form-label" for="additional-file-input">Upload Additional CSS File</label>
+                    <InputFile accept="text/css"
+                               class="form-control"
+                               disabled="@isLoading"
+                               id="additional-file-input"
+                               OnChange="HandleAdditionalFileChange" />
+                </div>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <Button Color="ButtonColor.Primary"
+                            Disabled="@(isLoading || isSaving)"
+                            Type="@ButtonType.Submit"
+                            Loading="@(isLoading || isSaving)"
+                            LoadingText="Updating...">
+                        Save
+                    </Button>
+
+                    <Button Color="ButtonColor.Secondary"
+                            disabled="@(isLoading || !isCustomBootstrapFileInDb || isSaving)"
+                            @onclick="ConfirmBootstrapFileResetAsync"
+                            Type="@ButtonType.Button">
+                        Restore Default Bootstrap
+                    </Button>
+
+                    <Button Color="ButtonColor.Secondary"
+                            disabled="@(isLoading || !isCustomCssOverridesFileInDb || isSaving)"
+                            @onclick="ConfirmAdditionalFileResetAsync"
+                            Type="@ButtonType.Button">
+                        Restore Default Additional CSS
+                    </Button>
+
+                    <button class="btn btn-outline-secondary"
+                            disabled="@(isLoading || isSaving)"
+                            @onclick="DownloadBootstrapAsync">
+                        Download Bootstrap CSS
+                    </button>
+
+                    <button class="btn btn-outline-secondary"
+                            disabled="@(isLoading || isSaving)"
+                            @onclick="DownloadAdditionalAsync">
+                        Download Additional CSS
+                    </button>
+                </div>
+            </div>
+        }
+    </EditForm>
+
+    @if (_showConfirmDialog)
+    {
+        <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">@_confirmTitle</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="OnConfirmNo"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning mb-3">
+                            <p class="mb-0">@((MarkupString)_confirmMessage)</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <Button Color="ButtonColor.Secondary" @onclick="OnConfirmNo">@_confirmNoText</Button>
+                        <Button Color="ButtonColor.Primary" @onclick="OnConfirmYes">@_confirmYesText</Button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</AuthorizeView>
+<ConfirmationMessage @ref="messageRef" Title="Additional CSS" OnClose="HandleOnClose" />
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public bool IsReadOnly { get; set; }
+
+    [Parameter] public EventCallback StylesheetsChanged { get; set; }
+
+    private ConfirmationMessage? messageRef;
+    private bool isSaving = false;
+    private readonly Input input = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private bool isLoading = true;
+
+    private const long MAX_ALLOWED_FILE_SIZE = 256000L;
+
+    private bool isCustomCssOverridesFileInDb;
+    private bool isCustomBootstrapFileInDb;
+
+    private static JsonSerializerOptions options = new() { WriteIndented = true };
+    private AdminUser? AdminUser = default!;
+
+    private bool _showConfirmDialog = false;
+    private string _confirmTitle = string.Empty;
+    private string _confirmMessage = string.Empty;
+    private string _confirmYesText = "Yes";
+    private string _confirmNoText = "Cancel";
+    private PendingActionType _pendingAction = PendingActionType.None;
+
+    private enum PendingActionType
+    {
+        None,
+        SaveStylesheets,
+        ResetBootstrap,
+        ResetAdditional
+    }
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await RefreshAsync();
+        }
+    }
+    
+    public async Task RefreshAsync()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+
+        var bootstrapFile = await db.CustomStyleSheets
+            .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.BootstrapCompleteOverride);
+
+        var additionalFile = await db.CustomStyleSheets
+            .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.AlohaCssOverride);
+
+        isCustomBootstrapFileInDb = bootstrapFile is not null;
+        isCustomCssOverridesFileInDb = additionalFile is not null;
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private void HandleBootstrapFileChange(InputFileChangeEventArgs e) =>
+        input.BootstrapFile = e.File;
+
+    private void HandleAdditionalFileChange(InputFileChangeEventArgs e) =>
+        input.AlohaCssOverrideFile = e.File;
+
+    private Task ShowConfirmAsync(PendingActionType action, string title, string message, string yesText, string noText = "Cancel")
+    {
+        _pendingAction = action;
+        _confirmTitle = title;
+        _confirmMessage = message;
+        _confirmYesText = yesText;
+        _confirmNoText = noText;
+        _showConfirmDialog = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmSaveStylesheetsAsync()
+    {
+        var hasBootstrap = input.BootstrapFile is not null;
+        var hasAdditional = input.AlohaCssOverrideFile is not null;
+
+        if (!hasBootstrap && !hasAdditional)
+        {
+            return;
+        }
+
+        var filesToUpdate = new List<string>();
+        if (hasBootstrap) filesToUpdate.Add("Bootstrap stylesheet");
+        if (hasAdditional) filesToUpdate.Add("Additional CSS overrides");
+
+        var filesDescription = string.Join(" and ", filesToUpdate);
+
+        await ShowConfirmAsync(
+            PendingActionType.SaveStylesheets,
+            "Upload/Update Stylesheets",
+            $"This action will permanently upload or update the <strong>{filesDescription.ToLower()}</strong> in the database.<br/><br/><strong>This is an IRREVERSIBLE operation</strong> that will overwrite any existing custom stylesheet files.<br/><br/>It is <strong>STRONGLY RECOMMENDED</strong> that you create a backup of your current stylesheets before proceeding (Download Bootstrap CSS + Download Additional CSS).<br/><br/>Are you sure you want to save these stylesheet files?",
+            "Yes, Save Stylesheets");
+    }
+
+    private Task ConfirmBootstrapFileResetAsync() => ShowConfirmAsync(
+        PendingActionType.ResetBootstrap,
+        "Restore Default Bootstrap",
+        "This action will permanently remove the custom Bootstrap stylesheet from the database and restore the default Bootstrap stylesheet (<strong>Default Mahalo Blue</strong>).<br/><br/><strong>This is an IRREVERSIBLE operation.</strong><br/><br/>It is <strong>STRONGLY RECOMMENDED</strong> that you create a backup of your current Bootstrap stylesheet before proceeding (Download Bootstrap CSS).<br/><br/>Are you sure you want to restore the default Bootstrap stylesheet (<strong>Default Mahalo Blue</strong>)?",
+        "Yes, Restore Default");
+
+    private Task ConfirmAdditionalFileResetAsync() => ShowConfirmAsync(
+        PendingActionType.ResetAdditional,
+        "Restore Default Additional CSS",
+        "This action will permanently remove the custom Additional CSS overrides from the database and restore the default Additional CSS (<strong>Default Mahalo Blue</strong>).<br/><br/><strong>This is an IRREVERSIBLE operation.</strong><br/><br/>It is <strong>STRONGLY RECOMMENDED</strong> that you create a backup of your current Additional CSS file before proceeding (Download Additional CSS).<br/><br/>Are you sure you want to restore the default Additional CSS (<strong>Default Mahalo Blue</strong>)?",
+        "Yes, Restore Default");
+
+    private async Task OnConfirmYes()
+    {
+        var action = _pendingAction;
+        _pendingAction = PendingActionType.None;
+        _showConfirmDialog = false;
+        StateHasChanged();
+
+        switch (action)
+        {
+            case PendingActionType.SaveStylesheets:
+                await HandleSubmitAsync();
+                break;
+            case PendingActionType.ResetBootstrap:
+                await HandleBootstrapFileResetAsync();
+                break;
+            case PendingActionType.ResetAdditional:
+                await HandleAdditionalFileResetAsync();
+                break;
+        }
+    }
+
+    private Task OnConfirmNo()
+    {
+        _pendingAction = PendingActionType.None;
+        _showConfirmDialog = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleSubmitAsync()
+    {
+        // Save applies to BOTH: Bootstrap + Additional CSS
+        var hasBootstrap = input.BootstrapFile is not null;
+        var hasAdditional = input.AlohaCssOverrideFile is not null;
+
+        if (!hasBootstrap && !hasAdditional)
+        {
+            return;
+        }
+
+        messageStore.Clear();
+        var invalid = false;
+
+        if (hasBootstrap)
+        {
+            var file = input.BootstrapFile!;
+            if (file.Size > MAX_ALLOWED_FILE_SIZE)
+            {
+                messageStore.Add(
+                    () => input.BootstrapFile,
+                    $"Stylesheet must be smaller than {MAX_ALLOWED_FILE_SIZE / 1024}KB"
+                );
+                invalid = true;
+            }
+
+            if (file.ContentType != "text/css")
+            {
+                messageStore.Add(
+                    () => input.BootstrapFile,
+                    "Invalid file type provided for Bootstrap -- must be .css"
+                );
+                invalid = true;
+            }
+        }
+
+        if (hasAdditional)
+        {
+            var file = input.AlohaCssOverrideFile!;
+            if (file.Size > MAX_ALLOWED_FILE_SIZE)
+            {
+                messageStore.Add(
+                    () => input.AlohaCssOverrideFile,
+                    $"Stylesheet must be smaller than {MAX_ALLOWED_FILE_SIZE / 1024}KB"
+                );
+                invalid = true;
+            }
+
+            if (file.ContentType != "text/css")
+            {
+                messageStore.Add(
+                    () => input.AlohaCssOverrideFile,
+                    "Invalid file type provided for Additional CSS -- must be .css"
+                );
+                invalid = true;
+            }
+        }
+
+        if (invalid)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        isLoading = true;
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var changes = new List<string>();
+
+            if (hasBootstrap)
+            {
+                var file = input.BootstrapFile!;
+                await using var msBootstrap = new MemoryStream();
+                await file.OpenReadStream(MAX_ALLOWED_FILE_SIZE).CopyToAsync(msBootstrap);
+                var fileData = msBootstrap.ToArray();
+
+                var existingBootstrap = await db.CustomStyleSheets
+                    .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.BootstrapCompleteOverride);
+
+                if (existingBootstrap is null)
+                {
+                    var newSheet = CustomStyleSheet.Create(
+                        CustomStyleSheetUseCase.BootstrapCompleteOverride,
+                        file.ContentType,
+                        fileData);
+
+                    await db.AddAsync(newSheet);
+                }
+                else
+                {
+                    existingBootstrap.Update(file.ContentType, fileData);
+                }
+
+                isCustomBootstrapFileInDb = true;
+                changes.Add("Bootstrap stylesheet");
+            }
+
+            if (hasAdditional)
+            {
+                var file = input.AlohaCssOverrideFile!;
+                await using var msAdditional = new MemoryStream();
+                await file.OpenReadStream(MAX_ALLOWED_FILE_SIZE).CopyToAsync(msAdditional);
+                var fileData = msAdditional.ToArray();
+
+                var existingAdditional = await db.CustomStyleSheets
+                    .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.AlohaCssOverride);
+
+                if (existingAdditional is null)
+                {
+                    var newSheet = CustomStyleSheet.Create(
+                        CustomStyleSheetUseCase.AlohaCssOverride,
+                        file.ContentType,
+                        fileData);
+
+                    await db.AddAsync(newSheet);
+                }
+                else
+                {
+                    existingAdditional.Update(file.ContentType, fileData);
+                }
+
+                isCustomCssOverridesFileInDb = true;
+                changes.Add("Additional CSS overrides");
+            }
+
+            await db.SaveChangesAsync();
+
+            if (changes.Count > 0)
+            {
+                var desc = string.Join(" and ", changes);
+                await adminActivityService.TrackAdminUserActivityAsync(
+                    AdminUser!,
+                    AdminActivityType.CustomTheme,
+                    $"Updated {desc}.");
+
+                messageRef?.Notify(new(ToastType.Success, $"{desc} saved successfully."));
+            }
+
+            if (StylesheetsChanged.HasDelegate)
+            {
+                await StylesheetsChanged.InvokeAsync();
+            }
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning,
+                "An error occurred while trying to update the stylesheet files."));
+        }
+        finally
+        {
+            isLoading = false;
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void HandleOnClose(string message)
+    {
+        if (message == "Success")
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleBootstrapFileResetAsync()
+    {
+        if (!isCustomBootstrapFileInDb)
+        {
+            return;
+        }
+
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            var existingFile = await db.CustomStyleSheets
+                .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.BootstrapCompleteOverride);
+
+            if (existingFile is not null)
+            {
+                db.Remove(existingFile);
+                await db.SaveChangesAsync();
+            }
+
+            await adminActivityService.TrackAdminUserActivityAsync(
+                AdminUser!,
+                AdminActivityType.CustomTheme,
+                "Restored default Bootstrap stylesheet.");
+
+            isCustomBootstrapFileInDb = false;
+
+            if (StylesheetsChanged.HasDelegate)
+            {
+                await StylesheetsChanged.InvokeAsync();
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleAdditionalFileResetAsync()
+    {
+        if (!isCustomCssOverridesFileInDb)
+        {
+            return;
+        }
+
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            var existingFile = await db.CustomStyleSheets
+                .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.AlohaCssOverride);
+
+            if (existingFile is not null)
+            {
+                db.Remove(existingFile);
+                await db.SaveChangesAsync();
+            }
+
+            await adminActivityService.TrackAdminUserActivityAsync(
+                AdminUser!,
+                AdminActivityType.CustomTheme,
+                "Restored default additional CSS overrides.");
+
+            isCustomCssOverridesFileInDb = false;
+
+            if (StylesheetsChanged.HasDelegate)
+            {
+                await StylesheetsChanged.InvokeAsync();
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task<string?> TryReadStaticFileFromCandidatesAsync(IEnumerable<string> candidates)
+    {
+        foreach (var p in candidates)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(p)) continue;
+                if (!File.Exists(p)) continue;
+                var txt = await File.ReadAllTextAsync(p);
+                if (!string.IsNullOrWhiteSpace(txt)) return txt;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"TryReadStaticFileFromCandidates read error for {p}: {ex.Message}");
+            }
+        }
+        return null;
+    }
+
+    private string[] BuildBootstrapCandidates()
+    {
+        var webroot = Env.WebRootPath ?? string.Empty;
+        var contentRoot = Env.ContentRootPath ?? string.Empty;
+
+        var candidates = new List<string>
+        {
+            Path.Combine(webroot, "css", "aloha-bootstrap.min.css"),
+            Path.Combine(webroot, "css", "bootstrap.min.css"),
+            Path.Combine(webroot, "css", "aloha-bootstrap.css"),
+            Path.Combine(webroot, "css", "bootstrap.css")
+        };
+
+        var sibling = Path.Combine(contentRoot, "..", "Aloha.Customer.Web", "wwwroot", "css");
+        candidates.Add(Path.Combine(sibling, "aloha-bootstrap.min.css"));
+        candidates.Add(Path.Combine(sibling, "bootstrap.min.css"));
+        candidates.Add(Path.Combine(sibling, "aloha-bootstrap.css"));
+        candidates.Add(Path.Combine(sibling, "bootstrap.css"));
+
+        var configured = Configuration["CustomerWebRoot"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            candidates.Add(Path.Combine(configured, "css", "aloha-bootstrap.min.css"));
+            candidates.Add(Path.Combine(configured, "css", "bootstrap.min.css"));
+            candidates.Add(Path.Combine(configured, "css", "aloha-bootstrap.css"));
+            candidates.Add(Path.Combine(configured, "css", "bootstrap.css"));
+        }
+
+        return candidates.ToArray();
+    }
+
+    private string[] BuildAdditionalCandidates()
+    {
+        var webroot = Env.WebRootPath ?? string.Empty;
+        var contentRoot = Env.ContentRootPath ?? string.Empty;
+
+        var candidates = new List<string>
+        {
+            Path.Combine(webroot, "css", "aloha-additional.css"),
+            Path.Combine(webroot, "css", "aloha-css-overrides.css"),
+            Path.Combine(webroot, "css", "aloha-additional.min.css"),
+            Path.Combine(webroot, "css", "additional.css")
+        };
+
+        var sibling = Path.Combine(contentRoot, "..", "Aloha.Customer.Web", "wwwroot", "css");
+        candidates.Add(Path.Combine(sibling, "aloha-additional.css"));
+        candidates.Add(Path.Combine(sibling, "aloha-css-overrides.css"));
+        candidates.Add(Path.Combine(sibling, "aloha-additional.min.css"));
+        candidates.Add(Path.Combine(sibling, "additional.css"));
+
+        var configured = Configuration["CustomerWebRoot"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            candidates.Add(Path.Combine(configured, "css", "aloha-additional.css"));
+            candidates.Add(Path.Combine(configured, "css", "aloha-css-overrides.css"));
+            candidates.Add(Path.Combine(configured, "css", "aloha-additional.min.css"));
+            candidates.Add(Path.Combine(configured, "css", "additional.css"));
+        }
+
+        return candidates.ToArray();
+    }
+    
+    private async Task DownloadBootstrapAsync()
+    {
+        try
+        {
+            string css = string.Empty;
+
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                var file = await db.CustomStyleSheets
+                    .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.BootstrapCompleteOverride);
+
+                if (file?.FileContent is { Length: > 0 })
+                {
+                    css = System.Text.Encoding.UTF8.GetString(file.FileContent);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(css))
+            {
+                var candidates = BuildBootstrapCandidates();
+                css = await TryReadStaticFileFromCandidatesAsync(candidates) ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(css))
+            {
+                await JS.InvokeVoidAsync("alert", "No Bootstrap stylesheet found to download.");
+                return;
+            }
+
+            await JS.InvokeVoidAsync("themeDownload.downloadText", css, "bootstrap.css");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"DownloadBootstrapAsync error: {ex}");
+            await JS.InvokeVoidAsync("alert", $"Download failed: {ex.Message}");
+        }
+    }
+
+    private async Task DownloadAdditionalAsync()
+    {
+        try
+        {
+            string css = string.Empty;
+
+            await using (var db = await dbFactory.CreateDbContextAsync())
+            {
+                var file = await db.CustomStyleSheets
+                    .FirstOrDefaultAsync(f => f.UseCase == CustomStyleSheetUseCase.AlohaCssOverride);
+
+                if (file?.FileContent is { Length: > 0 })
+                {
+                    css = System.Text.Encoding.UTF8.GetString(file.FileContent);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(css))
+            {
+                var candidates = BuildAdditionalCandidates();
+                css = await TryReadStaticFileFromCandidatesAsync(candidates) ?? string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(css))
+            {
+                await JS.InvokeVoidAsync("alert", "No Additional CSS stylesheet found to download.");
+                return;
+            }
+
+            await JS.InvokeVoidAsync("themeDownload.downloadText", css, "aloha-css-overrides.css");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"DownloadAdditionalAsync error: {ex}");
+            await JS.InvokeVoidAsync("alert", $"Download failed: {ex.Message}");
+        }
+    }
+
+    private class Input
+    {
+        public IBrowserFile? BootstrapFile { get; set; }
+
+        [Required(ErrorMessage = "Please provide a css file")]
+        public IBrowserFile? AlohaCssOverrideFile { get; set; }
+    }
+}
+
+<script>
+  window.themeDownload = window.themeDownload || {};
+
+  window.themeDownload.downloadText = function (text, filename) {
+    try {
+      const blob = new Blob([text], { type: 'text/css;charset=utf-8' });
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = objUrl;
+      a.download = filename || 'download.css';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(objUrl); }, 5000);
+      return { success: true, message: 'Download started' };
+    } catch (err) {
+      console.error('downloadText error', err);
+      return { success: false, message: (err && err.toString) ? err.toString() : 'unknown error' };
+    }
+  };
+</script>

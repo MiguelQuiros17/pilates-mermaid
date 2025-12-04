@@ -1,0 +1,613 @@
+@page "/applications/products/cards"
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Customer.Web.Components.Common.Forms
+@using Aloha.Customer.Web.Utilities
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.ApplicationProducts
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Branches
+@using Aloha.Domain.Disclosures
+@rendermode InteractiveServer
+@inject IApplicationStateProvider stateProvider
+@inject IApplicationStepCompletionManager applicationStepCompletionManager
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<Cards> l
+@inject IStringLocalizer<SharedResources> sl
+@inject NavigationManager nav
+
+<h1>@l["page-heading"]</h1>
+
+<p>@l["page-description"]</p>
+
+@if (!hasShareProductsEligibleForCardOrdering)
+{
+    <div class="card">
+        <div class="card-body">
+            <div class="d-flex flex-column flex-xl-row justify-content-between gap-3">
+                <div class="d-flex flex-column justify-content-center">
+                    <p class="mb-0">@l["alert-description-no-eligible-share-products"]</p>
+                </div>
+                <div class="d-flex flex-column justify-content-center">
+                    <a class="btn btn-primary text-nowrap" href="/applications/products">
+                        @l["alert-button-return-to-product-selection"]
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<EditForm EditContext="editContext" FormName="AddProducts" OnValidSubmit="SubmitForm" novalidate>
+    <InputRadioGroup @bind-Value="input.SelectedCardOption" class="form-select mb-3" id="selectedSentOrPickup" required>
+        <div class="my-3">
+            @if (cardOrderingOptions.Contains("MailCard"))
+            {
+                <div class="d-flex gap-1 flex-row">
+                    <InputRadio class="form-check-input"
+                                id="cardSent"
+                                required
+                                disabled="@(!hasShareProductsEligibleForCardOrdering)"
+                                Value=@("MailCard") />
+                    <label class=@($"form-check-label px-1 pb-2 {(hasShareProductsEligibleForCardOrdering ? "" : "text-muted")}") for="cardSent">@l["label-card-sent"]</label>
+                </div>
+                <div class="ms-4">
+                    <ul class="list-unstyled">
+                        @foreach (var card in applicationCardProducts)
+                        {
+                            <li class="g-3 row row-cols-1 row-cols-md-3 pb-1">
+                                <div class="col col-md-4">
+                                    @if (card.CardProduct!.CardProductImage is null)
+                                    {
+                                        <div class="align-items-center border-1 d-flex flex-column gap-2 justify-content-center rounded-2 w-100"
+                                        style="aspect-ratio: 3.37/2.125; border-style: solid">
+                                            <Icon Name="IconName.CardImage" />
+                                            <span>@l["text-no-card-image"]</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="align-items-center border-1 d-flex flex-column gap-2 justify-content-center w-100"
+                                        style="aspect-ratio: 3.37/2.125">
+                                            <img alt="card preview" class="img-fluid m-0" src=@($"/api/card-image/{card.CardProductId}") />
+                                        </div>
+                                    }
+                                </div>
+                                <div class="col col-md-8">
+                                    <div class="d-flex flex-1 flex-column gap-2 h-100 rounded-2"
+                                    style="background-color: var(--aloha-color-surface)">
+                                        <div class="d-flex flex-row p-3 pb-0">
+                                            <h5 class="d-flex m-0 w-100">@card.CardProduct?.ProductDisplayName</h5>
+                                            <button class="align-self-start btn p-0"
+                                            @onclick="() => RemoveProduct(card)"
+                                            Outline="true"
+                                            type="button">
+                                                <Icon Name="IconName.TrashFill" />
+                                            </button>
+                                        </div>
+                                        <div class="p-3 pt-0 row row-cols-1 row-cols-sm-2">
+                                            <div class="col">
+                                                <p class="form-text m-0">@l["label-cardholder"]</p>
+                                                <p class="m-0">@card.ApplicationPerson?.GetFullName()</p>
+                                            </div>
+                                            <div>
+                                                <p class="form-text m-0">@l["label-card-category"]</p>
+                                                <p class="m-0">@(card.CardProduct?.CardProductCategory?.CategoryDisplayName ?? "---")</p>
+                                            </div>
+                                            <div class="col">
+                                                <p class="form-text m-0">@l["label-card-checking-account"]</p>
+                                                <p class="m-0">@(card.CheckingAccountProduct?.ProductDisplayName ?? "---")</p>
+                                            </div>
+                                            <div class="col">
+                                                <p class="form-text m-0">@l["label-card-savings-account"]</p>
+                                                <p class="m-0">@(card.SavingsAccountProduct?.ProductDisplayName ?? "---")</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+
+                    @if (canAddCard && input.SelectedCardOption == "MailCard")
+                    {
+                        <div class="g-3 row">
+                            <div class="col col-md-4">
+                                <a class=@($"align-items-center border-1 btn btn-outline-primary d-flex justify-content-center my-0 w-100 {(hasShareProductsEligibleForCardOrdering ? "" : "disabled")}")
+                                href=@(hasShareProductsEligibleForCardOrdering ? "/applications/products/cards/add" : null)
+                                role="button"
+                                disabled="@(!hasShareProductsEligibleForCardOrdering)"
+                                style="aspect-ratio: 3.37/2.125; border-style: dashed">
+                                    <span>@l["button-add-card"]</span>
+                                </a>
+                            </div>
+                            <div class="col col-md-8 d-md-block d-none"></div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="mb-3">
+            @if (cardOrderingOptions.Contains("PickUpCardInBranch"))
+            {
+                <div>
+                    <div class="d-flex gap-1 flex-row">
+                        <InputRadio class="form-check-input"
+                                    id="cardPickup"
+                                    required
+                                    disabled="@(!hasShareProductsEligibleForCardOrdering)"
+                                    Value=@("PickUpCardInBranch") />
+                        <label class=@($"form-check-label px-1 pb-2 {(hasShareProductsEligibleForCardOrdering ? "" : "text-muted")}") for="cardPickup">
+                            @l["label-card-pickup"]
+                        </label>
+                    </div>
+                    <button type="button" class="btn btn-link" style="padding: 0;" @onclick="OnShowModalClick">@l["link-description-card-pickup-local-branches"]</button>
+                </div>
+                @if (applicationCardProducts.Any() && input.SelectedCardOption == "PickUpCardInBranch")
+                {
+                    <div class="ms-4">
+                        <div class="mb-3">
+                            <Alert Color="AlertColor.Warning">@l["label-card-pickup-reminder"]</Alert>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="mb-3">
+            @if (cardOrderingOptions.Contains("NoCard"))
+            {
+                <div class="d-flex gap-1 flex-row">
+                    <InputRadio class="form-check-input"
+                    id="noCard"
+                    required
+                    Value=@("NoCard") />
+                    <label class="form-check-label px-1 pb-2" for="noCard">
+                        @l["radio-button-no-card"]
+                    </label>
+                </div>
+            }
+        </div>
+        @if (applicationCardProducts.Any() && input.SelectedCardOption == "NoCard")
+        {
+            <div class="ms-4">
+                <div class="mb-3">
+                    <Alert Color="AlertColor.Warning">@l["label-card-no-card-reminder"]</Alert>
+                </div>
+            </div>
+        }
+    </InputRadioGroup>
+
+    @if (applicationCardProducts.Any() && input.Disclosures.Any() && input.SelectedCardOption == "MailCard")
+    {
+        <Accordion Class="my-3" @ref="accordion">
+            @foreach (var item in input.Disclosures)
+            {
+                <AccordionItem
+                Active="item is { IsChecked: false, Disclosure.RequireAcknowledgment: true }"
+                Name=@($"disclosure-{item.Disclosure.Id}")
+                >
+                    <TitleTemplate>
+                        <div class="d-flex w-100">
+                            <div class="flex-fill">
+                                @if (item.IsChecked || !item.Disclosure.RequireAcknowledgment)
+                                {
+                                    <Icon Class="me-2" Name="IconName.Check2Circle"/>
+                                }
+                                @(item.Disclosure.DisplayName)
+                            </div>
+                            @if (item.Disclosure.ShowExportButton)
+                            {
+                                <div class="d-flex align-items-center">
+                                    <a
+                                    @onclick:stopPropagation="true"
+                                    class="mx-3"
+                                    href=@($"/disclosures/{item.Disclosure.Id}/print")
+                                    target="_blank">
+                                    @sl["button-export"]
+                                    </a>
+                                </div>
+                            }
+                        </div>
+                    </TitleTemplate>
+                    <Content>
+                        <div style="overflow: auto; max-height: 400px">
+                            @if (item.Disclosure.Content is not null)
+                            {
+                                <div>@((MarkupString)ConvertLineBreaks(item.Disclosure.Content))</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.Disclosure.DocumentUrl))
+                            {
+                                <a class="btn btn-link" href="@item.Disclosure.DocumentUrl" role="button"
+                                target="_blank">
+                                    @item.Disclosure.DisplayName
+                                </a>
+                            }
+                            @if (item.Disclosure.RequireAcknowledgment)
+                            {
+                                <div class="form-check m-3">
+                                    <InputCheckbox @bind-Value="item.IsChecked"
+                                    @bind-Value:after="() => AfterDisclosureCheckBoxChanged(item)"
+                                    class="form-check-input"
+                                    id=@($"disclosure-{item.Disclosure.Id}-agree")
+                                    required/>
+                                    <label class="form-check-label" for=@($"disclosure-{item.Disclosure.Id}-agree")>
+                                        @l["label-checkbox-disclosure", item.Disclosure.DisplayName]
+                                    </label>
+                                    <ValidationMessage For="() => item.IsChecked"/>
+                                </div>
+                            }
+                        </div>
+                    </Content>
+                </AccordionItem>
+            }
+        </Accordion>
+    }
+
+    <DataAnnotationsValidator/>
+    <ValidationMessage For="() => input.ErrorMessage"/>
+    <div class="mt-3 d-flex justify-content-end">
+        <Button Color="ButtonColor.Primary" Type="@ButtonType.Submit">@sl["button-continue"]</Button>
+    </div>
+    <FormNavigationWarning @ref="formNavigationWarning" ConfirmRequired="editContext.IsModified()"/>
+</EditForm>
+
+<Modal @ref="modal" Title="@l["label-local-branches"].Value" IsScrollable="true" UseStaticBackdrop="true" CloseOnEscape="false">
+    <BodyTemplate>
+        @foreach (var branch in branches)
+        {
+            <address>
+                <p>
+                    <b>@branch.DisplayName</b><br />
+                    @if (!string.IsNullOrWhiteSpace(branch.Address) || !string.IsNullOrWhiteSpace(branch.ExtraAddress))
+                    {
+                        @branch.Address @(!string.IsNullOrWhiteSpace(branch.ExtraAddress) ? ", " + @branch.ExtraAddress : "")
+                        <br />
+                    }
+                    @if (!string.IsNullOrWhiteSpace(branch.City) 
+                         || !string.IsNullOrWhiteSpace(branch.StateCode) 
+                         || !string.IsNullOrWhiteSpace(branch.ZipCode))
+                    {
+                        <span>@(!string.IsNullOrWhiteSpace(branch.City) ? branch.City + "," : "") @branch.StateCode @branch.ZipCode</span>
+                        <br />
+                    }
+                    @if (!string.IsNullOrWhiteSpace(branch.Url))
+                    {
+                        <a href="@branch.Url" target="_blank" class="d-block">@branch.Url</a>
+                    }
+                </p>
+            </address>
+            <hr class="border border-1 opacity-75">
+        }
+    </BodyTemplate>
+    <FooterTemplate>
+        <Button Color="ButtonColor.Primary" @onclick="OnHideModalClick">@l["button-modal-ok"]</Button>
+    </FooterTemplate>
+</Modal>
+
+@code {
+
+    private Accordion accordion = null!;
+    private EditContext editContext = null!;
+    private FormNavigationWarning? formNavigationWarning;
+    private Guid appKey = Guid.Empty;
+    private IList<ApplicationCardProduct> applicationCardProducts = [];
+    private IList<Disclosure> disclosures = [];
+    private ValidationMessageStore messageStore = null!;
+    private bool canAddCard;
+    private bool hasShareProductsEligibleForCardOrdering;
+    private IList<Branch> branches = [];
+    private readonly Input input = new();
+    private Modal modal = default!;
+    private IList<string> cardOrderingOptions = [];
+
+    private async Task OnShowModalClick()
+    {
+        await modal.ShowAsync();
+    }
+
+    private async Task OnHideModalClick()
+    {
+        await modal.HideAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (_, _) => messageStore.Clear();
+        editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ValidateAndSetAppKey();
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var appType = await db.UserApplications.FirstAsync(app => app.ApplicationKey == appKey);
+            var appTypeId = appType.ProductApplicationTypeId;
+
+            var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+
+            if (feature?.CardOrderingFeature is not null)
+            {
+                if (feature.CardOrderingFeature.CardOrderingOnlineEnabled)
+                {
+                    cardOrderingOptions.Add("MailCard");
+                }
+                if (feature.CardOrderingFeature.CardOrderingInBranchEnabled)
+                {
+                    cardOrderingOptions.Add("PickUpCardInBranch");
+                }
+                if (feature.CardOrderingFeature.CardOrderingSkipEnabled)
+                {
+                    cardOrderingOptions.Add("NoCard");
+                }
+            }
+
+            var isCardOrderingEnabledForApp = await FeatureFlagUtils.IsCardOrderingEnabledForAppTypeAsync(db, appTypeId);
+
+            if (!isCardOrderingEnabledForApp)
+            {
+                nav.NavigateTo("/applications/summary", replace: true);
+                return;
+            }
+
+            await LoadData(db);
+        }
+    }
+
+    private static string ConvertLineBreaks(string value)
+    {
+        return value.Replace("\r\n", "<br />").Replace("\n", "<br />");
+    }
+
+    private async Task SubmitForm()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (!hasShareProductsEligibleForCardOrdering && input.SelectedCardOption == "PickUpCardInBranch")
+        {
+            messageStore.Add(() => input.ErrorMessage!, "No selected products qualify for card ordering.");
+            editContext.NotifyValidationStateChanged();
+            return;
+        }
+
+        if (!applicationCardProducts.Any() && input.SelectedCardOption == "MailCard")
+        {
+            messageStore.Add(() => input.ErrorMessage!, "You must add a card in order to continue.");
+            return;
+        }
+
+        if (applicationCardProducts.Any() && input.SelectedCardOption != "MailCard")
+        {
+            var removeList = new List<ApplicationCardProduct>();
+            foreach (var card in applicationCardProducts)
+            {
+                removeList.Add(card);
+                db.Remove(card);
+                await db.SaveChangesAsync();
+            }
+
+            foreach (var cardToRemove in removeList)
+            {
+                applicationCardProducts.Remove(cardToRemove);
+            }
+        }
+
+        var application = await db.UserApplications.FirstAsync(x => x.ApplicationKey == appKey);
+
+        var requireCards = await db.ApplicationShareProducts
+            .Where(appShare =>
+                appShare.UserApplication!.ApplicationKey == appKey &&
+                appShare.ShareProduct!.CardOrderRequired)
+            .AnyAsync();
+
+        if (requireCards && applicationCardProducts.Count <= 0)
+        {
+            messageStore.Add(() => input.ErrorMessage!, "One or more of your selected accounts requires a card.");
+            return;
+        }
+
+        if (applicationCardProducts.Any() && input.Disclosures.Any())
+        {
+            foreach (var item in input.Disclosures)
+            {
+                if (!item.Disclosure.RequireAcknowledgment || item.IsChecked)
+                {
+                    continue;
+                }
+
+                messageStore.Add(
+                    () => item.IsChecked,
+                    l["validation-must-agree-disclosure", item.Disclosure.DisplayName]);
+
+                editContext.NotifyValidationStateChanged();
+                await accordion.ShowAccordionItemByNameAsync($"disclosure-{item.Disclosure.Id}");
+                return;
+            }
+
+            foreach (var item in input.Disclosures)
+            {
+                if (item.ApplicationDisclosure == null)
+                {
+                    var disclosure = ApplicationDisclosure.Create(
+                        application.Id,
+                        item.Disclosure.Id,
+                        item.Disclosure.Version,
+                        item.IsChecked,
+                        item.Disclosure.RequireAcknowledgment);
+
+                    db.Add(disclosure);
+                }
+                else
+                {
+                    var appDisclosure = await db.ApplicationDisclosures
+                        .Where(x => x.UserApplication!.ApplicationKey == appKey)
+                        .FirstAsync(x => x.Id == item.ApplicationDisclosure.Id);
+
+                    appDisclosure.Update(item.Disclosure.Version, item.IsChecked, item.Disclosure.RequireAcknowledgment);
+                }
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        UserApplicationCardDeliveryType deliveryType;
+        if (input.SelectedCardOption == "PickUpCardInBranch")
+        {
+            deliveryType = UserApplicationCardDeliveryType.InBranch;
+        }
+        else if (input.SelectedCardOption == "MailCard")
+        {
+            deliveryType = UserApplicationCardDeliveryType.Mail;
+        }
+        else
+        {
+            deliveryType = UserApplicationCardDeliveryType.NoCard;
+        }
+
+        application.UpdateCardDeliveryType(deliveryType);
+        db.Update(application);
+        await db.SaveChangesAsync();
+
+        await applicationStepCompletionManager.MarkStepAsCompletedAsync(UserApplicationStepType.Cards);
+
+        formNavigationWarning?.SkipNavigationWarning();
+        nav.NavigateTo("applications/summary");
+    }
+
+    private async Task RemoveProduct(ApplicationCardProduct card)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        db.Remove(card);
+        await db.SaveChangesAsync();
+        await LoadData(db);
+    }
+
+    private async Task LoadData(AlohaDb db)
+    {
+        var application = await db.UserApplications
+            .Include(x => x.ApplicationAccountOption)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+
+        applicationCardProducts = await db.ApplicationCardProducts
+            .Include(x => x.CardProduct)
+            .Include(x => x.ApplicationPerson)
+            .Include(x => x.CheckingAccountProduct)
+            .Include(x => x.SavingsAccountProduct)
+            .Include(x => x.CardProduct)
+            .ThenInclude(x => x!.CardProductCategory)
+            .Include(x => x.CardProduct)
+            .ThenInclude(x => x!.CardProductImage)
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .ToListAsync();
+
+        canAddCard = await db.ApplicationPeople
+            .Where(person =>
+                person.UserApplication!.ApplicationKey == appKey &&
+                //Only persons with no card selected
+                !person.UserApplication.ApplicationCardProducts!.Any(card => card.ApplicationPersonId == person.Id) &&
+                //Only joint and primary
+                (person.PersonType == PersonType.Primary || person.PersonType == PersonType.Joint)
+            )
+            .AnyAsync();
+
+        hasShareProductsEligibleForCardOrdering = await UserApplicationAnalysisUtils
+            .HasSelectedAnyShareProductsEligibleForCardOrderingAsync(db, appKey);
+
+        disclosures = await db.Disclosures
+            .GetEnabledDisclosures()
+            .Where(d => d.DisclosureApplicationTypeLinks!.Any(x => x.ProductApplicationTypeId == application.ProductApplicationTypeId))
+            .Where(d => d.DisclosureType == DisclosureType.Card)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync();
+
+        if (disclosures.Any())
+        {
+            var appDisclosures = await db.ApplicationDisclosures
+                .Where(x => x.UserApplication!.ApplicationKey == appKey)
+                .Where(x => x.Disclosure!.DisclosureType == DisclosureType.Card)
+                .ToListAsync();
+
+            foreach (var disclosure in disclosures)
+            {
+                var appDisclosure = appDisclosures.FirstOrDefault(x => x.DisclosureId == disclosure.Id);
+
+                input.Disclosures.Add(new DisclosureCheckboxInput
+                {
+                    Disclosure = disclosure,
+                    ApplicationDisclosure = appDisclosure,
+                    IsChecked = appDisclosure?.Acknowledged ?? false
+                });
+            }
+        }
+
+        branches = await db.Branches
+            .Join(db.BranchSettings,
+                branch => branch.Id,
+                branchSetting => branchSetting.BranchId,
+                (branch, branchSetting) => branch)
+            .ToListAsync();
+        
+        // Default to "NoCard" if no cards are available
+        if (!hasShareProductsEligibleForCardOrdering && cardOrderingOptions.Contains("NoCard"))
+        {
+            input.SelectedCardOption = "NoCard";
+        }
+        else if (application.CardDeliveryType == UserApplicationCardDeliveryType.InBranch && cardOrderingOptions.Contains("PickUpCardInBranch"))
+        {
+            input.SelectedCardOption = "PickUpCardInBranch";
+        }
+        else if (application.CardDeliveryType == UserApplicationCardDeliveryType.Mail && cardOrderingOptions.Contains("MailCard"))
+        {
+            input.SelectedCardOption = "MailCard";
+        }
+        else if (application.CardDeliveryType == UserApplicationCardDeliveryType.NoCard && cardOrderingOptions.Contains("NoCard"))
+        {
+            input.SelectedCardOption = "NoCard";
+        }
+        else
+        {
+            input.SelectedCardOption = cardOrderingOptions.First();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task AfterDisclosureCheckBoxChanged(DisclosureCheckboxInput item)
+    {
+        if (item.IsChecked)
+        {
+            await accordion.HideAccordionItemByNameAsync($"disclosure-{item.Disclosure.Id}");
+        }
+    }
+
+    private async Task ValidateAndSetAppKey()
+    {
+        var key = await stateProvider.GetCurrentApplicationKeyAsync();
+
+        if (key is null)
+        {
+            nav.NavigateTo("/");
+            return;
+        }
+
+        appKey = key.Value;
+    }
+
+    private class DisclosureCheckboxInput
+    {
+        public required Disclosure Disclosure { get; init; }
+        public required ApplicationDisclosure? ApplicationDisclosure { get; init; }
+        public required bool IsChecked { get; set; }
+    }
+
+    private class Input
+    {
+        public string? ErrorMessage { get; set; }
+        public IList<DisclosureCheckboxInput> Disclosures { get; set; } = [];
+        public string? SelectedCardOption { get; set; }
+    }
+}

@@ -1,0 +1,359 @@
+@page "/applications/products/cards/add"
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.ApplicationProducts
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Products
+@using Aloha.Customer.Web.Components.Common.Forms
+@using Aloha.Customer.Web.Utilities
+@rendermode InteractiveServer
+@inject IApplicationStateProvider stateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject IStringLocalizer<AddCard> l
+@inject IStringLocalizer<SharedResources> sl
+
+<div class="container">
+    <h1>@l["page-heading"]</h1>
+    <RequiredFieldHelper/>
+    <EditForm EditContext="editContext" FormName="AddCard" novalidate OnValidSubmit="SubmitForm">
+        <DataAnnotationsValidator/>
+        <ValidationSummary/>
+
+        <div class="mb-3">
+            <label class="form-label" for="selectedPerson">@l["label-cardholder"]</label>
+            <InputSelect @bind-Value="input.PersonId" class="form-select" id="selectedPerson" required>
+                <option value="">Select...</option>
+                @foreach (var option in applicationPeople)
+                {
+                    <option value="@option.Id">@option.FirstName @option.LastName</option>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => input.PersonId"/>
+        </div>
+
+        <fieldset class="mb-3">
+            <legend class="form-label mb-2">@l["label-card-type"]</legend>
+            <InputRadioGroup @bind-Value="input.CardTypeId" @bind-Value:after="ProductSelectionChanged">
+                <div class="g-3 row row-cols-1 row-cols-md-3">
+                    @foreach (var option in cardProducts)
+                    {
+                        <div class="col col-md-4 align-items-center d-flex flex-column">
+                            <label class="align-items-center col d-flex flex-column gap-2 mb-3 w-100 form-check-label text-center" for="@("cardoption" + option.Id)">
+                                @if (option.CardProductImage is null)
+                                {
+                                    <div
+                                        class="align-items-center border-1 d-flex flex-column gap-2 justify-content-center mb-2 rounded-2 w-100"
+                                        style="aspect-ratio: 3.37/2.125; border-style: solid">
+                                        <Icon Name="IconName.CardImage"/>
+                                        <span>@l["text-no-card-image"]</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div
+                                        class="align-items-center border-1 d-flex flex-column gap-2 justify-content-center mb-2 w-100"
+                                        style="aspect-ratio: 3.37/2.125">
+                                        <img alt="card preview" class="img-fluid" src=@($"/api/card-image/{option.Id}")/>
+                                    </div>
+                                }
+                                <span class="d-block fw-bold">@option.ProductDisplayName</span>
+                                @if (!string.IsNullOrEmpty(option.ProductDescription))
+                                {
+                                    <p class="m-0">@((MarkupString)option.ProductDescription)</p>
+                                }
+                            </label>
+                            <InputRadio class="form-check-input"
+                                            id="@("cardoption" + option.Id)"
+                                            required
+                                            Value="option.Id"/>
+                        </div>
+                    }
+                </div>
+            </InputRadioGroup>
+            <ValidationMessage For="() => input.CardTypeId"/>
+        </fieldset>
+        @if (config.CurrentProduct?.SupportsChecking == true)
+        {
+            <div class="mb-3">
+                <label class="form-label" for="selectedChecking">@l["label-checking-account"]</label>
+                <InputSelect @bind-Value="input.CheckingId" class="form-select" id="selectedChecking"
+                             required="@(config.CurrentProduct.RequiresChecking)">
+                    <option value="">Select...</option>
+                    @foreach (var option in allowedSources.Where(x => x.IsCardCheckingSource))
+                    {
+                        <option value="@option.Id">@option.ProductDisplayName</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => input.CheckingId"/>
+            </div>
+        }
+        @if (config.CurrentProduct?.SupportsSavings == true && allowedSources.Any(x => x.IsCardSavingsSource))
+        {
+            <div class="mb-3">
+                <label class="form-label" for="selectedSavings">@l["label-savings-account"]</label>
+                <InputSelect @bind-Value="input.SavingsId" class="form-select" id="selectedSavings"
+                             required="@(config.CurrentProduct.RequiresSavings)">
+                    <option value="">Select...</option>
+                    @foreach (var option in allowedSources.Where(x => x.IsCardSavingsSource))
+                    {
+                        <option value="@option.Id">@option.ProductDisplayName</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => input.SavingsId"/>
+            </div>
+        }
+
+        <div class="mb-3">
+            <SubmitCancelButtonGroup CancelPath="/applications/products/cards"/>
+        </div>
+        <FormNavigationWarning @ref="formNavigationWarning" ConfirmRequired="editContext.IsModified()"/>
+    </EditForm>
+</div>
+
+@code {
+    private readonly Input input = new();
+    private Guid appKey = default!;
+    private readonly Config config = new();
+
+    private IList<ApplicationPerson> applicationPeople = [];
+    private IList<CardProduct> cardProducts = [];
+    private IList<ShareProduct> allowedSources = [];
+
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private FormNavigationWarning? formNavigationWarning;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ValidateAndSetAppKey();
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            var app = await db.UserApplications.FirstAsync(x => x.ApplicationKey == appKey);
+
+            var isCardOrderingEnabled = await FeatureFlagUtils
+                .IsCardOrderingEnabledForAppTypeAsync(db, app.ProductApplicationTypeId);
+
+            if (!isCardOrderingEnabled)
+            {
+                nav.NavigateTo("/applications/summary", replace: true);
+                return;
+            }
+
+            // Check if cards are available using the utility function - if not, redirect back to Cards page
+            var hasShareProductsEligibleForCardOrdering = await UserApplicationAnalysisUtils
+                .HasSelectedAnyShareProductsEligibleForCardOrderingAsync(db, appKey);
+
+            if (!hasShareProductsEligibleForCardOrdering)
+            {
+                nav.NavigateTo("/applications/products/cards", replace: true);
+                return;
+            }
+
+            applicationPeople = await db.ApplicationPeople
+                .Where(person =>
+                    person.UserApplication!.ApplicationKey == appKey &&
+                    //Only persons with no card selected
+                    person.UserApplication.ApplicationCardProducts!.All(card => card.ApplicationPersonId != person.Id) &&
+                    //Only joint and primary
+                    (person.PersonType == PersonType.Primary || person.PersonType == PersonType.Joint)
+                )
+                .ToListAsync();
+
+            // Check if there are any eligible people to add cards to
+            if (!applicationPeople.Any())
+            {
+                nav.NavigateTo("/applications/products/cards", replace: true);
+                return;
+            }
+
+            var selectedTypes = await db.ApplicationShareProducts
+                .Where(x => x.UserApplication!.ApplicationKey == appKey)
+                .Select(x => x.ShareProductId)
+                .ToListAsync();
+
+            cardProducts = await db.CardProducts
+                .GetEnabledProducts()
+                .Include(x => x.CardShareTypeLinks!)
+                .ThenInclude(link => link.ShareProduct)
+                .Include(x => x.CardProductImage)
+                .Where(x =>
+                    !x.RestrictedCardProduct
+                    ||
+                    x.CardShareTypeLinks!.Any(link =>
+                        link.ShareProduct != null &&
+                        link.ShareProduct.CardOrderEnabled &&
+                        selectedTypes.Contains(link.ShareProductId)))
+                .ToListAsync();
+
+            // Preselect card type if there's only one product available
+            if (cardProducts.Count == 1)
+            {
+                input.CardTypeId = cardProducts.First().Id;
+                await ProductSelectionChanged();
+                AutoFillShareSelections();
+            }
+            
+            // Prefill cardholder when only one person on app
+            if (applicationPeople.Count == 1)
+            {
+                input.PersonId = applicationPeople.First().Id;
+            }
+
+            StateHasChanged();
+        }
+    }
+
+    private void AutoFillShareSelections()
+    {
+        // Automatically select checking account if only 1 available
+        if (config.CurrentProduct?.SupportsChecking == true)
+        {
+            var checkingSources = allowedSources.Where(x => x.IsCardCheckingSource).ToList();
+            input.CheckingId = checkingSources.Count == 1 ? checkingSources.First().Id : null;
+        }
+        else
+        {
+            input.CheckingId = null;
+        }
+
+        // Automatically select savings account if only 1 available
+        if (config.CurrentProduct?.SupportsSavings == true)
+        {
+            var savingsSources = allowedSources.Where(x => x.IsCardSavingsSource).ToList();
+            input.SavingsId = savingsSources.Count == 1 ? savingsSources.First().Id : null;
+        }
+        else
+        {
+            input.SavingsId = null;
+        }
+    }
+
+    private async Task SubmitForm()
+    {
+        if (config.CurrentProduct is null)
+        {
+            messageStore.Add(() => input.CardTypeId!, "Please select a card type");
+            return;
+        }
+
+        if (config.CurrentProduct.RequiresSavings && !input.SavingsId.HasValue)
+        {
+            messageStore.Add(() => input.SavingsId!, "Please select a savings");
+            return;
+        }
+
+        if (config.CurrentProduct.RequiresChecking && !input.CheckingId.HasValue)
+        {
+            messageStore.Add(() => input.CheckingId!, "Please select a checking");
+            return;
+        }
+
+        if (!config.CurrentProduct.RequiresChecking && !config.CurrentProduct.RequiresSavings && !input.CheckingId.HasValue && !input.SavingsId.HasValue)
+        {
+            messageStore.Add(() => input!, "Please select either a checking or a savings account.");
+            return;
+        }
+
+        //Save card products.
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var application = await db.UserApplications.FirstAsync(x => x.ApplicationKey == appKey);
+
+        var product = ApplicationCardProduct.Create(application.Id, input.PersonId!.Value, config.CurrentProduct.Id);
+        product.SetShareProducts(input.CheckingId, input.SavingsId);
+        application.UpdateCardDeliveryType(UserApplicationCardDeliveryType.Mail);
+
+        db.Add(product);
+        await db.SaveChangesAsync();
+        formNavigationWarning?.SkipNavigationWarning();
+        nav.NavigateTo("/applications/products/cards");
+    }
+
+    private async Task ProductSelectionChanged()
+    {
+        if (!input.CardTypeId.HasValue)
+        {
+            allowedSources = [];
+            config.CurrentProduct = null;
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        config.CurrentProduct = await db.CardProducts
+            .Include(x => x.CardShareTypeLinks!)
+            .ThenInclude(x => x.ShareProduct)
+            .FirstOrDefaultAsync(x => x.Id == input.CardTypeId);
+
+        var selectedShareIds = await db.ApplicationShareProducts
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .Select(x => x.ShareProductId)
+            .ToListAsync();
+
+        var products = await db.ShareProducts
+            .Where(x =>
+                selectedShareIds.Contains(x.Id) &&
+                (x.IsCardSavingsSource || x.IsCardCheckingSource) &&
+                x.CardOrderEnabled)
+            .ToListAsync();
+
+        if (config.CurrentProduct is not null && config.CurrentProduct.RestrictedCardProduct)
+        {
+            allowedSources = products
+                .Where(x => config.CurrentProduct.CardShareTypeLinks!
+                    .Any(link => link.ShareProductId == x.Id))
+                .ToList();
+        }
+        else if (config.CurrentProduct is not null)
+        {
+            allowedSources = products;
+        }
+        else
+        {
+            allowedSources = [];
+        }
+        
+        AutoFillShareSelections();
+    }
+
+    private async Task ValidateAndSetAppKey()
+    {
+        var key = await stateProvider.GetCurrentApplicationKeyAsync();
+
+        if (key is null)
+        {
+            nav.NavigateTo("/");
+            return;
+        }
+
+        appKey = key.Value;
+    }
+
+    private class Input
+    {
+        [Required(ErrorMessage = "You must select a person for this card")]
+        public int? PersonId { get; set; }
+
+        [Required(ErrorMessage = "You must select a card type")]
+        public int? CardTypeId { get; set; }
+
+        public int? CheckingId { get; set; }
+        public int? SavingsId { get; set; }
+    }
+
+    private class Config
+    {
+        public CardProduct? CurrentProduct { get; set; }
+    }
+
+}

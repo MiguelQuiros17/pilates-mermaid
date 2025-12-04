@@ -297,7 +297,9 @@ export default function PackagesPage() {
         },
         body: JSON.stringify({
           clientId: selectedClient,
-          packageId: selectedPackage
+          packageId: selectedPackage,
+          autoRenew: autoRenew,
+          overrideNegativeBalance: true // Default to override
         })
       })
 
@@ -384,7 +386,7 @@ export default function PackagesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col space-y-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               {user?.role === 'cliente' ? 'Mi Paquete' : 'Gestión de Paquetes'}
@@ -392,78 +394,22 @@ export default function PackagesPage() {
             <p className="text-gray-600 mt-1">
               {user?.role === 'cliente' 
                 ? 'Ve tu paquete actual y clases restantes'
-                : 'Administra paquetes y asigna a clientes'
+                : 'Administra los tipos de paquetes disponibles en el estudio'
               }
             </p>
           </div>
+
+          {user?.role === 'admin' && (
+            <div className="card bg-blue-50 border border-blue-200">
+              <p className="text-sm text-blue-900">
+                La asignación de paquetes a clientes ahora se realiza desde la pantalla de{' '}
+                <span className="font-semibold">Gestión de Clientes</span>. Ve a{' '}
+                <span className="font-mono text-xs">Dashboard &gt; Clientes</span> para asignar,
+                renovar o ajustar paquetes individuales.
+              </p>
+            </div>
+          )}
         </div>
-
-
-        {/* Assign Package Section - Only for Admin */}
-        {user?.role === 'admin' && (
-          <div className="card">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Asignar Paquete a Cliente</h3>
-              <button
-                onClick={fetchClients}
-                className="text-sm text-gray-600 hover:text-gray-900 underline"
-                title="Actualizar lista de clientes"
-              >
-                🔄 Actualizar
-              </button>
-            </div>
-            {clients.length === 0 && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                ⚠️ No hay clientes disponibles. Asegúrate de que los usuarios tengan el rol "cliente".
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Seleccionar Cliente {clients.length > 0 && `(${clients.length} disponible${clients.length !== 1 ? 's' : ''})`}
-                </label>
-                <select
-                  className="input-field"
-                  value={selectedClient}
-                  onChange={(e) => setSelectedClient(e.target.value)}
-                  disabled={clients.length === 0}
-                >
-                  <option value="">Seleccionar cliente...</option>
-                  {clients.map(client => (
-                    <option key={client.id} value={client.id}>
-                      {client.nombre} - {getPackageDisplayName(client.type_of_class)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Seleccionar Paquete
-                </label>
-                <select
-                  className="input-field"
-                  value={selectedPackage}
-                  onChange={(e) => setSelectedPackage(e.target.value)}
-                >
-                  <option value="">Seleccionar paquete...</option>
-                  {packages.map(pkg => (
-                    <option key={pkg.id} value={pkg.id}>
-                      {pkg.name} - ${pkg.price}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={handleAssignPackage}
-                  className="btn-primary w-full"
-                >
-                  Asignar Paquete
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Packages Grid */}
         {/* Clases Grupales */}
@@ -530,6 +476,11 @@ export default function PackagesPage() {
                   </WhatsAppButton>
                 )}
               </div>
+
+              <p className="mt-3 text-[11px] text-gray-500 italic">
+                Válido por {pkg.validity_days} días · Solo con cita previa · Disponibilidad limitada ·
+                Los precios pueden cambiar sin previo aviso
+              </p>
             </motion.div>
           ))}
           </div>
@@ -539,12 +490,6 @@ export default function PackagesPage() {
         <div className="space-y-6">
           <div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Clases Privadas</h3>
-            <p className="text-sm text-gray-600 mb-1">
-              Válido por 30 días · Solo con cita previa · Disponibilidad limitada
-            </p>
-            <p className="text-xs text-gray-500 italic">
-              Los precios pueden cambiar sin previo aviso
-            </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {packages.filter(pkg => pkg.category === 'Privada').map((pkg, index) => (
@@ -607,6 +552,11 @@ export default function PackagesPage() {
                   </WhatsAppButton>
                 )}
               </div>
+
+              <p className="mt-3 text-[11px] text-gray-500 italic">
+                Válido por {pkg.validity_days} días · Solo con cita previa · Disponibilidad limitada ·
+                Los precios pueden cambiar sin previo aviso
+              </p>
             </motion.div>
           ))}
           </div>

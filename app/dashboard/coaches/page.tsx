@@ -31,6 +31,7 @@ interface Coach {
 }
 
 export default function CoachesPage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [coaches, setCoaches] = useState<Coach[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -39,26 +40,41 @@ export default function CoachesPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
 
-  useEffect(() => {
-    // Datos de ejemplo con Esmeralda como único coach
-    const sampleCoaches = [
-      {
-        id: '1',
-        nombre: 'Esmeralda García',
-        correo: 'esmeralda@pilatesmermaid.com',
-        numero_de_telefono: '5512345678',
-        instagram: '@esmeralda_pilates',
-        role: 'coach',
-        cumpleanos: '1985-03-15',
-        lesion_o_limitacion_fisica: 'Ninguna',
-        genero: 'Femenino',
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01'
+  const loadCoaches = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setError('No hay token de autenticación')
+        setIsLoading(false)
+        return
       }
-    ]
-    
-    setCoaches(sampleCoaches)
-    setIsLoading(false)
+
+      const response = await fetch(`${API_BASE_URL}/api/users/coaches`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const list = data.coaches || []
+        setCoaches(list)
+      } else {
+        setError('Error al cargar los coaches')
+        console.error('Error loading coaches:', response.status, response.statusText)
+      }
+    } catch (error) {
+      console.error('Error loading coaches:', error)
+      setError('Error de conexión al cargar los coaches')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadCoaches()
   }, [])
 
   const filteredCoaches = coaches.filter(coach => {
@@ -111,12 +127,6 @@ export default function CoachesPage() {
             <p className="text-gray-600 mt-1">
               Gestiona los coaches de Pilates Mermaid
             </p>
-          </div>
-          <div className="mt-4 sm:mt-0">
-            <button className="btn-primary flex items-center space-x-2">
-              <Plus className="h-4 w-4" />
-              <span>Agregar Coach</span>
-            </button>
           </div>
         </div>
 

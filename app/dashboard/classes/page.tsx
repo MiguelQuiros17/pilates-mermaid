@@ -5,9 +5,29 @@ import { Calendar, Clock, Users, Plus, X, ChevronLeft, ChevronRight } from 'luci
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
 import { Class, User } from '@/types'
+import { useTranslation } from '@/hooks/useTranslation'
 
-export default function ClassesPage() {
+export default function ClassesPage(): JSX.Element {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { language } = useTranslation()
+
+  // Function to decode HTML entities
+  const decodeHtmlEntities = (text: string): string => {
+    if (!text || typeof text !== 'string') return text
+    if (typeof document === 'undefined') {
+      // Server-side fallback
+      return text
+        .replace(/&#x27;/g, "'")
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+    }
+    const textarea = document.createElement('textarea')
+    textarea.innerHTML = text
+    return textarea.value
+  }
 
   // State declarations
   const [user, setUser] = useState<User | null>(null)
@@ -18,12 +38,27 @@ export default function ClassesPage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showPrivateClassModal, setShowPrivateClassModal] = useState(false)
+  const [classType, setClassType] = useState<'group' | 'private'>('private')
   const [privateClassClientId, setPrivateClassClientId] = useState<string>('')
+  const [groupClassClientIds, setGroupClassClientIds] = useState<string[]>([])
+  const [groupClassClientSearch, setGroupClassClientSearch] = useState<string>('')
   const [privateClassDate, setPrivateClassDate] = useState<string>('')
   const [privateClassTime, setPrivateClassTime] = useState<string>('')
   const [privateClassEndTime, setPrivateClassEndTime] = useState<string>('')
+  const [privateClassCoachId, setPrivateClassCoachId] = useState<string>('')
+  const [privateClassTitle, setPrivateClassTitle] = useState<string>('')
+  const [privateClassDescription, setPrivateClassDescription] = useState<string>('')
+  const [isRecurring, setIsRecurring] = useState(false)
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>('')
+  const [groupMaxCapacity, setGroupMaxCapacity] = useState<number>(10)
+  const [isPublic, setIsPublic] = useState(true)
+  const [walkInsWelcome, setWalkInsWelcome] = useState(true)
   const [isCreatingPrivateClass, setIsCreatingPrivateClass] = useState(false)
+  const [privateClassModalError, setPrivateClassModalError] = useState<string | null>(null)
+  const [showInsufficientClassesWarning, setShowInsufficientClassesWarning] = useState(false)
+  const [insufficientClassesData, setInsufficientClassesData] = useState<{clientId: string, clientName: string, required: number, available: number, type: 'private' | 'group'} | null>(null)
   const [userBookings, setUserBookings] = useState<any[]>([])
+  const [userClassHistory, setUserClassHistory] = useState<any[]>([])
 
   const [showEditClassModal, setShowEditClassModal] = useState(false)
   const [editingClass, setEditingClass] = useState<Class | null>(null)
@@ -31,9 +66,16 @@ export default function ClassesPage() {
   const [editTime, setEditTime] = useState<string>('')
   const [editEndTime, setEditEndTime] = useState<string>('')
   const [editClientId, setEditClientId] = useState<string>('')
+  const [editCoachId, setEditCoachId] = useState<string>('')
+  const [editTitle, setEditTitle] = useState<string>('')
+  const [editDescription, setEditDescription] = useState<string>('')
   const [editInstructors, setEditInstructors] = useState<string[]>([])
   const [editInstructorInput, setEditInstructorInput] = useState<string>('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [editClassModalError, setEditClassModalError] = useState<string | null>(null)
+
+  const [viewingClass, setViewingClass] = useState<Class | null>(null)
+  const [showViewClassModal, setShowViewClassModal] = useState(false)
 
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [confirmAction, setConfirmAction] = useState<{
@@ -84,11 +126,19 @@ export default function ClassesPage() {
         now.setHours(0, 0, 0, 0)
         const todayStr = now.toISOString().split('T')[0]
         
-        const filteredClasses = (data.classes || []).filter((cls: any) => {
+        let filteredClasses = (data.classes || []).filter((cls: any) => {
           if (!cls.date) return false
           const classDateStr = cls.date.split('T')[0]
           return classDateStr >= todayStr
         })
+
+        // Decode HTML entities in titles and descriptions
+        filteredClasses = filteredClasses.map((cls: any) => ({
+          ...cls,
+          title: cls.title ? decodeHtmlEntities(cls.title) : cls.title,
+          description: cls.description ? decodeHtmlEntities(cls.description) : cls.description
+        }))
+
         setClasses(filteredClasses)
       } else {
         console.error('Error loading classes:', response.statusText)
@@ -139,8 +189,10 @@ export default function ClassesPage() {
 
       if (response.ok) {
         const data = await response.json()
-        const list = data.coaches || []
+        // Handle different response formats
+        const list = data.coaches || data.users || (Array.isArray(data) ? data : [])
         setCoaches(list)
+        console.log('Loaded coaches:', list.length)
       } else {
         console.error('Error loading coaches:', response.status, response.statusText)
       }
@@ -165,7 +217,27 @@ export default function ClassesPage() {
     } catch (error) {
       console.error('Error loading user bookings:', error)
     }
-  }, [user?.id])
+  }, [API_BASE_URL, user?.id])
+
+  const loadUserClassHistory = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!user?.id || user.role !== 'cliente') return
+      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/classes`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        // Store class IDs from class history (both private and group classes the user is assigned to)
+        const classIds = (data.classes || []).map((cls: any) => cls.id)
+        setUserClassHistory(classIds)
+      }
+    } catch (error) {
+      console.error('Error loading user class history:', error)
+    }
+  }, [API_BASE_URL, user?.id, user?.role])
 
   // All useEffect hooks must be together
   useEffect(() => {
@@ -189,14 +261,81 @@ export default function ClassesPage() {
       } else if (user.role === 'coach') {
         loadCoaches()
       }
+      // Load user bookings and class history for clients (needed for client filtering)
+      if (user.role === 'cliente') {
+        loadUserBookings()
+        loadUserClassHistory()
+      }
     }
-  }, [user, loadClasses, loadClients, loadCoaches])
+  }, [user, loadClasses, loadClients, loadCoaches, loadUserBookings, loadUserClassHistory])
 
   useEffect(() => {
     if (user?.role === 'cliente') {
       loadUserBookings()
+      loadUserClassHistory()
     }
-  }, [user, loadUserBookings])
+  }, [user, loadUserBookings, loadUserClassHistory])
+
+  // Auto-select first coach when modal opens and coaches are loaded
+  useEffect(() => {
+    if (showPrivateClassModal && coaches.length > 0 && !privateClassCoachId) {
+      // If user is a coach, use them, otherwise use first available coach
+      const userCoach = coaches.find(c => c.id === user?.id)
+      if (userCoach) {
+        setPrivateClassCoachId(userCoach.id)
+      } else if (coaches.length > 0) {
+        setPrivateClassCoachId(coaches[0].id)
+      }
+    }
+  }, [showPrivateClassModal, coaches, privateClassCoachId, user?.id])
+
+  // Reset modal error when modal closes and auto-fill title/description
+  useEffect(() => {
+    if (!showPrivateClassModal) {
+      setPrivateClassModalError(null)
+      setPrivateClassClientId('')
+      setPrivateClassDate('')
+      setPrivateClassTime('')
+      setPrivateClassEndTime('')
+      setPrivateClassCoachId('')
+      setPrivateClassTitle('')
+      setPrivateClassDescription('')
+    } else {
+      // Auto-fill title and description when modal opens and client/coach are selected
+      if (privateClassClientId && privateClassCoachId) {
+        const client = clients.find(c => c.id === privateClassClientId)
+        const coach = coaches.find(c => c.id === privateClassCoachId)
+        if (client && coach && !privateClassTitle) {
+          setPrivateClassTitle(`${coach.nombre}'s Session with ${client.nombre}`)
+          setPrivateClassDescription(`${coach.nombre}'s one-on-one class with ${client.nombre}`)
+        }
+      }
+    }
+  }, [showPrivateClassModal, privateClassClientId, privateClassCoachId, clients, coaches])
+
+  // Auto-fill title/description when client or coach changes
+  useEffect(() => {
+    if (showPrivateClassModal && privateClassClientId && privateClassCoachId) {
+      const client = clients.find(c => c.id === privateClassClientId)
+      const coach = coaches.find(c => c.id === privateClassCoachId)
+      if (client && coach) {
+        if (language === 'es') {
+          setPrivateClassTitle(`Sesión de ${coach.nombre} con ${client.nombre}`)
+          setPrivateClassDescription(`Clase privada de ${coach.nombre} con ${client.nombre}`)
+        } else {
+          setPrivateClassTitle(`${coach.nombre}'s Session with ${client.nombre}`)
+          setPrivateClassDescription(`${coach.nombre}'s one-on-one class with ${client.nombre}`)
+        }
+      }
+    }
+  }, [privateClassClientId, privateClassCoachId, showPrivateClassModal, language, clients, coaches])
+
+  // Reset edit modal error when modal closes
+  useEffect(() => {
+    if (!showEditClassModal) {
+      setEditClassModalError(null)
+    }
+  }, [showEditClassModal])
 
   // Other functions
   const bookClass = async (classId: string) => {
@@ -277,7 +416,11 @@ export default function ClassesPage() {
   }
 
   const isUserBooked = (classId: string) => {
-    return userBookings.some(booking => booking.class_id === classId && booking.status === 'confirmed')
+    // Check if user has a confirmed booking
+    const hasBooking = userBookings.some(booking => booking.class_id === classId && booking.status === 'confirmed')
+    // Also check if the class is in the user's class history (for private classes assigned directly)
+    const isInHistory = userClassHistory.includes(classId)
+    return hasBooking || isInHistory
   }
 
   const autoFillEndTime = (startTime: string, currentEndTime: string, setEndTime: (value: string) => void) => {
@@ -291,23 +434,135 @@ export default function ClassesPage() {
     setEndTime(endTime)
   }
 
-  const handleCreatePrivateClass = async (e: React.FormEvent) => {
+  const calculateDuration = (startTime: string, endTime: string): number => {
+    if (!startTime || !endTime) return 60 // Default to 60 if times are missing
+    
+    const [startHour, startMinute] = startTime.split(':').map(Number)
+    const [endHour, endMinute] = endTime.split(':').map(Number)
+    
+    if (isNaN(startHour) || isNaN(endHour)) return 60
+    
+    let startMinutes = startHour * 60 + (startMinute || 0)
+    let endMinutes = endHour * 60 + (endMinute || 0)
+    
+    // Handle case where end time is next day
+    if (endMinutes < startMinutes) {
+      endMinutes += 24 * 60
+    }
+    
+    const durationMinutes = endMinutes - startMinutes
+    return Math.max(1, durationMinutes) // At least 1 minute
+  }
+
+  // Helper to get class creation data
+  const getClassCreationData = async () => {
+    const selectedCoach = coaches.find(c => c.id === privateClassCoachId)
+    const client = classType === 'private' ? clients.find(c => c.id === privateClassClientId) : null
+
+    let finalEndTime = privateClassEndTime
+    if (!finalEndTime && privateClassTime) {
+      const [hourStr, minuteStr] = privateClassTime.split(':')
+      const hour = parseInt(hourStr, 10)
+      const minute = parseInt(minuteStr, 10) || 0
+      if (!isNaN(hour)) {
+        const endHour = (hour + 1) % 24
+        finalEndTime = `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+      }
+    }
+
+    const duration = calculateDuration(privateClassTime, finalEndTime || '')
+
+    return {
+      title: privateClassTitle || (classType === 'private' 
+        ? `${selectedCoach?.nombre || 'Coach'}'s Session with ${client?.nombre || 'Cliente'}`
+        : 'Clase Grupal'),
+      type: classType,
+      coach_id: privateClassCoachId,
+      coach_name: selectedCoach?.nombre || '',
+      client_id: classType === 'private' ? privateClassClientId : null,
+      client_name: classType === 'private' ? (client?.nombre || '') : null,
+      assigned_client_ids: classType === 'group' ? JSON.stringify(groupClassClientIds) : null,
+      date: privateClassDate,
+      time: privateClassTime,
+      end_time: finalEndTime || null,
+      duration: duration,
+      description: privateClassDescription || (classType === 'private'
+        ? `${selectedCoach?.nombre || 'Coach'}'s one-on-one class with ${client?.nombre || 'cliente'}`
+        : 'Clase grupal'),
+      status: 'scheduled',
+      is_recurring: classType === 'group' ? isRecurring : false,
+      recurrence_end_date: classType === 'group' && isRecurring ? recurrenceEndDate : null,
+      is_public: classType === 'group' ? isPublic : true,
+      walk_ins_welcome: classType === 'group' ? walkInsWelcome : false,
+      max_capacity: classType === 'group' ? groupMaxCapacity : 1
+    }
+  }
+
+  const handleCreatePrivateClass = async (e: React.FormEvent, overrideInsufficient?: boolean, overrideType?: 'free' | 'negative') => {
     e.preventDefault()
+    setPrivateClassModalError(null)
     if (!user) return
 
-    if (!privateClassClientId || !privateClassDate || !privateClassTime) {
-      setNotification({
-        type: 'error',
-        message: 'Por favor selecciona un cliente, fecha y hora para la clase privada.'
-      })
+    // Validation based on class type
+    if (classType === 'private' && !privateClassClientId) {
+      setPrivateClassModalError('Por favor selecciona un cliente para la clase privada.')
       return
     }
 
-    if (coaches.length === 0) {
-      setNotification({
-        type: 'error',
-        message: 'No hay coaches disponibles para asignar a la sesión privada.'
-      })
+    if (!privateClassDate || !privateClassTime) {
+      setPrivateClassModalError('Por favor selecciona una fecha y hora para la clase.')
+      return
+    }
+
+    // Check if we have coaches available - reload if needed
+    let availableCoaches = coaches
+    if (availableCoaches.length === 0) {
+      // Try to reload coaches first
+      try {
+        const token = localStorage.getItem('token')
+        if (token) {
+          const response = await fetch(`${API_BASE_URL}/api/users/coaches`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          if (response.ok) {
+            const data = await response.json()
+            // Handle different response formats
+            availableCoaches = data.coaches || data.users || (Array.isArray(data) ? data : [])
+            if (availableCoaches.length > 0) {
+              setCoaches(availableCoaches)
+            }
+          } else {
+            console.error('Error loading coaches:', response.status, response.statusText)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading coaches:', error)
+      }
+      
+      // Check again after reload attempt
+      if (availableCoaches.length === 0) {
+        setPrivateClassModalError('No hay coaches disponibles para asignar a la sesión privada. Por favor, asegúrate de que haya al menos un coach registrado en el sistema.')
+        return
+      }
+    }
+
+    // Ensure a coach is selected
+    if (!privateClassCoachId) {
+      // Auto-select first coach if none selected
+      if (coaches.length > 0) {
+        const userCoach = coaches.find(c => c.id === user.id)
+        setPrivateClassCoachId(userCoach ? userCoach.id : coaches[0].id)
+      } else {
+        setPrivateClassModalError('No hay coaches disponibles para asignar a la sesión privada.')
+        return
+      }
+    }
+
+    const selectedCoach = coaches.find(c => c.id === privateClassCoachId)
+    if (!selectedCoach) {
+      setPrivateClassModalError('El coach seleccionado no es válido.')
       return
     }
 
@@ -315,31 +570,69 @@ export default function ClassesPage() {
       setIsCreatingPrivateClass(true)
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('No hay token de autenticación')
+        setPrivateClassModalError('No hay token de autenticación')
         return
       }
 
-      const client = clients.find(c => c.id === privateClassClientId)
+      // Check class counts for private classes or assigned group class clients (unless override)
+      if (!overrideInsufficient) {
+        if (classType === 'private' && privateClassClientId) {
+          const client = clients.find(c => c.id === privateClassClientId)
+          if (client) {
+            const checkResponse = await fetch(`${API_BASE_URL}/api/users/${privateClassClientId}/class-counts`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            })
+            if (checkResponse.ok) {
+              const counts = await checkResponse.json()
+              if (counts.private_classes_remaining < 1) {
+                setInsufficientClassesData({
+                  clientId: privateClassClientId,
+                  clientName: client.nombre,
+                  required: 1,
+                  available: counts.private_classes_remaining || 0,
+                  type: 'private'
+                })
+                setShowInsufficientClassesWarning(true)
+                setIsCreatingPrivateClass(false)
+                return
+              }
+            }
+          }
+        }
 
-      // Auto-add scheduling coach/admin to coaches list by name
-      const schedulingCoachName = user.nombre
-      let sessionCoaches = [schedulingCoachName]
-
-      // Ensure at least one coach and no more than 10
-      sessionCoaches = Array.from(new Set(sessionCoaches)).slice(0, 10)
-
-      let finalEndTime = privateClassEndTime
-      if (!finalEndTime && privateClassTime) {
-        // Auto-calc end time if missing
-        const [hourStr, minuteStr] = privateClassTime.split(':')
-        const hour = parseInt(hourStr, 10)
-        const minute = parseInt(minuteStr, 10) || 0
-        if (!isNaN(hour)) {
-          const endHour = (hour + 1) % 24
-          finalEndTime = `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+        // For group classes with assigned clients, check each one
+        if (classType === 'group' && groupClassClientIds.length > 0) {
+          for (const clientId of groupClassClientIds) {
+            const client = clients.find(c => c.id === clientId)
+            if (client) {
+              const checkResponse = await fetch(`${API_BASE_URL}/api/users/${clientId}/class-counts`, {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              })
+              if (checkResponse.ok) {
+                const counts = await checkResponse.json()
+                if (counts.group_classes_remaining < 1) {
+                  setInsufficientClassesData({
+                    clientId: clientId,
+                    clientName: client.nombre,
+                    required: 1,
+                    available: counts.group_classes_remaining || 0,
+                    type: 'group'
+                  })
+                  setShowInsufficientClassesWarning(true)
+                  setIsCreatingPrivateClass(false)
+                  return
+                }
+              }
+            }
+          }
         }
       }
 
+      const classData = await getClassCreationData()
       const response = await fetch(`${API_BASE_URL}/api/classes`, {
         method: 'POST',
         headers: {
@@ -347,18 +640,9 @@ export default function ClassesPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          title: 'Clase Privada',
-          type: 'private',
-          coach_id: user.id,
-          coach_name: user.nombre,
-          client_id: privateClassClientId,
-          client_name: client?.nombre || '',
-          date: privateClassDate,
-          time: privateClassTime,
-          end_time: finalEndTime || null,
-          duration: 60,
-          description: `Sesión privada dirigida por ${schedulingCoachName} para ${client?.nombre || 'cliente'}.`,
-          status: 'scheduled'
+          ...classData,
+          override_insufficient_classes: overrideInsufficient || false,
+          override_type: overrideType || null
         })
       })
 
@@ -367,26 +651,30 @@ export default function ClassesPage() {
       if (response.ok && data.success) {
         setNotification({
           type: 'success',
-          message: 'Sesión privada creada exitosamente.'
+          message: classType === 'private' ? 'Sesión privada creada exitosamente.' : 'Clase grupal creada exitosamente.'
         })
         setShowPrivateClassModal(false)
         setPrivateClassClientId('')
+        setGroupClassClientIds([])
+        setGroupClassClientSearch('')
         setPrivateClassDate('')
         setPrivateClassTime('')
         setPrivateClassEndTime('')
+        setPrivateClassCoachId('')
+        setPrivateClassTitle('')
+        setPrivateClassDescription('')
+        setIsRecurring(false)
+        setRecurrenceEndDate('')
+        setIsPublic(true)
+        setWalkInsWelcome(true)
+        setClassType('private')
         loadClasses()
       } else {
-        setNotification({
-          type: 'error',
-          message: data.message || 'Error al crear la clase privada.'
-        })
+        setPrivateClassModalError(data.message || `Error al crear la ${classType === 'private' ? 'clase privada' : 'clase grupal'}.`)
       }
     } catch (error) {
       console.error('Error creating private class:', error)
-      setNotification({
-        type: 'error',
-        message: 'Error de conexión al crear la clase privada.'
-      })
+      setPrivateClassModalError('Error de conexión al crear la clase privada.')
     } finally {
       setIsCreatingPrivateClass(false)
     }
@@ -397,35 +685,51 @@ export default function ClassesPage() {
     setEditDate(cls.date || '')
     setEditTime(cls.time || '')
     setEditEndTime(cls.end_time || '')
+    setEditTitle(decodeHtmlEntities(cls.title || ''))
+    setEditDescription(decodeHtmlEntities(cls.description || ''))
 
-    // For private classes, try to infer client from existing bookings if available
-    setEditClientId('') // Will be managed via separate API if needed
-
-    let instructorsList: string[] = []
-    if (Array.isArray(cls.instructors)) {
-      instructorsList = cls.instructors as string[]
-    } else if (typeof (cls as any).instructors === 'string') {
+    // For group classes, initialize group-specific state
+    if (cls.type === 'group') {
       try {
-        const parsed = JSON.parse((cls as any).instructors)
-        instructorsList = Array.isArray(parsed) ? parsed : []
+        const assigned = (cls as any).assigned_client_ids
+          ? JSON.parse((cls as any).assigned_client_ids)
+          : []
+        if (Array.isArray(assigned)) {
+          setGroupClassClientIds(assigned)
+        }
       } catch {
-        instructorsList = []
+        setGroupClassClientIds([])
       }
+      setIsPublic((cls as any).is_public !== 0)
+      setWalkInsWelcome((cls as any).walk_ins_welcome !== 0)
+      setIsRecurring(!!Number((cls as any).is_recurring || 0))
+      setRecurrenceEndDate((cls as any).recurrence_end_date || '')
+      setGroupMaxCapacity((cls as any).max_capacity || 10)
     }
-    setEditInstructors(instructorsList.slice(0, 10))
-    setEditInstructorInput('')
+
+    // Set the coach ID if available
+    const currentCoach = coaches.find(c => c.id === (cls as any).coach_id || c.nombre === cls.coach_name)
+    setEditCoachId(currentCoach?.id || '')
+
+    setEditClassModalError(null)
     setShowEditClassModal(true)
+  }
+
+  const openViewClassModal = (cls: Class) => {
+    setViewingClass(cls)
+    setShowViewClassModal(true)
   }
 
   const handleSaveEditClass = async (e: React.FormEvent) => {
     e.preventDefault()
+    setEditClassModalError(null)
     if (!editingClass) return
 
     try {
       setIsSavingEdit(true)
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('No hay token de autenticación')
+        setEditClassModalError('No hay token de autenticación')
         return
       }
 
@@ -440,11 +744,34 @@ export default function ClassesPage() {
         }
       }
 
+      // Calculate duration from start and end time
+      const duration = calculateDuration(editTime, finalEndTime || '')
+
       const updates: any = {
         date: editDate,
         time: editTime,
         end_time: finalEndTime || null,
-        instructors: editInstructors
+        duration: duration,
+        title: editTitle,
+        description: editDescription
+      }
+
+      // If coach changed, update coach_id and coach_name
+      if (editCoachId) {
+        const selectedCoach = coaches.find(c => c.id === editCoachId)
+        if (selectedCoach) {
+          updates.coach_id = editCoachId
+          updates.coach_name = selectedCoach.nombre
+        }
+      }
+
+      // If editing a group class, allow updating group options
+      if (editingClass.type === 'group') {
+        updates.assigned_client_ids = JSON.stringify(groupClassClientIds || [])
+        updates.is_public = isPublic
+        updates.walk_ins_welcome = walkInsWelcome
+        updates.is_recurring = isRecurring
+        updates.recurrence_end_date = isRecurring && recurrenceEndDate ? recurrenceEndDate : null
       }
 
       const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
@@ -459,26 +786,10 @@ export default function ClassesPage() {
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok || !data.success) {
-        setNotification({
-          type: 'error',
-          message: data.message || 'Error al actualizar la clase.'
-        })
+        setEditClassModalError(data.message || 'Error al actualizar la clase.')
         return
       }
 
-      // If client changed for private class, assign new client
-      if (editingClass.type === 'private' && editClientId) {
-        await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}/assign-client`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ client_id: editClientId })
-        }).catch(err => {
-          console.error('Error assigning client to class:', err)
-        })
-      }
 
       setNotification({
         type: 'success',
@@ -489,10 +800,7 @@ export default function ClassesPage() {
       loadClasses()
     } catch (error) {
       console.error('Error saving class edit:', error)
-      setNotification({
-        type: 'error',
-        message: 'Error de conexión al actualizar la clase.'
-      })
+      setEditClassModalError('Error de conexión al actualizar la clase.')
     } finally {
       setIsSavingEdit(false)
     }
@@ -605,16 +913,59 @@ export default function ClassesPage() {
     const day = String(date.getDate()).padStart(2, '0')
     const dateStr = `${year}-${month}-${day}`
     
-    return classes.filter(cls => {
-      if (!cls.date) return false
-      const classDate = cls.date.split('T')[0]
-      return classDate === dateStr
-    }).sort((a, b) => {
-      if (a.time && b.time) {
-        return a.time.localeCompare(b.time)
+    const filtered: Class[] = []
+
+    classes.forEach((cls: any) => {
+      if (!cls.date) return
+
+      const baseDateStr = cls.date.split('T')[0]
+      if (!baseDateStr) return
+
+      const isRecurring =
+        cls.type === 'group' &&
+        (cls.is_recurring === 1 ||
+         cls.is_recurring === '1' ||
+         cls.is_recurring === true)
+
+      if (!isRecurring) {
+        // Non-recurring: only on its specific date
+        if (baseDateStr === dateStr) {
+          filtered.push(cls)
+        }
+        return
       }
-      return 0
+
+      // Recurring weekly group class
+      const baseDate = new Date(baseDateStr)
+      baseDate.setHours(0, 0, 0, 0)
+
+      const target = new Date(dateStr)
+      target.setHours(0, 0, 0, 0)
+
+      if (target < baseDate) return
+
+      // If recurrence_end_date is set, enforce upper bound
+      if ((cls as any).recurrence_end_date) {
+        const end = new Date((cls as any).recurrence_end_date)
+        end.setHours(0, 0, 0, 0)
+        if (target > end) return
+      }
+
+      const diffDays = Math.floor((target.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays % 7 === 0) {
+        filtered.push(cls)
+      }
     })
+
+    // For clients, only show classes they're attending
+    if (user?.role === 'cliente') {
+      return filtered
+        .filter(cls => isUserBooked(cls.id))
+        .sort((a, b) => (a.time && b.time ? a.time.localeCompare(b.time) : 0))
+    }
+    // Admins and coaches see all classes
+
+    return filtered.sort((a, b) => (a.time && b.time ? a.time.localeCompare(b.time) : 0))
   }
 
   const getAvailabilityColor = (classItem: Class) => {
@@ -625,7 +976,7 @@ export default function ClassesPage() {
     return 'bg-green-500'
   }
 
-  // Early return for loading state
+  // Render loading state
   if (!user) {
     return (
       <DashboardLayout>
@@ -635,55 +986,11 @@ export default function ClassesPage() {
             <p className="text-gray-600">Cargando...</p>
           </div>
         </div>
-
-        {/* Modal de confirmación para cancelar / eliminar clase */}
-        {confirmAction && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9500]" onClick={() => setConfirmAction(null)}>
-            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                {confirmAction.type === 'cancel' ? 'Confirmar cancelación' : 'Confirmar eliminación'}
-              </h3>
-              <p className="text-sm text-gray-700 mb-4">
-                {confirmAction.type === 'cancel'
-                  ? '¿Estás seguro de que deseas cancelar esta clase? Los clientes verán esta sesión como cancelada en su calendario.'
-                  : '¿Estás seguro de que deseas eliminar esta clase? Esta acción la removerá de todos los calendarios y registros visibles, lo que podría generar confusión en los clientes si la sesión ya estaba acordada. Se recomienda usar esta opción solo para corregir errores de programación evidentes.'}
-              </p>
-              <div className="mt-4 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction(null)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
-                >
-                  Volver
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const action = confirmAction
-                    setConfirmAction(null)
-                    if (!action) return
-                    if (action.type === 'cancel') {
-                      performCancelClass(action.cls)
-                    } else {
-                      performDeleteClass(action.cls)
-                    }
-                  }}
-                  className={`px-4 py-2 text-sm rounded-lg ${
-                    confirmAction.type === 'cancel'
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'bg-red-700 text-white hover:bg-red-800'
-                  }`}
-                >
-                  {confirmAction.type === 'cancel' ? 'Cancelar clase' : 'Eliminar clase'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </DashboardLayout>
     )
   }
 
+  // Main render
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -834,55 +1141,70 @@ export default function ClassesPage() {
                       <div className="space-y-1">
                         {dayClasses.slice(0, user.role === 'cliente' ? 2 : 3).map(cls => {
                           const isCancelled = cls.status === 'cancelled'
+                          const isFull = cls.current_bookings >= cls.max_capacity
+                          const userIsBooked = isUserBooked(cls.id)
                           return (
                           <div
                             key={cls.id}
-                            className={`space-y-1 rounded-lg p-1 ${
-                              isCancelled ? 'bg-red-50 border border-red-200' : ''
-                            }`}
+                            className={`space-y-1 rounded-lg p-1`}
                           >
                             {user.role === 'cliente' ? (
                               <>
-                                <div
-                                  className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate ${isCancelled ? 'line-through opacity-70' : ''}`}
-                                >
-                                  {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
-                                </div>
-                                <div className="flex justify-center">
-                                  {isUserBooked(cls.id) ? (
-                                    <button
+                                {!userIsBooked && isFull ? (
+                                  <div className="text-xs px-2 py-1 rounded bg-gray-300 text-gray-700 truncate">
+                                    {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} <span className="italic">(full)</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div
+                                      className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate ${userIsBooked ? 'cursor-pointer hover:opacity-80' : ''} transition-opacity`}
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        cancelBooking(cls.id)
+                                        if (userIsBooked) {
+                                          openViewClassModal(cls)
+                                        }
                                       }}
-                                      className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-colors"
+                                      title={userIsBooked ? 'Click para ver detalles' : ''}
                                     >
-                                      Cancelar
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        bookClass(cls.id)
-                                      }}
-                                      disabled={cls.current_bookings >= cls.max_capacity}
-                                      className={`text-xs px-2 py-1 rounded transition-colors ${
-                                        cls.current_bookings >= cls.max_capacity
-                                          ? 'bg-gray-400 text-white cursor-not-allowed'
-                                          : 'bg-green-500 text-white hover:bg-green-600'
-                                      }`}
-                                    >
-                                      {cls.current_bookings >= cls.max_capacity ? 'Llena' : 'Reservar'}
-                                    </button>
-                                  )}
-                                </div>
+                                      {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} {isCancelled && <span className="italic">(canceled)</span>}
+                                    </div>
+                                    <div className="flex justify-center">
+                                      {userIsBooked ? (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            cancelBooking(cls.id)
+                                          }}
+                                          className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-colors"
+                                        >
+                                          Cancelar
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            bookClass(cls.id)
+                                          }}
+                                          disabled={isFull}
+                                          className={`text-xs px-2 py-1 rounded transition-colors ${
+                                            isFull
+                                              ? 'bg-gray-400 text-white cursor-not-allowed'
+                                              : 'bg-green-500 text-white hover:bg-green-600'
+                                          }`}
+                                        >
+                                          {isFull ? 'Llena' : 'Reservar'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
                               </>
                             ) : (
                               <div 
-                                className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity ${isCancelled ? 'line-through bg-red-400/80' : ''}`}
+                                className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
                                 title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''} - ${cls.current_bookings}/${cls.max_capacity} reservas - ${cls.coach_name}`}
                               >
-                                {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} ({cls.current_bookings}/{cls.max_capacity})
+                                {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} ({cls.current_bookings}/{cls.max_capacity}) {isCancelled && <span className="italic">(canceled)</span>}
                               </div>
                             )}
                           </div>
@@ -934,7 +1256,7 @@ export default function ClassesPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-4 mb-2">
-                            <h4 className="font-semibold text-gray-900">{cls.title}</h4>
+                            <h4 className="font-semibold text-gray-900">{decodeHtmlEntities(cls.title || 'Clase')}</h4>
                             <span className={`px-2 py-1 text-xs rounded-full ${
                               cls.type === 'group' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
                             }`}>
@@ -1017,13 +1339,22 @@ export default function ClassesPage() {
                 Lista de Clases
               </h2>
               <p className="text-sm text-gray-600 mt-1">
-                {classes.length} {classes.length === 1 ? 'clase disponible' : 'clases disponibles'}
+                {user?.role === 'cliente' 
+                  ? classes.filter(cls => isUserBooked(cls.id)).length 
+                  : classes.length
+                } {(user?.role === 'cliente' 
+                  ? classes.filter(cls => isUserBooked(cls.id)).length === 1
+                  : classes.length === 1
+                ) ? 'clase disponible' : 'clases disponibles'}
               </p>
             </div>
 
             {/* List Content */}
             <div className="p-6">
-              {classes.length === 0 ? (
+              {(user?.role === 'cliente' 
+                ? classes.filter(cls => isUserBooked(cls.id)).length === 0
+                : classes.length === 0
+              ) ? (
                 <div className="text-center py-12 text-gray-500">
                   <Calendar className="h-16 w-16 mx-auto mb-4 text-gray-400" />
                   <p className="text-lg font-medium">No hay clases disponibles</p>
@@ -1031,16 +1362,15 @@ export default function ClassesPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {classes.map((cls, index) => {
+                  {(user?.role === 'cliente' 
+                    ? classes.filter(cls => isUserBooked(cls.id))
+                    : classes
+                  ).map((cls, index) => {
                     const isCancelled = cls.status === 'cancelled'
                     return (
                     <motion.div 
                       key={cls.id} 
-                      className={`group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 ${
-                        isCancelled
-                          ? 'bg-red-50 border-red-300 hover:border-red-400'
-                          : 'bg-white border-gray-200 hover:border-gray-300'
-                      }`}
+                      className={`group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 bg-white border-gray-200 hover:border-gray-300`}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
@@ -1048,10 +1378,20 @@ export default function ClassesPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-4 mb-3">
-                            <h4 className={`text-lg font-semibold ${isCancelled ? 'text-red-800 line-through' : 'text-gray-900'}`}>
-                              {cls.title || (cls.type === 'private'
+                            <h4 className={`text-lg font-semibold text-gray-900 ${user.role === 'cliente' && isUserBooked(cls.id) ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                              onClick={() => {
+                                if (user.role === 'cliente' && isUserBooked(cls.id)) {
+                                  openViewClassModal(cls)
+                                }
+                              }}
+                            >
+                              {decodeHtmlEntities(cls.title || (cls.type === 'private'
                                 ? `${(clients.find(c => c.id === (cls as any).client_id)?.nombre || 'Cliente')} - Sesión Privada`
-                                : 'Clase')}
+                                : 'Clase'))}
+                              {isCancelled && <span className="italic text-gray-500 ml-2">(canceled)</span>}
+                              {user.role === 'cliente' && !isUserBooked(cls.id) && cls.current_bookings >= cls.max_capacity && !isCancelled && (
+                                <span className="italic text-gray-500 ml-2">(full)</span>
+                              )}
                             </h4>
                             <span className={`px-3 py-1 text-xs font-medium rounded-full ${
                               cls.type === 'group' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
@@ -1069,7 +1409,7 @@ export default function ClassesPage() {
                           </div>
                           
                           <div className="flex items-center flex-wrap gap-4 text-sm text-gray-600">
-                            <span className={`flex items-center ${isCancelled ? 'line-through text-red-700' : ''}`}>
+                            <span className="flex items-center">
                               <Calendar className="h-4 w-4 mr-1.5 text-gray-500" />
                               {new Date(cls.date + 'T00:00:00').toLocaleDateString('es-ES', { 
                                 weekday: 'long', 
@@ -1078,15 +1418,10 @@ export default function ClassesPage() {
                                 day: 'numeric' 
                               })}
                             </span>
-                            <span className={`flex items-center ${isCancelled ? 'line-through text-red-700' : ''}`}>
+                            <span className="flex items-center">
                               <Clock className="h-4 w-4 mr-1.5 text-gray-500" />
                               {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
                             </span>
-                            {isCancelled && (
-                              <span className="text-xs text-red-700 font-medium">
-                                Esta clase ha sido cancelada.
-                              </span>
-                            )}
                             <span>Duración: {cls.duration} min</span>
                             <span>Coach: {cls.coach_name || 'No asignado'}</span>
                           </div>
@@ -1164,9 +1499,57 @@ export default function ClassesPage() {
                         </div>
                       </div>
                     </motion.div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal de advertencia de clases insuficientes */}
+        {showInsufficientClassesWarning && insufficientClassesData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]" onClick={() => setShowInsufficientClassesWarning(false)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-red-900 mb-4">Clases Insuficientes</h3>
+              <p className="text-sm text-gray-700 mb-4">
+                El cliente <strong>{insufficientClassesData.clientName}</strong> no tiene suficientes clases {insufficientClassesData.type === 'private' ? 'privadas' : 'grupales'} disponibles.
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Clases requeridas:</strong> {insufficientClassesData.required}<br/>
+                  <strong>Clases disponibles:</strong> {insufficientClassesData.available}
+                </p>
+              </div>
+              <div className="flex flex-col space-y-2">
+                <button
+                  onClick={(e) => {
+                    handleCreatePrivateClass(e, true, 'free')
+                    setShowInsufficientClassesWarning(false)
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Anular y agregar gratis
+                </button>
+                <button
+                  onClick={(e) => {
+                    handleCreatePrivateClass(e, true, 'negative')
+                    setShowInsufficientClassesWarning(false)
+                  }}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                >
+                  Anular y establecer clases mensuales en negativo
+                </button>
+                <button
+                  onClick={() => {
+                    setShowInsufficientClassesWarning(false)
+                    setInsufficientClassesData(null)
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1174,27 +1557,193 @@ export default function ClassesPage() {
         {/* Modal para crear clase privada */}
         {showPrivateClassModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9000]" onClick={() => setShowPrivateClassModal(false)}>
-            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Crear Clase Privada</h3>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Crear Clase</h3>
               
               <form onSubmit={handleCreatePrivateClass}>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Cliente
+                      Tipo de Clase
                     </label>
                     <select
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={privateClassClientId}
-                      onChange={(e) => setPrivateClassClientId(e.target.value)}
+                      value={classType}
+                      onChange={(e) => {
+                        const newType = e.target.value as 'group' | 'private'
+                        setClassType(newType)
+                        if (newType === 'group') {
+                          setPrivateClassClientId('')
+                        } else {
+                          setGroupClassClientIds([])
+                        }
+                      }}
                     >
-                      <option value="">Seleccionar cliente</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>
-                          {client.nombre}
-                        </option>
-                      ))}
+                      <option value="private">Privada (Individual)</option>
+                      <option value="group">Grupal</option>
                     </select>
+                  </div>
+
+                  {classType === 'private' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Cliente
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={privateClassClientId}
+                        onChange={(e) => setPrivateClassClientId(e.target.value)}
+                      >
+                        <option value="">Seleccionar cliente</option>
+                        {clients.map(client => (
+                          <option key={client.id} value={client.id}>
+                            {client.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Agregar Clientes (Opcional)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Buscar cliente..."
+                            value={groupClassClientSearch}
+                            onChange={(e) => setGroupClassClientSearch(e.target.value)}
+                          />
+                          {groupClassClientSearch && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {clients
+                                .filter(c => 
+                                  c.nombre.toLowerCase().includes(groupClassClientSearch.toLowerCase()) &&
+                                  !groupClassClientIds.includes(c.id)
+                                )
+                                .map(client => (
+                                  <div
+                                    key={client.id}
+                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                                    onClick={() => {
+                                      setGroupClassClientIds([...groupClassClientIds, client.id])
+                                      setGroupClassClientSearch('')
+                                    }}
+                                  >
+                                    {client.nombre}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                        {groupClassClientIds.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {groupClassClientIds.map(clientId => {
+                              const client = clients.find(c => c.id === clientId)
+                              return client ? (
+                                <span
+                                  key={clientId}
+                                  className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                                >
+                                  {client.nombre}
+                                  <button
+                                    type="button"
+                                    onClick={() => setGroupClassClientIds(groupClassClientIds.filter(id => id !== clientId))}
+                                    className="ml-2 text-blue-600 hover:text-blue-800"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ) : null
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={isPublic}
+                            onChange={(e) => setIsPublic(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Clase pública (visible y unirse)</span>
+                        </label>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={walkInsWelcome}
+                            onChange={(e) => setWalkInsWelcome(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Walk-ins bienvenidos</span>
+                        </label>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={isRecurring}
+                            onChange={(e) => setIsRecurring(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Clase recurrente (semanal)</span>
+                        </label>
+                      </div>
+                      <div className="mt-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Máximo de asistentes
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={9999}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={groupMaxCapacity}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value, 10)
+                            if (isNaN(value)) {
+                              setGroupMaxCapacity(10)
+                            } else {
+                              setGroupMaxCapacity(Math.max(1, Math.min(value, 9999)))
+                            }
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          La capacidad mínima es de 1 asistente.
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Título de la Clase
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassTitle}
+                      onChange={(e) => setPrivateClassTitle(e.target.value)}
+                      placeholder="Ej: Coach's Session with Client"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Descripción
+                    </label>
+                    <textarea
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassDescription}
+                      onChange={(e) => setPrivateClassDescription(e.target.value)}
+                      placeholder="Ej: Coach's one-on-one class with Client"
+                      rows={3}
+                    />
                   </div>
                   
                   <div>
@@ -1236,7 +1785,172 @@ export default function ClassesPage() {
                       Si dejas este campo vacío, se establecerá automáticamente 1 hora después de la hora de inicio.
                     </p>
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Coach
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassCoachId}
+                      onChange={(e) => setPrivateClassCoachId(e.target.value)}
+                    >
+                      <option value="">Seleccionar coach</option>
+                      {coaches.map(coach => (
+                        <option key={coach.id} value={coach.id}>
+                          {coach.nombre}
+                        </option>
+                      ))}
+                    </select>
+                    {coaches.length === 0 && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        No hay coaches disponibles. Por favor, asegúrate de que haya al menos un coach registrado.
+                      </p>
+                    )}
+                  </div>
+
+                  {editingClass && editingClass.type === 'group' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Agregar / Editar Clientes (Opcional)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Buscar cliente..."
+                            value={groupClassClientSearch}
+                            onChange={(e) => setGroupClassClientSearch(e.target.value)}
+                          />
+                          {groupClassClientSearch && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {clients
+                                .filter(c =>
+                                  c.nombre.toLowerCase().includes(groupClassClientSearch.toLowerCase()) &&
+                                  !groupClassClientIds.includes(c.id)
+                                )
+                                .map(client => (
+                                  <div
+                                    key={client.id}
+                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                                    onClick={() => {
+                                      setGroupClassClientIds([...groupClassClientIds, client.id])
+                                      setGroupClassClientSearch('')
+                                    }}
+                                  >
+                                    {client.nombre}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                        {groupClassClientIds.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {groupClassClientIds.map(clientId => {
+                              const client = clients.find(c => c.id === clientId)
+                              return client ? (
+                                <span
+                                  key={clientId}
+                                  className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                                >
+                                  {client.nombre}
+                                  <button
+                                    type="button"
+                                    onClick={() => setGroupClassClientIds(groupClassClientIds.filter(id => id !== clientId))}
+                                    className="ml-2 text-blue-600 hover:text-blue-800"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ) : null
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={isPublic}
+                            onChange={(e) => setIsPublic(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Clase pública (visible y unirse)</span>
+                        </label>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={walkInsWelcome}
+                            onChange={(e) => setWalkInsWelcome(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Walk-ins bienvenidos</span>
+                        </label>
+                      </div>
+
+                      <div className="flex items-center space-x-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={isRecurring}
+                            onChange={(e) => setIsRecurring(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <span className="text-sm text-gray-700">Clase recurrente (semanal)</span>
+                        </label>
+                      </div>
+
+                      {isRecurring && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Fecha de finalización de recurrencia
+                          </label>
+                          <input
+                            type="date"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={recurrenceEndDate}
+                            onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Máximo de asistentes
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={9999}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={groupMaxCapacity}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value, 10)
+                            if (isNaN(value)) {
+                              setGroupMaxCapacity(10)
+                            } else {
+                              setGroupMaxCapacity(Math.max(1, Math.min(value, 9999)))
+                            }
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          La capacidad mínima es de 1 asistente.
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
+
+                {/* Error message inside modal */}
+                {privateClassModalError && (
+                  <div className="mt-4 p-3 rounded-lg text-sm bg-red-50 text-red-800 border border-red-200">
+                    {privateClassModalError}
+                  </div>
+                )}
                 
                 <div className="mt-6 flex justify-end space-x-3">
                   <button
@@ -1262,126 +1976,334 @@ export default function ClassesPage() {
         {/* Modal para editar clase */}
         {showEditClassModal && editingClass && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9000]" onClick={() => setShowEditClassModal(false)}>
-            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Editar Clase</h3>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {editingClass.type === 'group' ? 'Editar Clase Grupal' : 'Editar Clase Privada'}
+              </h3>
               
               <form onSubmit={handleSaveEditClass}>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Fecha
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={editDate}
-                      onChange={(e) => setEditDate(e.target.value)}
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Hora de inicio
-                    </label>
-                    <input
-                      type="time"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={editTime}
-                      onChange={(e) => setEditTime(e.target.value)}
-                      onBlur={() => autoFillEndTime(editTime, editEndTime, setEditEndTime)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Hora de término
-                    </label>
-                    <input
-                      type="time"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={editEndTime}
-                      onChange={(e) => setEditEndTime(e.target.value)}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Si dejas este campo vacío, se establecerá automáticamente 1 hora después de la hora de inicio.
-                    </p>
-                  </div>
-
-                  {editingClass.type === 'private' && (
+                {editingClass.type === 'group' ? (
+                  <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Cliente (para quién es la clase)
+                        Título de la Clase
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        placeholder="Ej: Clase Grupal"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Descripción
+                      </label>
+                      <textarea
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        placeholder="Describe la clase grupal"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hora de inicio
+                      </label>
+                      <input
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editTime}
+                        onChange={(e) => setEditTime(e.target.value)}
+                        onBlur={() => autoFillEndTime(editTime, editEndTime, setEditEndTime)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hora de término
+                      </label>
+                      <input
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editEndTime}
+                        onChange={(e) => setEditEndTime(e.target.value)}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Si dejas este campo vacío, se establecerá automáticamente 1 hora después de la hora de inicio.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Coach
                       </label>
                       <select
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={editClientId}
-                        onChange={(e) => setEditClientId(e.target.value)}
+                        value={editCoachId}
+                        onChange={(e) => setEditCoachId(e.target.value)}
                       >
-                        <option value="">(No cambiar)</option>
-                        {clients.map(client => (
-                          <option key={client.id} value={client.id}>
-                            {client.nombre}
+                        <option value="">Seleccionar coach</option>
+                        {coaches.map(coach => (
+                          <option key={coach.id} value={coach.id}>
+                            {coach.nombre}
                           </option>
                         ))}
                       </select>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Si no seleccionas un cliente, se mantendrá el actual.
-                      </p>
+                      {coaches.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600">
+                          No hay coaches disponibles. Por favor, asegúrate de que haya al menos un coach registrado.
+                        </p>
+                      )}
                     </div>
-                  )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Instructores (máx. 10)
-                    </label>
-                    <div className="flex space-x-2 mb-2">
-                      <input
-                        type="text"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={editInstructorInput}
-                        onChange={(e) => setEditInstructorInput(e.target.value)}
-                        placeholder="Nombre del instructor"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const name = editInstructorInput.trim()
-                          if (!name) return
-                          if (editInstructors.length >= 10) {
-                            alert('Máximo 10 instructores por sesión')
-                            return
-                          }
-                          setEditInstructors([...editInstructors, name])
-                          setEditInstructorInput('')
-                        }}
-                        className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                      >
-                        Añadir
-                      </button>
+                    {/* Grupo específico */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Agregar / Editar Clientes (Opcional)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Buscar cliente..."
+                          value={groupClassClientSearch}
+                          onChange={(e) => setGroupClassClientSearch(e.target.value)}
+                        />
+                        {groupClassClientSearch && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {clients
+                              .filter(c =>
+                                c.nombre.toLowerCase().includes(groupClassClientSearch.toLowerCase()) &&
+                                !groupClassClientIds.includes(c.id)
+                              )
+                              .map(client => (
+                                <div
+                                  key={client.id}
+                                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                                  onClick={() => {
+                                    setGroupClassClientIds([...groupClassClientIds, client.id])
+                                    setGroupClassClientSearch('')
+                                  }}
+                                >
+                                  {client.nombre}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                      {groupClassClientIds.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {groupClassClientIds.map(clientId => {
+                            const client = clients.find(c => c.id === clientId)
+                            return client ? (
+                              <span
+                                key={clientId}
+                                className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                              >
+                                {client.nombre}
+                                <button
+                                  type="button"
+                                  onClick={() => setGroupClassClientIds(groupClassClientIds.filter(id => id !== clientId))}
+                                  className="ml-2 text-blue-600 hover:text-blue-800"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ) : null
+                          })}
+                        </div>
+                      )}
                     </div>
-                    {editInstructors.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {editInstructors.map((inst, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-700"
-                          >
-                            {inst}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditInstructors(editInstructors.filter((_, i) => i !== idx))
-                              }}
-                              className="ml-1 text-gray-500 hover:text-gray-700"
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        ))}
+
+                    <div className="flex items-center space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isPublic}
+                          onChange={(e) => setIsPublic(e.target.checked)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700">Clase pública (visible y unirse)</span>
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={walkInsWelcome}
+                          onChange={(e) => setWalkInsWelcome(e.target.checked)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700">Walk-ins bienvenidos</span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isRecurring}
+                          onChange={(e) => setIsRecurring(e.target.checked)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700">Clase recurrente (semanal)</span>
+                      </label>
+                    </div>
+
+                    {isRecurring && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Fecha de finalización de recurrencia
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={recurrenceEndDate}
+                          onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                        />
                       </div>
                     )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Máximo de asistentes
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={9999}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={groupMaxCapacity}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value, 10)
+                          if (isNaN(value)) {
+                            setGroupMaxCapacity(10)
+                          } else {
+                            setGroupMaxCapacity(Math.max(1, Math.min(value, 9999)))
+                          }
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        La capacidad mínima es de 1 asistente.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Título de la Clase
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        placeholder="Ej: Coach's Session with Client"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Descripción
+                      </label>
+                      <textarea
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        placeholder="Ej: Coach's one-on-one class with Client"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hora de inicio
+                      </label>
+                      <input
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editTime}
+                        onChange={(e) => setEditTime(e.target.value)}
+                        onBlur={() => autoFillEndTime(editTime, editEndTime, setEditEndTime)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hora de término
+                      </label>
+                      <input
+                        type="time"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editEndTime}
+                        onChange={(e) => setEditEndTime(e.target.value)}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Si dejas este campo vacío, se establecerá automáticamente 1 hora después de la hora de inicio.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Coach
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editCoachId}
+                        onChange={(e) => setEditCoachId(e.target.value)}
+                      >
+                        <option value="">Seleccionar coach</option>
+                        {coaches.map(coach => (
+                          <option key={coach.id} value={coach.id}>
+                            {coach.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      {coaches.length === 0 && (
+                        <p className="mt-1 text-xs text-amber-600">
+                          No hay coaches disponibles. Por favor, asegúrate de que haya al menos un coach registrado.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Error message inside modal */}
+                {editClassModalError && (
+                  <div className="mt-4 p-3 rounded-lg text-sm bg-red-50 text-red-800 border border-red-200">
+                    {editClassModalError}
+                  </div>
+                )}
                 
                 <div className="mt-6 flex justify-end space-x-3">
                   <button
@@ -1403,6 +2325,130 @@ export default function ClassesPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal para ver detalles de clase (para clientes) */}
+        {showViewClassModal && viewingClass && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9000]" onClick={() => setShowViewClassModal(false)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Detalles de la Clase</h3>
+                <button
+                  onClick={() => setShowViewClassModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                  <p className="text-sm text-gray-900">{decodeHtmlEntities(viewingClass.title || 'Clase Privada')}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                  <p className="text-sm text-gray-900">{decodeHtmlEntities(viewingClass.description || 'Sin descripción')}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                  <p className="text-sm text-gray-900">
+                    {new Date(viewingClass.date + 'T00:00:00').toLocaleDateString('es-ES', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Horario</label>
+                  <p className="text-sm text-gray-900">
+                    {viewingClass.time}{viewingClass.end_time ? ` - ${viewingClass.end_time}` : ''}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Duración</label>
+                  <p className="text-sm text-gray-900">{viewingClass.duration} minutos</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Coach</label>
+                  <p className="text-sm text-gray-900">{viewingClass.coach_name || 'No asignado'}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                  <span className={`px-2 py-1 text-xs rounded-full ${
+                    viewingClass.status === 'scheduled' ? 'bg-green-100 text-green-800' :
+                    viewingClass.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {viewingClass.status === 'scheduled' ? 'Programada' :
+                     viewingClass.status === 'completed' ? 'Completada' : 'Cancelada'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowViewClassModal(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de confirmación para cancelar / eliminar clase */}
+        {confirmAction && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9500]" onClick={() => setConfirmAction(null)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                {confirmAction.type === 'cancel' ? 'Confirmar cancelación' : 'Confirmar eliminación'}
+              </h3>
+              <p className="text-sm text-gray-700 mb-4">
+                {confirmAction.type === 'cancel'
+                  ? '¿Estás seguro de que deseas cancelar esta clase? Los clientes verán esta sesión como cancelada en su calendario.'
+                  : '¿Estás seguro de que deseas eliminar esta clase? Esta acción la removerá de todos los calendarios y registros visibles, lo que podría generar confusión en los clientes si la sesión ya estaba acordada. Se recomienda usar esta opción solo para corregir errores de programación evidentes.'}
+              </p>
+              <div className="mt-4 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction(null)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
+                >
+                  Volver
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = confirmAction
+                    setConfirmAction(null)
+                    if (!action) return
+                    if (action.type === 'cancel') {
+                      performCancelClass(action.cls)
+                    } else {
+                      performDeleteClass(action.cls)
+                    }
+                  }}
+                  className={`px-4 py-2 text-sm rounded-lg ${
+                    confirmAction.type === 'cancel'
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'bg-red-700 text-white hover:bg-red-800'
+                  }`}
+                >
+                  {confirmAction.type === 'cancel' ? 'Cancelar clase' : 'Eliminar clase'}
+                </button>
+              </div>
             </div>
           </div>
         )}
