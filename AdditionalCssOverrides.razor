@@ -2,10 +2,13 @@
 @using Aloha.Domain.Services.AdminAudit
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
+@using Aloha.Infrastructure
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.AspNetCore.Components
+@using Microsoft.Extensions.Logging
 @using System.Text.Json
 @using System.IO
+@using System.Linq.Expressions
 @inject IDbContextFactory<AlohaDb> dbFactory
 @inject IAdminActivityService adminActivityService
 @inject UserManager<AdminUser> UserManager
@@ -13,6 +16,7 @@
 @inject IJSRuntime JS
 @inject IWebHostEnvironment Env
 @inject IConfiguration Configuration
+@inject ILogger<EditAdditionalCssOverridesForm> Logger
 @rendermode InteractiveServer
 
 <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, ContentManager, Audit">
@@ -221,6 +225,31 @@
     private void HandleAdditionalFileChange(InputFileChangeEventArgs e) =>
         input.AlohaCssOverrideFile = e.File;
 
+    private bool ValidateCssFile(IBrowserFile file, Expression<Func<object>> fieldIdentifier, string fileTypeName)
+    {
+        var isValid = true;
+
+        if (file.Size > MAX_ALLOWED_FILE_SIZE)
+        {
+            messageStore.Add(
+                fieldIdentifier,
+                $"Stylesheet must be smaller than {MAX_ALLOWED_FILE_SIZE / 1024}KB"
+            );
+            isValid = false;
+        }
+
+        if (file.ContentType != "text/css")
+        {
+            messageStore.Add(
+                fieldIdentifier,
+                $"Invalid file type provided for {fileTypeName} -- must be .css"
+            );
+            isValid = false;
+        }
+
+        return isValid;
+    }
+
     private Task ShowConfirmAsync(PendingActionType action, string title, string message, string yesText, string noText = "Cancel")
     {
         _pendingAction = action;
@@ -313,46 +342,12 @@
 
         if (hasBootstrap)
         {
-            var file = input.BootstrapFile!;
-            if (file.Size > MAX_ALLOWED_FILE_SIZE)
-            {
-                messageStore.Add(
-                    () => input.BootstrapFile,
-                    $"Stylesheet must be smaller than {MAX_ALLOWED_FILE_SIZE / 1024}KB"
-                );
-                invalid = true;
-            }
-
-            if (file.ContentType != "text/css")
-            {
-                messageStore.Add(
-                    () => input.BootstrapFile,
-                    "Invalid file type provided for Bootstrap -- must be .css"
-                );
-                invalid = true;
-            }
+            invalid |= !ValidateCssFile(input.BootstrapFile!, () => input.BootstrapFile, "Bootstrap");
         }
 
         if (hasAdditional)
         {
-            var file = input.AlohaCssOverrideFile!;
-            if (file.Size > MAX_ALLOWED_FILE_SIZE)
-            {
-                messageStore.Add(
-                    () => input.AlohaCssOverrideFile,
-                    $"Stylesheet must be smaller than {MAX_ALLOWED_FILE_SIZE / 1024}KB"
-                );
-                invalid = true;
-            }
-
-            if (file.ContentType != "text/css")
-            {
-                messageStore.Add(
-                    () => input.AlohaCssOverrideFile,
-                    "Invalid file type provided for Additional CSS -- must be .css"
-                );
-                invalid = true;
-            }
+            invalid |= !ValidateCssFile(input.AlohaCssOverrideFile!, () => input.AlohaCssOverrideFile, "Additional CSS");
         }
 
         if (invalid)
@@ -563,7 +558,7 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"TryReadStaticFileFromCandidates read error for {p}: {ex.Message}");
+                Logger.LogWarning(ex, "Failed to read static file candidate: {FilePath}", p);
             }
         }
         return null;
@@ -660,11 +655,11 @@
                 return;
             }
 
-            await JS.InvokeVoidAsync("themeDownload.downloadText", css, "bootstrap.css");
+            await JS.InvokeVoidAsync("downloadFile", "bootstrap.css", "text/css", "utf-8", css);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"DownloadBootstrapAsync error: {ex}");
+            Logger.LogError(ex, "Failed to download Bootstrap CSS");
             await JS.InvokeVoidAsync("alert", $"Download failed: {ex.Message}");
         }
     }
@@ -698,11 +693,11 @@
                 return;
             }
 
-            await JS.InvokeVoidAsync("themeDownload.downloadText", css, "aloha-css-overrides.css");
+            await JS.InvokeVoidAsync("downloadFile", "aloha-css-overrides.css", "text/css", "utf-8", css);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"DownloadAdditionalAsync error: {ex}");
+            Logger.LogError(ex, "Failed to download Additional CSS");
             await JS.InvokeVoidAsync("alert", $"Download failed: {ex.Message}");
         }
     }
@@ -715,26 +710,3 @@
         public IBrowserFile? AlohaCssOverrideFile { get; set; }
     }
 }
-
-<script>
-  window.themeDownload = window.themeDownload || {};
-
-  window.themeDownload.downloadText = function (text, filename) {
-    try {
-      const blob = new Blob([text], { type: 'text/css;charset=utf-8' });
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = objUrl;
-      a.download = filename || 'download.css';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(objUrl); }, 5000);
-      return { success: true, message: 'Download started' };
-    } catch (err) {
-      console.error('downloadText error', err);
-      return { success: false, message: (err && err.toString) ? err.toString() : 'unknown error' };
-    }
-  };
-</script>

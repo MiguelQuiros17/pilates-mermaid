@@ -53,6 +53,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [hasViewedNotifications, setHasViewedNotifications] = useState(false)
 
   const [isLoading, setIsLoading] = useState(true)
 
@@ -368,17 +369,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <div className="relative notification-dropdown-container">
                 <button 
                   onClick={() => {
-                    setNotificationsOpen(!notificationsOpen)
-                    if (!notificationsOpen && notifications.length === 0) {
-                      loadNotifications()
+                    const opening = !notificationsOpen
+                    setNotificationsOpen(opening)
+                    if (opening) {
+                      // Mark as viewed when opening
+                      setHasViewedNotifications(true)
+                      if (notifications.length === 0) {
+                        loadNotifications()
+                      }
                     }
                   }}
                   className="p-2 text-gray-400 hover:text-gray-600 active:text-gray-700 relative touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                 >
                   <Bell className="h-5 w-5 sm:h-6 sm:w-6" />
-                  {notifications.length > 0 && (
-                    <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
-                  )}
                 </button>
 
                 {/* Notifications Dropdown */}

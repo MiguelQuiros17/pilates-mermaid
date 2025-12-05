@@ -5,7 +5,9 @@
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
 @using Aloha.Domain.Services.Theme.ColorUtilities
+@using Aloha.Infrastructure
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.Extensions.Logging
 @inject IDbContextFactory<AlohaDb> dbFactory
 @inject IAdminActivityService adminActivityService
 @inject UserManager<AdminUser> UserManager
@@ -14,6 +16,8 @@
 @inject IWebHostEnvironment Env
 @inject IConfiguration Configuration
 @inject IJSRuntime JS
+@inject IThemeEditorService themeEditorService
+@inject ILogger<EditBootstrapFileForm> Logger
 @rendermode InteractiveServer
 
 <AuthorizeView Roles="MahaloAdmin, MasterAdmin, ContentManager, Audit">
@@ -36,14 +40,17 @@
                         <div class="mb-3">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <h6 class="mb-0">Whitelisted Pallete</h6>
-                                <div class="btn-group btn-group-sm">
-                                    <button type="button" class="btn btn-outline-secondary" @onclick="DownloadColorsJson">Download Colors JSON</button>
-                                    <button type="button" class="btn btn-outline-secondary" @onclick="ToggleColorsJsonEditor">
-                                        @(showColorsJsonEditor ? "Hide JSON editor" : "Show JSON editor")
-                                    </button>
-                                </div>
+                                @if (!IsReadOnly)
+                                {
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" @onclick="DownloadColorsJson">Download Colors JSON</button>
+                                        <button type="button" class="btn btn-outline-secondary" @onclick="ToggleColorsJsonEditor">
+                                            @(showColorsJsonEditor ? "Hide JSON editor" : "Show JSON editor")
+                                        </button>
+                                    </div>
+                                }
                             </div>
-                            @if (showColorsJsonEditor)
+                            @if (!IsReadOnly && showColorsJsonEditor)
                             {
                                 <textarea class="form-control form-control-sm font-monospace" rows="6" @bind="colorsJsonText"></textarea>
                                 <div class="small text-muted mt-1">JSON structure: { "Colors": { "bootstrap::--bs-primary#1": "#112233", ... } }. Keys are whitelist identifiers.</div>
@@ -62,6 +69,7 @@
                                         <div class="small text-muted mb-1">@item.DisplayTitle</div>
                                         <div class="d-flex align-items-center gap-2">
                                             <input type="color" class="form-control form-control-color" value="@item.CurrentHex"
+                                                   disabled="@IsReadOnly"
                                                    @oninput="(e) => OnColorPicked(item.Source, item.Property, ((ChangeEventArgs)e).Value?.ToString() ?? item.CurrentHex, item.Occurrence, item.Selector)" />
                                             <div style="width:40px;height:24px;border:1px solid #ddd;background:@item.CurrentHex"></div>
                                             <div class="small ms-2 text-monospace">@item.OriginalToken</div>
@@ -72,25 +80,28 @@
                             }
                         </div>
 
-                        <div class="mt-3 d-flex flex-column flex-sm-row align-items-sm-center gap-2">
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-primary" disabled="@(isSaving || isLoading)" @onclick="ConfirmSaveColorEditsAsync">
-                                    @(isSaving ? "Applying..." : "Apply color edits")
-                                </button>
-                                <button class="btn btn-outline-secondary" disabled="@(isLoading || !colorList.Any())" @onclick="ConfirmReloadActiveCssAsync">Reload Active Stylesheet</button>
+                        @if (!IsReadOnly)
+                        {
+                            <div class="mt-3 d-flex flex-column flex-sm-row align-items-sm-center gap-2">
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-primary" disabled="@(isSaving || isLoading)" @onclick="ConfirmSaveColorEditsAsync">
+                                        @(isSaving ? "Applying..." : "Apply color edits")
+                                    </button>
+                                    <button class="btn btn-outline-secondary" disabled="@(isLoading || !colorList.Any())" @onclick="ConfirmReloadActiveCssAsync">Reload Active Stylesheet</button>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(colorsImportWarning))
+                                {
+                                    <div class="text-danger small">@colorsImportWarning</div>
+                                }
                             </div>
-                            @if (!string.IsNullOrWhiteSpace(colorsImportWarning))
-                            {
-                                <div class="text-danger small">@colorsImportWarning</div>
-                            }
-                        </div>
+                        }
                         
                         <div class="mb-3 mt-4 pt-2 border-top">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <span class="small text-muted" role="button" style="cursor:pointer;" @onclick="() => showSettingsPanel = !showSettingsPanel">
                                     <span class="me-1 @(showSettingsPanel ? "bi bi-chevron-up" : "bi bi-chevron-down")"></span>Whitelist &amp; Sync Settings
                                 </span>
-                                @if (showSettingsPanel)
+                                @if (showSettingsPanel && !IsReadOnly)
                                 {
                                     <div class="btn-group btn-group-sm">
                                         <button type="button" class="btn btn-outline-secondary" @onclick="DownloadSettingsJson">Download JSON</button>
@@ -101,7 +112,7 @@
                                 }
                             </div>
                             
-                            @if (showSettingsPanel && showJsonEditor)
+                            @if (showSettingsPanel && showJsonEditor && !IsReadOnly)
                             {
                                 <textarea class="form-control form-control-sm font-monospace" rows="10" @bind="settingsJsonText"></textarea>
                                 <div class="small text-muted mt-1">Paste JSON here to import. It should match the structure: { "Whitelist": { ... }, "Sync": { ... } }</div>
@@ -113,18 +124,30 @@
                                 {
                                     <div class="text-danger small mt-2">@importError</div>
                                 }
+                                @if (!string.IsNullOrWhiteSpace(saveError))
+                                {
+                                    <div class="text-danger small mt-2">@saveError</div>
+                                }
                             }
                             
                             @if (showSettingsPanel)
                             {
+                                @if (!string.IsNullOrWhiteSpace(saveError))
+                                {
+                                    <div class="alert alert-danger small mb-2">@saveError</div>
+                                }
                                 <div class="mt-3 p-3 border rounded bg-light">
                                     <div class="mb-3">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <h6 class="mb-0">Whitelist</h6>
-                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmRestoreDefaultWhitelistAsync">Restore Defaults</button>
+                                            @if (!IsReadOnly)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmRestoreDefaultWhitelistAsync">Restore Defaults</button>
+                                            }
                                         </div>
                                         <div class="mb-2 position-relative">
                                             <input class="form-control form-control-sm" placeholder="Search by color (#aabbcc / rgb(...)) or property identifier..."
+                                                   disabled="@IsReadOnly"
                                                    value="@whitelistSearchText" @oninput="OnWhitelistSearchChanged" @onfocus="() => whitelistSearchOverlayVisible = true" @onblur="OnWhitelistBlur" />
                                             @if (whitelistSearchOverlayVisible && whitelistSearchResults.Any())
                                             {
@@ -132,8 +155,8 @@
                                                     <div class="list-group">
                                                         @foreach (var res in whitelistSearchResults)
                                                         {
-                                                            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(res.Disabled ? "disabled bg-light text-muted" : "")"
-                                                                    disabled="@res.Disabled" @onclick="() => AddToWhitelistFromSearch(res)" @onmousedown:preventDefault>
+                                                            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(res.Disabled || IsReadOnly ? "disabled bg-light text-muted" : "")"
+                                                                    disabled="@(res.Disabled || IsReadOnly)" @onclick="() => AddToWhitelistFromSearchAsync(res)" @onmousedown:preventDefault>
                                                                 <div>
                                                                     <div class="small text-monospace">@res.Label</div>
                                                                     <div class="small text-muted">@res.DisplayName</div>
@@ -159,19 +182,22 @@
                                                 <div class="@classes" style="width:260px;">
                                                     <div class="d-flex justify-content-between align-items-start">
                                                         <div class="small text-monospace text-muted">@ThemeEditorIdentifierHelper.GetDisplayIdentifier(item.Identifier)</div>
-                                                        <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Remove from whitelist" @onclick="() => RemoveWhitelistItem(item)">&times;</button>
+                                                        @if (!IsReadOnly)
+                                                        {
+                                                            <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Remove from whitelist" @onclick="() => RemoveWhitelistItemAsync(item)">&times;</button>
+                                                        }
                                                     </div>
                                                     <div class="d-flex align-items-center gap-2 mt-2">
                                                         <span style="width:24px;height:24px;border:1px solid #ddd;border-radius:3px;background:@(item.CurrentHex ?? "#ffffff")"></span>
-                                                        <input class="form-control form-control-sm" value="@item.DisplayName" @onchange="e => OnWhitelistDisplayNameChanged(item, e)" />
+                                                        <input class="form-control form-control-sm" value="@item.DisplayName" @onchange="e => OnWhitelistDisplayNameChangedAsync(item, e)" />
                                                     </div>
                                                     @if (item.IsMissing)
                                                     {
                                                         <div class="text-danger small mt-2">Property not found! (Did you change your css file's structure?)</div>
                                                     }
                                                     <div class="mt-2 d-flex justify-content-end gap-1">
-                                                        <button type="button" class="btn btn-sm btn-outline-secondary" title="Move up" @onclick="() => MoveWhitelistItem(item, -1)">▲</button>
-                                                        <button type="button" class="btn btn-sm btn-outline-secondary" title="Move down" @onclick="() => MoveWhitelistItem(item, +1)">▼</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" title="Move up" @onclick="() => MoveWhitelistItemAsync(item, -1)">▲</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" title="Move down" @onclick="() => MoveWhitelistItemAsync(item, +1)">▼</button>
                                                     </div>
                                                 </div>
                                             }
@@ -181,10 +207,14 @@
                                     <div>
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <h6 class="mb-0">Sync Settings</h6>
-                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmRestoreDefaultSyncAsync">Restore Defaults</button>
+                                            @if (!IsReadOnly)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmRestoreDefaultSyncAsync">Restore Defaults</button>
+                                            }
                                         </div>
                                         <div class="mb-2 position-relative">
                                             <input class="form-control form-control-sm" placeholder="Search for parent colors..."
+                                                   disabled="@IsReadOnly"
                                                    value="@syncParentSearchText" @oninput="OnSyncParentSearchChanged" @onfocus="() => syncParentSearchOverlayVisible = true" @onblur="OnSyncParentBlur" />
                                             @if (syncParentSearchOverlayVisible && syncParentSearchResults.Any())
                                             {
@@ -192,8 +222,8 @@
                                                     <div class="list-group">
                                                         @foreach (var res in syncParentSearchResults)
                                                         {
-                                                            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(res.Disabled ? "disabled bg-light text-muted" : "")"
-                                                                    disabled="@res.Disabled" @onclick="() => AddSyncParentFromSearch(res)" @onmousedown:preventDefault>
+                                                            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(res.Disabled || IsReadOnly ? "disabled bg-light text-muted" : "")"
+                                                                    disabled="@(res.Disabled || IsReadOnly)" @onclick="() => AddSyncParentFromSearchAsync(res)" @onmousedown:preventDefault>
                                                                 <div>
                                                                     <div class="small text-monospace">@res.Label</div>
                                                                     <div class="small text-muted">@res.DisplayName</div>
@@ -229,11 +259,15 @@
                                                                 <div class="text-danger small mt-1">Property not found! (Did you change your css file's structure?)</div>
                                                             }
                                                         </div>
-                                                        <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Remove parent" @onclick="() => RemoveSyncParent(parent)">&times;</button>
+                                                        @if (!IsReadOnly)
+                                                        {
+                                                            <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Remove parent" @onclick="() => RemoveSyncParentAsync(parent)">&times;</button>
+                                                        }
                                                     </div>
                                                     <div class="mb-2 position-relative">
                                                         @{ syncChildSearchText.TryGetValue(parent.Identifier, out var childQ); }
                                                         <input class="form-control form-control-sm" placeholder="Search for child colors to sync..."
+                                                               disabled="@IsReadOnly"
                                                                value="@childQ" @oninput="(e) => OnSyncChildSearchChanged(parent, e)" @onfocus="() => ShowSyncChildOverlay(parent)" @onblur="(e) => OnSyncChildBlur(parent, e)" />
                                                         @{ syncChildSearchResults.TryGetValue(parent.Identifier, out var childResults); childResults ??= new List<ColorSearchResultVm>(); }
                                                         @if (syncChildSearchOverlayVisible.Contains(parent.Identifier) && childResults.Any())
@@ -242,8 +276,8 @@
                                                                 <div class="list-group">
                                                                     @foreach (var res in childResults)
                                                                     {
-                                                                        <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(res.Disabled ? "disabled bg-light text-muted" : "")"
-                                                                                disabled="@res.Disabled" @onclick="() => AddChildToParentFromSearch(parent, res)" @onmousedown:preventDefault>
+                                                                        <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(res.Disabled || IsReadOnly ? "disabled bg-light text-muted" : "")"
+                                                                                disabled="@(res.Disabled || IsReadOnly)" @onclick="() => AddChildToParentFromSearchAsync(parent, res)" @onmousedown:preventDefault>
                                                                             <div>
                                                                                 <div class="small text-monospace">@res.Label</div>
                                                                                 <div class="small text-muted">@res.DisplayName</div>
@@ -271,7 +305,10 @@
                                                                 <span class="@childClasses">
                                                                     <span class="me-1" style="width:14px;height:14px;border:1px solid #ccc;border-radius:2px;background:@(child.CurrentHex ?? "#ffffff")"></span>
                                                                     <span class="me-1 text-monospace">@ThemeEditorIdentifierHelper.GetDisplayIdentifier(child.Identifier)</span>
-                                                                    <button type="button" class="btn btn-sm btn-link @(child.IsMissing ? "text-dark" : "text-light") p-0 ms-1" title="Remove child" @onclick="() => RemoveSyncChild(parent, child)">&times;</button>
+                                                                    @if (!IsReadOnly)
+                                                                    {
+                                                                        <button type="button" class="btn btn-sm btn-link @(child.IsMissing ? "text-dark" : "text-light") p-0 ms-1" title="Remove child" @onclick="() => RemoveSyncChildAsync(parent, child)">&times;</button>
+                                                                    }
                                                                 </span>
                                                             }
                                                         </div>
@@ -313,25 +350,6 @@
     }
 </AuthorizeView>
 
-<script>
-    window.alohaThemeEditor = window.alohaThemeEditor || {};
-    window.alohaThemeEditor.downloadJson = function (fileName, content) {
-        try {
-            const blob = new Blob([content], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        } catch (e) {
-            console.error('downloadJson failed', e);
-        }
-    };
-</script>
-
 @code {
     [Parameter] public bool IsReadOnly { get; set; }
     [Parameter] public EventCallback ColorsApplied { get; set; }
@@ -366,6 +384,7 @@
     private bool showJsonEditor = false;
     private string settingsJsonText = string.Empty;
     private string? importError;
+    private string? saveError;
 
     private bool showColorsJsonEditor = false;
     private string colorsJsonText = string.Empty;
@@ -377,15 +396,13 @@
     private string _confirmYesText = "Yes";
     private string _confirmNoText = "Cancel";
     private PendingActionType _pendingAction = PendingActionType.None;
-    private ThemeEditorService? _themeEditorService;
-
     protected override async Task OnInitializedAsync()
     {
-        _themeEditorService = new ThemeEditorService(dbFactory, Configuration);
         await using var db = await dbFactory.CreateDbContextAsync();
         var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
         adminUser = await UserManager.FindByEmailAsync(authUser.Identity?.Name ?? string.Empty);
 
+        CssColorExtractor.SetLogger(Logger);
         whitelistDict = ThemeEditorDefaults.GetDefaultWhitelist();
         syncDict = ThemeEditorDefaults.GetDefaultSync();
         await LoadWhitelistAndSyncFromDbAsync();
@@ -400,7 +417,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"OnAfterRenderAsync: failed to load stylesheets: {ex}");
+            Logger.LogError(ex, "Failed to load stylesheets during initialization");
         }
         finally
         {
@@ -413,8 +430,8 @@
     {
         try
         {
-            bootstrapCssText = await _themeEditorService!.FetchActiveBootstrapCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
-            additionalCssText = await _themeEditorService!.FetchAdditionalCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
+            bootstrapCssText = await themeEditorService.FetchActiveBootstrapCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
+            additionalCssText = await themeEditorService.FetchAdditionalCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
             colorList.Clear();
 
             CssColorExtractor.ExtractColors(bootstrapCssText ?? string.Empty, "bootstrap", colorList);
@@ -426,7 +443,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadActiveStylesheetAndExtractColorsAsync failed: {ex}");
+            Logger.LogError(ex, "Failed to load active stylesheet and extract colors");
             colorList.Clear();
             filteredColorList = new List<ColorEntry>();
         }
@@ -508,7 +525,7 @@
 
             string normalizedHex;
             try { normalizedHex = CssColorUtils.NormalizeHexForStorage(newHex); }
-            catch (Exception ex) { Console.WriteLine($"OnColorPicked: invalid hex '{newHex}' -> {ex.Message}"); return; }
+            catch (Exception ex) { Logger.LogWarning(ex, "Invalid hex color value: {Hex}", newHex); return; }
 
             var prop = property.Trim();
             List<ColorEntry> picked;
@@ -622,7 +639,7 @@
 
             StateHasChanged();
         }
-        catch (Exception ex) { Console.WriteLine($"OnColorPicked: unhandled exception: {ex}"); }
+        catch (Exception ex) { Logger.LogError(ex, "Unhandled exception in OnColorPicked"); }
     }
 
     private async Task SaveColorEditsAsync()
@@ -639,7 +656,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SaveColorEditsAsync: replacement pass failed: {ex}");
+            Logger.LogError(ex, "Failed to apply CSS replacements");
             isSaving = false;
             StateHasChanged();
             return;
@@ -647,11 +664,11 @@
 
         try
         {
-            await _themeEditorService!.SaveStylesheetsAsync(finalBootstrap, finalAdditional);
+            await themeEditorService.SaveStylesheetsAsync(finalBootstrap, finalAdditional);
             await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.CustomTheme, "Applied color edits to bootstrap and additional stylesheets.");
 
-            bootstrapCssText = await _themeEditorService!.FetchActiveBootstrapCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
-            additionalCssText = await _themeEditorService!.FetchAdditionalCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
+            bootstrapCssText = await themeEditorService.FetchActiveBootstrapCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
+            additionalCssText = await themeEditorService.FetchAdditionalCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
             colorList.Clear();
 
             CssColorExtractor.ExtractColors(bootstrapCssText, "bootstrap", colorList);
@@ -663,7 +680,7 @@
             if (ColorsApplied.HasDelegate) await ColorsApplied.InvokeAsync();
             NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: false);
         }
-        catch (Exception ex) { Console.WriteLine($"SaveColorEditsAsync: DB/save error: {ex}"); }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to save color edits to database"); }
         finally { isSaving = false; StateHasChanged(); }
     }
 
@@ -759,7 +776,7 @@
         syncParentSearchResults = BuildSearchResults(syncParentSearchText, isForWhitelist: false, parentContext: null);
     }
 
-    private void AddToWhitelistFromSearch(ColorSearchResultVm res)
+    private async Task AddToWhitelistFromSearchAsync(ColorSearchResultVm res)
     {
         if (res.Disabled) return;
         var id = ThemeEditorIdentifierHelper.CanonicalizeIdentifierForStorage(res.Identifier);
@@ -771,16 +788,40 @@
         whitelistSearchResults.Clear();
         whitelistSearchText = string.Empty;
         whitelistSearchOverlayVisible = false;
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save whitelist after adding item");
+            saveError = "Failed to save whitelist settings.";
+        }
+        StateHasChanged();
     }
 
-    private void RemoveWhitelistItem(WhitelistItemVm item)
+    private async Task RemoveWhitelistItemAsync(WhitelistItemVm item)
     {
         whitelistItems.Remove(item);
         RebuildDictionariesFromSettings();
         RefreshWhitelistAndSyncBindings();
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save whitelist after removing item");
+            saveError = "Failed to save whitelist settings.";
+        }
+        StateHasChanged();
     }
 
-    private void MoveWhitelistItem(WhitelistItemVm item, int delta)
+    private async Task MoveWhitelistItemAsync(WhitelistItemVm item, int delta)
     {
         var idx = whitelistItems.IndexOf(item);
         if (idx < 0) return;
@@ -791,16 +832,40 @@
         whitelistItems.Insert(newIdx, item);
         RebuildDictionariesFromSettings();
         RefreshWhitelistAndSyncBindings();
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save whitelist after moving item");
+            saveError = "Failed to save whitelist settings.";
+        }
+        StateHasChanged();
     }
 
-    private void OnWhitelistDisplayNameChanged(WhitelistItemVm item, ChangeEventArgs e)
+    private async Task OnWhitelistDisplayNameChangedAsync(WhitelistItemVm item, ChangeEventArgs e)
     {
         item.DisplayName = e.Value?.ToString() ?? string.Empty;
         RebuildDictionariesFromSettings();
         RefreshWhitelistAndSyncBindings();
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save whitelist after changing display name");
+            saveError = "Failed to save whitelist settings.";
+        }
+        StateHasChanged();
     }
 
-    private void AddSyncParentFromSearch(ColorSearchResultVm res)
+    private async Task AddSyncParentFromSearchAsync(ColorSearchResultVm res)
     {
         if (res.Disabled) return;
         var id = ThemeEditorIdentifierHelper.CanonicalizeIdentifierForStorage(res.Identifier);
@@ -813,14 +878,37 @@
         RebuildDictionariesFromSettings();
         RefreshWhitelistAndSyncBindings();
         RefreshSearchResults();
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save sync settings after adding parent");
+            saveError = "Failed to save sync settings.";
+        }
+        StateHasChanged();
     }
 
-    private void RemoveSyncParent(SyncParentVm parent)
+    private async Task RemoveSyncParentAsync(SyncParentVm parent)
     {
         syncParents.Remove(parent);
         RebuildDictionariesFromSettings();
         RefreshWhitelistAndSyncBindings();
         RefreshSearchResults();
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save sync settings after removing parent");
+            saveError = "Failed to save sync settings.";
+        }
         StateHasChanged();
     }
 
@@ -832,7 +920,7 @@
         syncChildSearchResults[key] = BuildSearchResults(val, isForWhitelist: false, parentContext: parent);
     }
 
-    private void AddChildToParentFromSearch(SyncParentVm parent, ColorSearchResultVm res)
+    private async Task AddChildToParentFromSearchAsync(SyncParentVm parent, ColorSearchResultVm res)
     {
         if (res.Disabled) return;
         var id = ThemeEditorIdentifierHelper.CanonicalizeIdentifierForStorage(res.Identifier);
@@ -850,14 +938,38 @@
         syncChildSearchText[key] = string.Empty;
         syncChildSearchResults[key] = new List<ColorSearchResultVm>();
         HideSyncChildOverlay(parent);
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save sync settings after adding child");
+            saveError = "Failed to save sync settings.";
+        }
+        StateHasChanged();
     }
 
-    private void RemoveSyncChild(SyncParentVm parent, SyncChildVm child)
+    private async Task RemoveSyncChildAsync(SyncParentVm parent, SyncChildVm child)
     {
         parent.Children.Remove(child);
         RebuildDictionariesFromSettings();
         RefreshWhitelistAndSyncBindings();
         RefreshSearchResults();
+        
+        try
+        {
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save sync settings after removing child");
+            saveError = "Failed to save sync settings.";
+        }
+        StateHasChanged();
     }
 
     private void ShowSyncChildOverlay(SyncParentVm parent) => syncChildSearchOverlayVisible.Add(parent.Identifier);
@@ -960,7 +1072,7 @@
 
     private async Task LoadWhitelistAndSyncFromDbAsync()
     {
-        var dto = await _themeEditorService!.LoadSettingsFromDbAsync();
+        var dto = await themeEditorService.LoadSettingsFromDbAsync();
         if (dto?.Whitelist is not null)
             whitelistDict = new Dictionary<string, string>(dto.Whitelist, StringComparer.OrdinalIgnoreCase);
         if (dto?.Sync is not null)
@@ -970,7 +1082,7 @@
     private async Task SaveWhitelistAndSyncToDbAsync()
     {
         var dto = BuildCurrentSettingsDto();
-        await _themeEditorService!.SaveSettingsToDbAsync(dto);
+        await themeEditorService.SaveSettingsToDbAsync(dto);
     }
 
     private ThemeEditorColorsDto BuildCurrentColorsDto()
@@ -983,7 +1095,7 @@
             var entry = ThemeEditorIdentifierHelper.FindEntryForIdentifier(id, colorList).FirstOrDefault();
             if (entry is null) continue;
             try { dict[id] = CssColorUtils.NormalizeHexForStorage(entry.CurrentHex); }
-            catch (Exception ex) { Console.WriteLine($"BuildCurrentColorsDto: bad hex for '{id}' -> '{entry.CurrentHex}': {ex.Message}"); }
+            catch (Exception ex) { Logger.LogWarning(ex, "Invalid hex color for identifier {Identifier}: {Hex}", id, entry.CurrentHex); }
         }
         return new ThemeEditorColorsDto { Colors = dict };
     }
@@ -1006,9 +1118,9 @@
             var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
             settingsJsonText = json;
             importError = null;
-            await JS.InvokeVoidAsync("alohaThemeEditor.downloadJson", "theme-editor-settings.json", json);
+            await JS.InvokeVoidAsync("downloadFile", "theme-editor-settings.json", "application/json", "utf-8", json);
         }
-        catch (Exception ex) { Console.WriteLine($"DownloadSettingsJson failed: {ex}"); importError = "Failed to generate JSON for download. See console for details."; }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to download settings JSON"); importError = "Failed to generate JSON for download."; }
     }
 
     private async Task DownloadColorsJson()
@@ -1019,9 +1131,9 @@
             var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
             colorsJsonText = json;
             colorsImportWarning = null;
-            await JS.InvokeVoidAsync("alohaThemeEditor.downloadJson", "theme-editor-colors.json", json);
+            await JS.InvokeVoidAsync("downloadFile", "theme-editor-colors.json", "application/json", "utf-8", json);
         }
-        catch (Exception ex) { Console.WriteLine($"DownloadColorsJson failed: {ex}"); colorsImportWarning = "Failed to generate colors JSON. See console for details."; }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to download colors JSON"); colorsImportWarning = "Failed to generate colors JSON."; }
     }
 
     private void ToggleColorsJsonEditor()
@@ -1034,7 +1146,7 @@
                 colorsJsonText = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
                 colorsImportWarning = null;
             }
-            catch (Exception ex) { Console.WriteLine($"ToggleColorsJsonEditor failed: {ex}"); colorsImportWarning = "Failed to build current colors JSON snapshot. See console for details."; }
+            catch (Exception ex) { Logger.LogError(ex, "Failed to build colors JSON snapshot"); colorsImportWarning = "Failed to build current colors JSON snapshot."; }
         }
         showColorsJsonEditor = !showColorsJsonEditor;
     }
@@ -1050,7 +1162,7 @@
                 settingsJsonText = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
                 importError = null;
             }
-            catch (Exception ex) { Console.WriteLine($"ToggleJsonEditor: failed to build JSON snapshot: {ex}"); importError = "Failed to build current JSON snapshot. See console for details."; }
+            catch (Exception ex) { Logger.LogError(ex, "Failed to build settings JSON snapshot"); importError = "Failed to build current JSON snapshot."; }
         }
         showJsonEditor = !showJsonEditor;
     }
@@ -1062,7 +1174,7 @@
 
         ThemeEditorColorsDto? dto;
         try { dto = JsonSerializer.Deserialize<ThemeEditorColorsDto>(colorsJsonText); }
-        catch (Exception ex) { Console.WriteLine($"ImportColorsJson: JSON parse error: {ex}"); colorsImportWarning = "Could not parse color JSON. Make sure it matches the expected structure."; return; }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to parse colors JSON"); colorsImportWarning = "Could not parse color JSON. Make sure it matches the expected structure."; return; }
 
         if (dto?.Colors is null || dto.Colors.Count == 0) { colorsImportWarning = "No color values found in JSON."; return; }
 
@@ -1084,7 +1196,7 @@
             if (primary is null) continue;
 
             try { OnColorPicked(primary.Source, primary.Property, kv.Value, primary.Occurrence, primary.Selector); }
-            catch (Exception ex) { Console.WriteLine($"ImportColorsJson: OnColorPicked failed for '{key}' -> '{kv.Value}': {ex}"); }
+            catch (Exception ex) { Logger.LogWarning(ex, "Failed to apply color for identifier {Identifier}", key); }
         }
 
         RefreshWhitelistAndSyncBindings();
@@ -1106,7 +1218,7 @@
         {
             ThemeEditorSettingsDto? dto = null;
             try { dto = JsonSerializer.Deserialize<ThemeEditorSettingsDto>(settingsJsonText); }
-            catch (Exception ex) { Console.WriteLine($"ImportSettingsJson: JSON parse error: {ex}"); importError = "Could not parse JSON. Make sure it matches the expected structure."; return; }
+            catch (Exception ex) { Logger.LogError(ex, "Failed to parse settings JSON"); importError = "Could not parse JSON. Make sure it matches the expected structure."; return; }
 
             if (dto is null) { importError = "Deserialized JSON is null."; return; }
 
@@ -1119,29 +1231,52 @@
             RefreshSearchResults();
             await SaveWhitelistAndSyncToDbAsync();
             importError = null;
+            saveError = null;
             StateHasChanged();
         }
-        catch (Exception ex) { Console.WriteLine($"ImportSettingsJson failed: {ex}"); importError = "Failed to import JSON. See console for details."; }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to import settings JSON"); importError = "Failed to import JSON."; }
     }
 
-    private void RestoreDefaultWhitelist()
+    private async Task RestoreDefaultWhitelistAsync()
     {
-        whitelistDict = ThemeEditorDefaults.GetDefaultWhitelistExtended();
-        RebuildSettingsFromDictionaries();
-        RefreshWhitelistAndSyncBindings();
-        _ = SaveWhitelistAndSyncToDbAsync();
-        RefreshSearchResults();
-        RefreshWhitelistDisplayNames();
+        try
+        {
+            whitelistDict = ThemeEditorDefaults.GetDefaultWhitelistExtended();
+            RebuildSettingsFromDictionaries();
+            RefreshWhitelistAndSyncBindings();
+            RefreshSearchResults();
+            RefreshWhitelistDisplayNames();
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to restore default whitelist");
+            saveError = "Failed to save whitelist settings.";
+            StateHasChanged();
+        }
     }
 
-    private void RestoreDefaultSync()
+    private async Task RestoreDefaultSyncAsync()
     {
-        syncDict = ThemeEditorDefaults.GetDefaultSyncExtended();
-        RebuildSettingsFromDictionaries();
-        RefreshWhitelistAndSyncBindings();
-        _ = SaveWhitelistAndSyncToDbAsync();
-        RefreshSearchResults();
-        RefreshWhitelistDisplayNames();
+        try
+        {
+            syncDict = ThemeEditorDefaults.GetDefaultSyncExtended();
+            RebuildSettingsFromDictionaries();
+            RefreshWhitelistAndSyncBindings();
+            RefreshSearchResults();
+            RefreshWhitelistDisplayNames();
+            await SaveWhitelistAndSyncToDbAsync();
+            saveError = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to restore default sync settings");
+            saveError = "Failed to save sync settings.";
+            StateHasChanged();
+        }
     }
 
     private void RefreshWhitelistDisplayNames()
@@ -1158,7 +1293,6 @@
         whitelistDict = newWhitelist;
         ApplyServerWhitelist();
         RefreshWhitelistAndSyncBindings();
-        _ = SaveWhitelistAndSyncToDbAsync();
         StateHasChanged();
     }
 
@@ -1189,7 +1323,6 @@
         }
         syncDict = newSync;
         ApplyServerWhitelist();
-        _ = SaveWhitelistAndSyncToDbAsync();
     }
 
     private void MarkWhitelistEntriesAsDirty()
@@ -1202,7 +1335,7 @@
             var primary = ThemeEditorIdentifierHelper.FindEntryForIdentifier(id, colorList).FirstOrDefault();
             if (primary is null) continue;
             try { OnColorPicked(primary.Source, primary.Property, primary.CurrentHex, primary.Occurrence, primary.Selector); }
-            catch (Exception ex) { Console.WriteLine($"MarkWhitelistEntriesAsDirty: failed to re-sync '{id}': {ex}"); }
+            catch (Exception ex) { Logger.LogWarning(ex, "Failed to re-sync whitelist entry {Identifier}", id); }
         }
     }
 
@@ -1241,7 +1374,7 @@
             using var reader = new StreamReader(stream);
             settingsJsonText = await reader.ReadToEndAsync() ?? string.Empty;
         }
-        catch (Exception ex) { Console.WriteLine($"OnSettingsJsonFileSelected failed: {ex}"); importError = "Failed to read JSON file."; }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to read settings JSON file"); importError = "Failed to read JSON file."; }
     }
 
     private async Task OnColorsJsonFileSelected(InputFileChangeEventArgs e)
@@ -1255,7 +1388,7 @@
             using var reader = new StreamReader(stream);
             colorsJsonText = await reader.ReadToEndAsync() ?? string.Empty;
         }
-        catch (Exception ex) { Console.WriteLine($"OnColorsJsonFileSelected failed: {ex}"); colorsImportWarning = "Failed to read colors JSON file."; }
+        catch (Exception ex) { Logger.LogError(ex, "Failed to read colors JSON file"); colorsImportWarning = "Failed to read colors JSON file."; }
     }
 
     private Task ShowConfirmAsync(PendingActionType action, string title, string message, string yesText, string noText = "Cancel")
@@ -1317,8 +1450,8 @@
         {
             case PendingActionType.SaveColors: await SaveColorEditsAsync(); break;
             case PendingActionType.ReloadCss: await ReloadActiveCssAsync(); break;
-            case PendingActionType.RestoreWhitelistDefaults: RestoreDefaultWhitelist(); break;
-            case PendingActionType.RestoreSyncDefaults: RestoreDefaultSync(); break;
+            case PendingActionType.RestoreWhitelistDefaults: await RestoreDefaultWhitelistAsync(); break;
+            case PendingActionType.RestoreSyncDefaults: await RestoreDefaultSyncAsync(); break;
             case PendingActionType.ImportSettingsJson: await ImportSettingsJson(); break;
             case PendingActionType.ImportColorsJson: ImportColorsJson(); break;
         }

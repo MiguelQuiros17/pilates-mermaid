@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Users,
@@ -11,9 +11,18 @@ import {
   Clock,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  ArrowRight,
+  Package,
+  User,
+  Sparkles,
+  CalendarDays,
+  AlertTriangle,
+  ChevronRight,
+  MapPin
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import Link from 'next/link'
 
 interface DashboardStats {
   totalClients: number
@@ -39,6 +48,12 @@ export default function DashboardPage() {
   const [error, setError] = useState('')
   const [user, setUser] = useState<User | null>(null)
   const [userClasses, setUserClasses] = useState<any[]>([])
+  const [userBookings, setUserBookings] = useState<any[]>([])
+  const [userStats, setUserStats] = useState<any>(null)
+  const [packageHistory, setPackageHistory] = useState<any[]>([])
+  const [activeGroupPackage, setActiveGroupPackage] = useState<any>(null)
+  const [activePrivatePackage, setActivePrivatePackage] = useState<any>(null)
+  const [classCounts, setClassCounts] = useState<{private: number, group: number}>({private: 0, group: 0})
 
   useEffect(() => {
     const userData = localStorage.getItem('user')
@@ -51,12 +66,10 @@ export default function DashboardPage() {
     const parsedUser = JSON.parse(userData)
     setUser(parsedUser)
     
-    // Cargar clases del usuario si es cliente
     if (parsedUser?.role === 'cliente') {
-      loadUserClasses(parsedUser.id)
+      loadClientData(parsedUser.id)
     }
 
-    // Cargar estadísticas del dashboard si es admin
     if (parsedUser?.role === 'admin') {
       loadDashboardStats()
     } else {
@@ -98,55 +111,54 @@ export default function DashboardPage() {
     }
   }
 
-  const [userBookings, setUserBookings] = useState<any[]>([])
-  const [userStats, setUserStats] = useState<any>(null)
-  const [packageHistory, setPackageHistory] = useState<any[]>([])
-  const [activePackage, setActivePackage] = useState<any>(null)
-
-  const loadUserClasses = async (userId: string) => {
+  const loadClientData = async (userId: string) => {
     try {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      // Cargar clases del usuario
-      const classesResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/classes`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
+      // Load all client data in parallel
+      const [classesRes, bookingsRes, packageRes, countsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/users/${userId}/classes`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_BASE_URL}/api/users/${userId}/bookings`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_BASE_URL}/api/users/${userId}/package-history`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_BASE_URL}/api/users/${userId}/class-counts`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ])
 
-      // Cargar reservas del usuario
-      const bookingsResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/bookings`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      // Cargar historial de paquetes
-      const packageResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/package-history`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (classesResponse.ok) {
-        const classesData = await classesResponse.json()
-        setUserClasses(classesData.classes || [])
+      if (classesRes.ok) {
+        const data = await classesRes.json()
+        setUserClasses(data.classes || [])
       }
 
-      if (bookingsResponse.ok) {
-        const bookingsData = await bookingsResponse.json()
-        setUserBookings(bookingsData.bookings || [])
-        setUserStats(bookingsData.availableClasses)
+      if (bookingsRes.ok) {
+        const data = await bookingsRes.json()
+        setUserBookings(data.bookings || [])
+        setUserStats(data.availableClasses)
       }
 
-      if (packageResponse.ok) {
-        const packageData = await packageResponse.json()
-        setPackageHistory(packageData.packageHistory || [])
-        setActivePackage(packageData.activePackage)
+      if (packageRes.ok) {
+        const data = await packageRes.json()
+        setPackageHistory(data.packageHistory || [])
+        setActiveGroupPackage(data.activeGroupPackage)
+        setActivePrivatePackage(data.activePrivatePackage)
+      }
+
+      if (countsRes.ok) {
+        const data = await countsRes.json()
+        setClassCounts({
+          private: data.private_classes_remaining || 0,
+          group: data.group_classes_remaining || 0
+        })
       }
     } catch (error) {
-      console.error('Error loading user data:', error)
+      console.error('Error loading client data:', error)
     }
   }
 
@@ -166,6 +178,48 @@ export default function DashboardPage() {
     }
   }
 
+  // Get next upcoming class for client
+  const nextClass = useMemo(() => {
+    if (!userBookings || userBookings.length === 0) return null
+    
+    const now = new Date()
+    const upcoming = userBookings
+      .filter(b => {
+        if (b.status === 'cancelled') return false
+        const bookingDate = new Date(b.occurrence_date || b.class_date || b.date)
+        return bookingDate >= new Date(now.toDateString())
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.occurrence_date || a.class_date || a.date)
+        const dateB = new Date(b.occurrence_date || b.class_date || b.date)
+        return dateA.getTime() - dateB.getTime()
+      })
+    
+    return upcoming[0] || null
+  }, [userBookings])
+
+  // Calculate package status for notifications
+  const packageStatus = useMemo(() => {
+    const groupExpired = !activeGroupPackage && packageHistory.some(p => p.package_category === 'Grupal')
+    const privateExpired = !activePrivatePackage && packageHistory.some(p => p.package_category === 'Privada')
+    const noPackages = !activeGroupPackage && !activePrivatePackage && packageHistory.length === 0
+    const lowGroupMonths = activeGroupPackage?.renewal_months === 1
+    const lowPrivateMonths = activePrivatePackage?.renewal_months === 1
+    const outOfGroupClasses = classCounts.group === 0 && activeGroupPackage
+    const outOfPrivateClasses = classCounts.private === 0 && activePrivatePackage
+    
+    return {
+      groupExpired,
+      privateExpired,
+      noPackages,
+      lowGroupMonths,
+      lowPrivateMonths,
+      outOfGroupClasses,
+      outOfPrivateClasses,
+      hasWarning: groupExpired || privateExpired || noPackages || lowGroupMonths || lowPrivateMonths || outOfGroupClasses || outOfPrivateClasses
+    }
+  }, [activeGroupPackage, activePrivatePackage, packageHistory, classCounts])
+
   const getQuickActions = () => {
     if (!user) return []
 
@@ -183,12 +237,6 @@ export default function DashboardPage() {
           { name: 'Tomar Asistencia', href: '/dashboard/attendance', icon: CheckCircle, color: 'bg-green-500' },
           { name: 'Ver Pagos', href: '/dashboard/payments', icon: DollarSign, color: 'bg-yellow-500' }
         ]
-      case 'cliente':
-        return [
-          { name: 'Mis Clases', href: '/dashboard/classes', icon: Calendar, color: 'bg-blue-500' },
-          { name: 'Mi Paquete', href: '/dashboard/packages', icon: DollarSign, color: 'bg-green-500' },
-          { name: 'Agendar Clase', href: '/dashboard/classes', icon: Calendar, color: 'bg-purple-500' }
-        ]
       default:
         return []
     }
@@ -204,6 +252,304 @@ export default function DashboardPage() {
     )
   }
 
+  // Client Dashboard
+  if (user?.role === 'cliente') {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6 max-w-5xl mx-auto">
+          {/* Welcome Header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-6"
+          >
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              {getGreeting()}, {user?.nombre?.split(' ')[0]} ✨
+            </h1>
+            <p className="text-gray-500">
+              {new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+          </motion.div>
+
+          {/* Warning Banner */}
+          {packageStatus.hasWarning && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  {packageStatus.noPackages && (
+                    <p className="text-amber-800">
+                      <span className="font-semibold">¡Bienvenido!</span> Aún no tienes un paquete de clases. 
+                      <Link href="/dashboard/packages" className="ml-1 underline font-medium">Ver paquetes disponibles →</Link>
+                    </p>
+                  )}
+                  {(packageStatus.groupExpired || packageStatus.privateExpired) && (
+                    <p className="text-amber-800">
+                      <span className="font-semibold">Paquete agotado.</span> Contacta a un instructor para renovar tu membresía.
+                    </p>
+                  )}
+                  {(packageStatus.lowGroupMonths || packageStatus.lowPrivateMonths) && !packageStatus.groupExpired && !packageStatus.privateExpired && (
+                    <p className="text-amber-800">
+                      <span className="font-semibold">¡Último mes!</span> Tu membresía está por expirar. Considera renovar pronto.
+                    </p>
+                  )}
+                  {(packageStatus.outOfGroupClasses || packageStatus.outOfPrivateClasses) && !packageStatus.groupExpired && !packageStatus.privateExpired && (
+                    <p className="text-amber-800">
+                      <span className="font-semibold">Sin clases restantes este mes.</span> Espera la renovación o contacta para actualizar tu paquete.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Class Balance Cards */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Group Classes */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.1 }}
+            >
+              <Link href="/dashboard/packages">
+                <div className={`relative overflow-hidden rounded-2xl p-5 text-white cursor-pointer transition-transform hover:scale-[1.02] ${
+                  !activeGroupPackage && packageHistory.some(p => p.package_category === 'Grupal')
+                    ? 'bg-gradient-to-br from-gray-400 to-gray-500'
+                    : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                }`}>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+                  <Users className="h-8 w-8 mb-3 opacity-80" />
+                  <div className="text-4xl font-bold mb-1">{classCounts.group}</div>
+                  <div className="text-sm opacity-90">Clases Grupales</div>
+                  <div className="mt-2 text-xs opacity-75 flex items-center gap-1">
+                    Ver detalles <ChevronRight className="h-3 w-3" />
+                  </div>
+                </div>
+              </Link>
+            </motion.div>
+
+            {/* Private Classes */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.15 }}
+            >
+              <Link href="/dashboard/packages">
+                <div className={`relative overflow-hidden rounded-2xl p-5 text-white cursor-pointer transition-transform hover:scale-[1.02] ${
+                  !activePrivatePackage && packageHistory.some(p => p.package_category === 'Privada')
+                    ? 'bg-gradient-to-br from-gray-400 to-gray-500'
+                    : 'bg-gradient-to-br from-purple-500 to-pink-600'
+                }`}>
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+                  <User className="h-8 w-8 mb-3 opacity-80" />
+                  <div className="text-4xl font-bold mb-1">{classCounts.private}</div>
+                  <div className="text-sm opacity-90">Clases Privadas</div>
+                  <div className="mt-2 text-xs opacity-75 flex items-center gap-1">
+                    Ver detalles <ChevronRight className="h-3 w-3" />
+                  </div>
+                </div>
+              </Link>
+            </motion.div>
+          </div>
+
+          {/* Next Class Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <Link href="/dashboard/classes">
+              <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Próxima Clase</h2>
+                  <span className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                    Ver calendario <ArrowRight className="h-3 w-3" />
+                  </span>
+                </div>
+                
+                {nextClass ? (
+                  <div className="flex items-center gap-4">
+                    <div className={`w-16 h-16 rounded-xl flex flex-col items-center justify-center ${
+                      nextClass.class_type === 'private' ? 'bg-purple-100' : 'bg-blue-100'
+                    }`}>
+                      <span className="text-2xl font-bold text-gray-900">
+                        {new Date(nextClass.occurrence_date || nextClass.class_date || nextClass.date).getDate()}
+                      </span>
+                      <span className="text-xs text-gray-500 uppercase">
+                        {new Date(nextClass.occurrence_date || nextClass.class_date || nextClass.date).toLocaleDateString('es-MX', { month: 'short' })}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 text-lg">{nextClass.class_title || nextClass.title || 'Clase'}</h3>
+                      <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          {nextClass.class_time || nextClass.time}
+                        </span>
+                        {nextClass.coach_name && (
+                          <span className="flex items-center gap-1">
+                            <User className="h-4 w-4" />
+                            {nextClass.coach_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      nextClass.class_type === 'private' 
+                        ? 'bg-purple-100 text-purple-700' 
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {nextClass.class_type === 'private' ? 'Privada' : 'Grupal'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <CalendarDays className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 mb-2">No tienes clases programadas</p>
+                    <span className="text-blue-600 text-sm font-medium">
+                      Reserva tu primera clase →
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Link>
+          </motion.div>
+
+          {/* Quick Actions */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="grid grid-cols-2 gap-4"
+          >
+            <Link href="/dashboard/classes">
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl p-5 hover:shadow-md transition-all cursor-pointer group">
+                <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Calendar className="h-6 w-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-1">Reservar Clase</h3>
+                <p className="text-sm text-gray-500">Agenda tu próxima sesión</p>
+              </div>
+            </Link>
+
+            <Link href="/dashboard/packages">
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-2xl p-5 hover:shadow-md transition-all cursor-pointer group">
+                <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Package className="h-6 w-6 text-white" />
+                </div>
+                <h3 className="font-semibold text-gray-900 mb-1">Mi Paquete</h3>
+                <p className="text-sm text-gray-500">Ver detalles y renovar</p>
+              </div>
+            </Link>
+          </motion.div>
+
+          {/* Upcoming Bookings */}
+          {userBookings.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Mis Reservaciones</h2>
+                <Link href="/dashboard/classes" className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                  Ver todas <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+              
+              <div className="space-y-3">
+                {userBookings
+                  .filter(b => {
+                    if (b.status === 'cancelled') return false
+                    const date = new Date(b.occurrence_date || b.class_date || b.date)
+                    return date >= new Date(new Date().toDateString())
+                  })
+                  .sort((a, b) => {
+                    const dateA = new Date(a.occurrence_date || a.class_date || a.date)
+                    const dateB = new Date(b.occurrence_date || b.class_date || b.date)
+                    return dateA.getTime() - dateB.getTime()
+                  })
+                  .slice(0, 4)
+                  .map((booking, index) => {
+                    const bookingDate = new Date(booking.occurrence_date || booking.class_date || booking.date)
+                    const isToday = bookingDate.toDateString() === new Date().toDateString()
+                    const isTomorrow = bookingDate.toDateString() === new Date(Date.now() + 86400000).toDateString()
+                    
+                    return (
+                      <div 
+                        key={booking.id || index} 
+                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                      >
+                        <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs ${
+                          isToday ? 'bg-green-500 text-white' :
+                          isTomorrow ? 'bg-blue-500 text-white' :
+                          'bg-gray-200 text-gray-700'
+                        }`}>
+                          <span className="font-bold">{bookingDate.getDate()}</span>
+                          <span className="text-[10px] uppercase">{bookingDate.toLocaleDateString('es-MX', { month: 'short' })}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">
+                            {booking.class_title || booking.title || 'Clase'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {booking.class_time || booking.time}
+                            {isToday && <span className="ml-2 text-green-600 font-medium">• Hoy</span>}
+                            {isTomorrow && <span className="ml-2 text-blue-600 font-medium">• Mañana</span>}
+                          </p>
+                        </div>
+                        <div className={`w-2 h-2 rounded-full ${
+                          booking.class_type === 'private' ? 'bg-purple-500' : 'bg-blue-500'
+                        }`} />
+                      </div>
+                    )
+                  })}
+              </div>
+
+              {userBookings.filter(b => {
+                if (b.status === 'cancelled') return false
+                const date = new Date(b.occurrence_date || b.class_date || b.date)
+                return date >= new Date(new Date().toDateString())
+              }).length === 0 && (
+                <div className="text-center py-4 text-gray-500">
+                  No tienes reservaciones próximas
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* WhatsApp Contact */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="text-center"
+          >
+            <button
+              onClick={() => {
+                const message = `Hola, soy ${user.nombre}. Tengo una pregunta sobre mis clases.`
+                const url = `https://wa.me/5259581062606?text=${encodeURIComponent(message)}`
+                window.open(url, '_blank')
+              }}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-full hover:bg-green-600 transition-colors font-medium shadow-lg shadow-green-500/25"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              ¿Tienes dudas? Escríbenos
+            </button>
+          </motion.div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  // Admin/Coach Dashboard (keep existing)
   return (
     <DashboardLayout>
       <div className="space-y-8">
@@ -434,190 +780,6 @@ export default function DashboardPage() {
               )}
             </motion.div>
           </div>
-        )}
-
-        {/* Client-specific content */}
-        {user?.role === 'cliente' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="card"
-          >
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Tu Resumen</h3>
-            
-            {/* Package status */}
-            {activePackage ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <div>
-                      <h4 className="text-sm font-medium text-green-900">Paquete Activo</h4>
-                      <p className="text-sm text-green-800">
-                        {activePackage.package_name || activePackage.package_type || userStats?.packageType || 'Paquete de clases'}
-                      </p>
-                    </div>
-                  </div>
-                  {activePackage.end_date && (
-                    <p className="text-xs text-green-800">
-                      Válido hasta:{' '}
-                      {new Date(activePackage.end_date).toLocaleDateString('es-ES')}
-                    </p>
-                  )}
-                </div>
-                <p className="text-xs text-green-700">
-                  Disfruta tus clases. Puedes ver tu paquete completo en la sección &quot;Mi Paquete&quot;.
-                </p>
-              </div>
-            ) : (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <AlertCircle className="h-5 w-5 text-yellow-600" />
-                  <h4 className="text-sm font-medium text-yellow-900">Sin Paquete Activo</h4>
-                </div>
-                <p className="text-sm text-yellow-700 mb-3">
-                  Aún no tienes un paquete de clases activo. Contacta por WhatsApp para elegir y comprar tu paquete.
-                </p>
-                <button
-                  onClick={() => {
-                    const message = `Hola, soy ${user.nombre}. Quiero comprar un paquete de clases. ¿Podrían ayudarme a elegir el paquete que más me convenga?`
-                    const url = `https://wa.me/5259581062606?text=${encodeURIComponent(message)}`
-                    window.open(url, '_blank')
-                  }}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  Contactar por WhatsApp
-                </button>
-              </div>
-            )}
-
-            {(() => {
-              const remaining = userStats?.remaining ?? 0
-              const totalClasses =
-                activePackage && typeof activePackage.classes_included === 'number'
-                  ? activePackage.classes_included
-                  : activePackage && activePackage.package_type
-                  ? // Fallback: try to infer from package type using the same mapping as backend
-                    ({
-                      'Clase Prueba': 1,
-                      '1 Clase Grupal': 1,
-                      '4 Clases Grupales': 4,
-                      '8 Clases Grupales': 8,
-                      '12 Clases Grupales': 12,
-                      'Clases Grupales Ilimitadas': 999,
-                      '1 Clase Privada': 1,
-                      '4 Clases Privadas': 4,
-                      '8 Clases Privadas': 8,
-                      '12 Clases Privadas': 12,
-                      '16 Clases Privadas': 16,
-                      '20 Clases Privadas': 20
-                    } as any)[activePackage.package_type] || 0
-                  : 0
-
-              const isUnlimited =
-                activePackage?.package_type === 'Clases Grupales Ilimitadas' ||
-                totalClasses === 999
-
-              const taken =
-                isUnlimited || totalClasses === 0
-                  ? null
-                  : Math.max(0, totalClasses - remaining)
-
-              let daysRemainingDisplay: string | number = '-'
-              if (activePackage?.end_date) {
-                const today = new Date()
-                const end = new Date(activePackage.end_date)
-                const diffMs = end.getTime() - today.getTime()
-                const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-                daysRemainingDisplay = diffDays < 0 ? 0 : diffDays
-              }
-
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <Calendar className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">
-                      {isUnlimited ? '∞' : remaining}
-                    </p>
-                    <p className="text-sm text-gray-600">Clases Restantes</p>
-                  </div>
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">
-                      {taken === null ? '-' : taken}
-                    </p>
-                    <p className="text-sm text-gray-600">Clases Asistidas (estimadas)</p>
-                  </div>
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                    <Clock className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">
-                      {daysRemainingDisplay}
-                    </p>
-                    <p className="text-sm text-gray-600">Días Restantes</p>
-                  </div>
-                </div>
-              )
-            })()}
-          </motion.div>
-        )}
-
-        {/* Sección de clases del cliente */}
-        {user?.role === 'cliente' && userClasses.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="card"
-          >
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Mis Clases</h3>
-            
-            <div className="space-y-3">
-              {userClasses.slice(0, 5).map((classItem, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-3 h-3 rounded-full ${
-                      classItem.type === 'private' ? 'bg-purple-500' : 'bg-blue-500'
-                    }`}></div>
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {classItem.title}
-                        {classItem.type === 'private' && (
-                          <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded-full">
-                            Privada
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {new Date(classItem.date).toLocaleDateString('es-ES')} a las {classItem.time}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`text-sm px-2 py-1 rounded-full ${
-                      classItem.status === 'scheduled' ? 'bg-green-100 text-green-800' :
-                      classItem.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {classItem.status === 'scheduled' ? 'Programada' :
-                       classItem.status === 'completed' ? 'Completada' : 'Cancelada'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              
-              {userClasses.length > 5 && (
-                <div className="text-center pt-2">
-                  <button
-                    onClick={() => window.location.href = '/dashboard/classes'}
-                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                  >
-                    Ver todas las clases ({userClasses.length})
-                  </button>
-                </div>
-              )}
-            </div>
-          </motion.div>
         )}
       </div>
     </DashboardLayout>

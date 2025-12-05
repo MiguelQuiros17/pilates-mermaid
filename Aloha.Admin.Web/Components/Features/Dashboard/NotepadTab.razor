@@ -1,0 +1,385 @@
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Identity.AdminUsers
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Services.Application
+@using Microsoft.AspNetCore.Identity
+@using System.Linq
+
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject IJSRuntime js
+@inject ICsvExportHelperService csvHelper
+
+<div class="mt-3">
+    <Card Class="my-2">
+        <CardHeader>Internal Comments</CardHeader>
+        <CardBody>
+            <div class="mb-4">
+                <label class="form-label">Add Comment</label>
+                <textarea @bind="newCommentText" @bind:event="oninput" class="form-control" rows="4" placeholder="Enter your comment here..."></textarea>
+                <div class="mt-2">
+                    <Button Color="ButtonColor.Primary" @onclick="SaveComment" Loading="@loading" Disabled="@(loading || string.IsNullOrWhiteSpace(newCommentText) || CurrentAdminUser == null)">Save</Button>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6>Comments</h6>
+                <Button Color="ButtonColor.Secondary" @onclick="ExportCommentsToCsv" Outline="true" Disabled="@(loading || !Comments.Any())">Download CSV</Button>
+            </div>
+
+            @if (Comments.Any())
+            {
+                <div class="list-group">
+                    @foreach (var comment in Comments.OrderByDescending(c => c.CreatedAtUtc))
+                    {
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <div class="fw-bold">@GetAdminUserName(comment.AdminUserId)</div>
+                                    <div class="text-muted small">
+                                        Created: @FormatDateTime(comment.CreatedAtUtc)
+                                        @if (comment.EditedAtUtc.HasValue)
+                                        {
+                                            <span> | Last edited: @FormatDateTime(comment.EditedAtUtc.Value)</span>
+                                        }
+                                    </div>
+                                </div>
+                                @if (CanEditComment(comment))
+                                {
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-secondary me-2" @onclick="() => EditComment(comment)" type="button">
+                                            <Icon Name="@IconName.Pencil"/>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteComment(comment)" type="button">
+                                            <Icon Name="@IconName.Trash"/>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                            <div style="white-space: pre-line">@comment.Text</div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted m-0">No comments yet.</p>
+            }
+        </CardBody>
+    </Card>
+</div>
+
+@if (showDeleteDialog)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Are you sure you want to delete this comment?</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="HideDeleteCommentModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">
+                        Are you sure you want to delete this comment? This action cannot be undone.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <Button Color="ButtonColor.Secondary" @onclick="HideDeleteCommentModal">Cancel</Button>
+                    <Button Color="ButtonColor.Primary" @onclick="ConfirmDeleteComment" Disabled="@loading">
+                        Delete
+                    </Button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showEditModal)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Comment</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CancelEditComment"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Comment</label>
+                        <InputTextArea @bind-Value="editingCommentText" class="form-control" rows="5"/>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <Button Color="ButtonColor.Secondary" @onclick="CancelEditComment">Cancel</Button>
+                    <Button Color="ButtonColor.Primary" @onclick="SaveEditedComment" Disabled="@loading">
+                        Save
+                    </Button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int ApplicationId { get; set; }
+    [Parameter] public AdminUser? CurrentAdminUser { get; set; }
+    [Parameter] public string? TimezoneId { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private IList<ApplicationInternalComment> Comments { get; set; } = new List<ApplicationInternalComment>();
+    private Dictionary<string, string> adminUserCache = new();
+    private string newCommentText = string.Empty;
+    private ApplicationInternalComment? commentToDelete;
+    private ApplicationInternalComment? commentToEdit;
+    private string editingCommentText = string.Empty;
+    private bool loading = false;
+    private bool showEditModal = false;
+    private bool showDeleteDialog = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCommentsAsync();
+    }
+
+    private bool CanEditComment(ApplicationInternalComment comment)
+    {
+        return CurrentAdminUser != null && comment.AdminUserId == CurrentAdminUser.Id;
+    }
+    
+    public async Task LoadCommentsAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        
+        Comments = await db.ApplicationInternalComments
+            .Where(c => c.UserApplicationId == ApplicationId)
+            .ToListAsync();
+        
+        var adminUserIds = Comments.Select(c => c.AdminUserId).Distinct().ToList();
+        if (adminUserIds.Any())
+        {
+            var adminUsers = await UserManager.Users
+                .Where(u => adminUserIds.Contains(u.Id))
+                .ToListAsync();
+            
+            adminUserCache = adminUsers.ToDictionary(u => u.Id, u => u.Email ?? u.UserName ?? "Unknown");
+        }
+    }
+    
+    private async Task SaveComment()
+    {
+        if (string.IsNullOrWhiteSpace(newCommentText) || CurrentAdminUser == null)
+            return;
+
+        loading = true;
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            
+            var comment = new ApplicationInternalComment
+            {
+                UserApplicationId = ApplicationId,
+                AdminUserId = CurrentAdminUser.Id,
+                Text = newCommentText.Trim(),
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            
+            db.ApplicationInternalComments.Add(comment);
+            await db.SaveChangesAsync();
+            
+            await adminActivityService.TrackAdminUserActivityAsync(
+                CurrentAdminUser,
+                AdminActivityType.AddInternalComment,
+                $"Application Id: {ApplicationId}, Added internal comment.",
+                string.Empty);
+            
+            newCommentText = string.Empty;
+            await LoadCommentsAsync();
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync($"Failed to save comment: {ex.Message}");
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private Task EditComment(ApplicationInternalComment comment)
+    {
+        commentToEdit = comment;
+        editingCommentText = comment.Text;
+        showEditModal = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveEditedComment()
+    {
+        if (commentToEdit == null || string.IsNullOrWhiteSpace(editingCommentText) || CurrentAdminUser == null)
+            return;
+
+        loading = true;
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            
+            var comment = await db.ApplicationInternalComments
+                .FirstOrDefaultAsync(c => c.Id == commentToEdit.Id && c.AdminUserId == CurrentAdminUser.Id);
+            
+            if (comment == null)
+            {
+                await OnError.InvokeAsync("Comment not found or you don't have permission to edit it.");
+                return;
+            }
+            
+            comment.Text = editingCommentText.Trim();
+            comment.EditedAtUtc = DateTime.UtcNow;
+            
+            await db.SaveChangesAsync();
+            
+            await adminActivityService.TrackAdminUserActivityAsync(
+                CurrentAdminUser,
+                AdminActivityType.EditInternalComment,
+                $"Application Id: {ApplicationId}, Edited internal comment.",
+                string.Empty);
+            
+            showEditModal = false;
+            commentToEdit = null;
+            editingCommentText = string.Empty;
+            await LoadCommentsAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync($"Failed to edit comment: {ex.Message}");
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private Task CancelEditComment()
+    {
+        showEditModal = false;
+        commentToEdit = null;
+        editingCommentText = string.Empty;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteComment(ApplicationInternalComment comment)
+    {
+        commentToDelete = comment;
+        showDeleteDialog = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmDeleteComment()
+    {
+        HideDeleteCommentModal();
+        
+        if (commentToDelete == null || CurrentAdminUser == null)
+            return;
+
+        loading = true;
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            
+            var comment = await db.ApplicationInternalComments
+                .FirstOrDefaultAsync(c => c.Id == commentToDelete.Id && c.AdminUserId == CurrentAdminUser.Id);
+            
+            if (comment == null)
+            {
+                await OnError.InvokeAsync("Comment not found or you don't have permission to delete it.");
+                return;
+            }
+
+            db.ApplicationInternalComments.Remove(comment);
+            await db.SaveChangesAsync();
+            
+            await adminActivityService.TrackAdminUserActivityAsync(
+                CurrentAdminUser,
+                AdminActivityType.DeleteInternalComment,
+                $"Application Id: {ApplicationId}, Deleted internal comment.",
+                string.Empty);
+            
+            commentToDelete = null;
+            await LoadCommentsAsync();
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync($"Failed to delete comment: {ex.Message}");
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void HideDeleteCommentModal()
+    {
+        showDeleteDialog = false;
+        StateHasChanged();
+    }
+
+    private async Task ExportCommentsToCsv()
+    {
+        try
+        {
+            var csv = new System.Text.StringBuilder();
+            csv.AppendLine("Admin User,Created Date/Time,Last Edited Date/Time,Comment");
+            
+            foreach (var comment in Comments.OrderByDescending(c => c.CreatedAtUtc))
+            {
+                var adminName = GetAdminUserName(comment.AdminUserId);
+                var createdDate = csvHelper.FormatDateTimeForCsv(comment.CreatedAtUtc, TimezoneId);
+                var editedDate = comment.EditedAtUtc.HasValue ? csvHelper.FormatDateTimeForCsv(comment.EditedAtUtc.Value, TimezoneId) : "";
+                var text = csvHelper.EscapeCsvField(comment.Text);
+                
+                csv.AppendLine($"{csvHelper.EscapeCsvField(adminName)},{createdDate},{editedDate},{text}");
+            }
+            
+            var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
+            var base64 = Convert.ToBase64String(bytes);
+            await js.InvokeVoidAsync(
+                "downloadBase64AsBlob",
+                $"Application_{ApplicationId}_InternalComments_{DateTime.UtcNow:yyyyMMddHHmmss}.csv",
+                "text/csv",
+                base64
+            );
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync($"Failed to export comments: {ex.Message}");
+        }
+    }
+
+    private string FormatDateTime(DateTime dateTime)
+    {
+        if (!string.IsNullOrEmpty(TimezoneId))
+        {
+            try
+            {
+                TimeZoneInfo selectedZone = TimeZoneInfo.FindSystemTimeZoneById(TimezoneId);
+                DateTime selectedTime = TimeZoneInfo.ConvertTimeFromUtc(dateTime, selectedZone);
+                return selectedTime.ToString("MMMM dd, yyyy @ hh:mm tt");
+            }
+            catch
+            {
+                return dateTime.ToLocalTime().ToString("MMMM dd, yyyy @ hh:mm tt");
+            }
+        }
+        return dateTime.ToLocalTime().ToString("MMMM dd, yyyy @ hh:mm tt");
+    }
+
+    private string GetAdminUserName(string adminUserId)
+    {
+        return adminUserCache.TryGetValue(adminUserId, out var name) ? name : "Unknown User";
+    }
+}

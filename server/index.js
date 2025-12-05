@@ -2302,10 +2302,482 @@ app.use((error, req, res, next) => {
   })
 })
 
+// List packages (returns all packages - filtering is done client-side based on user role)
+app.get('/api/packages', requireAuth, async (req, res) => {
+  try {
+    const user = req.user
+    const isAdmin = user.role === 'admin'
+    
+    // Return all packages - let the frontend filter based on is_active for clients
+    const packages = await database.getPackages({
+      includeInactive: true,   // Include all packages
+      includeScheduled: true,  // Include scheduled packages
+      onlyLive: false,         // Don't filter by is_live
+    })
+    
+    console.log(`[GET /api/packages] User ${user.correo} (${user.role}) - returning ${packages.length} packages`)
+    
+    res.json({ success: true, packages })
+  } catch (error) {
+    console.error('Get packages error:', error)
+    res.status(500).json({ success: false, message: 'Error al obtener paquetes' })
+  }
+})
+
+// Create package (admin)
+app.post('/api/packages', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { name, type, classes_included, price, validity_months, category, description, is_live, live_from, live_until, is_active, original_price, sale_price } = req.body
+    
+    if (!name || !type || !classes_included || !price || !validity_months || !category) {
+      return res.status(400).json({ success: false, message: 'Faltan datos del paquete' })
+    }
+    
+    const pkg = await database.createPackage({
+      name,
+      type,
+      classes_included,
+      price,
+      validity_months,
+      validity_days: validity_months * 30, // backwards compatibility
+      category,
+      description,
+      is_live,
+      live_from: live_from || null,
+      live_until: live_until || null,
+      original_price: original_price || null,
+      sale_price: sale_price || null,
+      is_active
+    })
+    
+    res.json({ success: true, package: pkg })
+  } catch (error) {
+    console.error('Create package error:', error)
+    res.status(500).json({ success: false, message: 'Error al crear paquete' })
+  }
+})
+
+// Update package (admin)
+app.put('/api/packages/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const updates = req.body || {}
+    
+    const pkg = await database.updatePackage(id, updates)
+    res.json({ success: true, package: pkg })
+  } catch (error) {
+    console.error('Update package error:', error)
+    res.status(500).json({ success: false, message: 'Error al actualizar paquete' })
+  }
+})
+
+// Delete (soft) package (admin)
+app.delete('/api/packages/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const pkg = await database.deletePackage(id)
+    res.json({ success: true, package: pkg })
+  } catch (error) {
+    console.error('Delete package error:', error)
+    res.status(500).json({ success: false, message: 'Error al eliminar paquete' })
+  }
+})
+
+// =====================
+// PACKAGE BUNDLES
+// =====================
+
+// List package bundles
+app.get('/api/package-bundles', requireAuth, async (req, res) => {
+  try {
+    const user = req.user
+    const isAdmin = user.role === 'admin'
+    
+    const bundles = await database.getAllPackageBundles({
+      includeInactive: isAdmin,
+      onlyLive: !isAdmin
+    })
+    
+    // Add calculated savings to each bundle
+    const bundlesWithSavings = bundles.map(bundle => {
+      // Calculate regular total based on both packages
+      const groupMonthlyPrice = bundle.group_package_price || 0
+      const privateMonthlyPrice = bundle.private_package_price || 0
+      const combinedMonthlyPrice = groupMonthlyPrice + privateMonthlyPrice
+      const regularTotal = combinedMonthlyPrice * bundle.months_included
+      const savings = regularTotal - bundle.price
+      const percentOff = regularTotal > 0 ? Math.round((savings / regularTotal) * 100) : 0
+      
+      return {
+        ...bundle,
+        regular_total: regularTotal,
+        combined_monthly_price: combinedMonthlyPrice,
+        savings,
+        percent_off: percentOff,
+        is_combo: !!(bundle.group_package_id && bundle.private_package_id)
+      }
+    })
+    
+    res.json({ success: true, bundles: bundlesWithSavings })
+  } catch (error) {
+    console.error('Get bundles error:', error)
+    res.status(500).json({ success: false, message: 'Error al obtener paquetes de renovación' })
+  }
+})
+
+// Create package bundle (admin)
+app.post('/api/package-bundles', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { name, description, package_id, group_package_id, private_package_id, months_included, price, is_live, live_from, live_until, is_active } = req.body
+    
+    // Need at least one package (group, private, or legacy package_id)
+    if (!name || (!package_id && !group_package_id && !private_package_id) || !months_included || price === undefined) {
+      return res.status(400).json({ success: false, message: 'Faltan datos del bundle. Se requiere nombre, al menos un paquete, meses y precio.' })
+    }
+    
+    const bundle = await database.createPackageBundle({
+      name,
+      description,
+      package_id: package_id || null,
+      group_package_id: group_package_id || null,
+      private_package_id: private_package_id || null,
+      months_included,
+      price,
+      is_live,
+      live_from: live_from || null,
+      live_until: live_until || null,
+      is_active
+    })
+    
+    res.json({ success: true, bundle })
+  } catch (error) {
+    console.error('Create bundle error:', error)
+    res.status(500).json({ success: false, message: 'Error al crear bundle' })
+  }
+})
+
+// Update package bundle (admin)
+app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const updates = req.body || {}
+    
+    console.log('[Update Bundle] ID:', id, 'Updates:', JSON.stringify(updates))
+    
+    const bundle = await database.updatePackageBundle(id, updates)
+    res.json({ success: true, bundle })
+  } catch (error) {
+    console.error('Update bundle error:', error)
+    console.error('Update bundle error stack:', error.stack)
+    res.status(500).json({ success: false, message: 'Error al actualizar bundle: ' + error.message })
+  }
+})
+
+// Delete (soft) package bundle (admin)
+app.delete('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const bundle = await database.deletePackageBundle(id)
+    res.json({ success: true, bundle })
+  } catch (error) {
+    console.error('Delete bundle error:', error)
+    res.status(500).json({ success: false, message: 'Error al eliminar bundle' })
+  }
+})
+
+// =====================
+// ATTENDANCE TRACKING
+// =====================
+
+// Get attendance sheet for a class (admin/coach)
+app.get('/api/classes/:id/attendance', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date } = req.query
+    
+    console.log('[Get Attendance] Class:', id, 'Occurrence query:', occurrence_date)
+    
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({ success: false, message: 'Clase no encontrada' })
+    }
+    
+    // Use occurrence_date if provided.
+    // For non-recurring classes, keep it null so bookings with NULL occurrence_date match.
+    const effectiveDate = occurrence_date || (cls.is_recurring ? cls.date : null)
+    console.log('[Get Attendance] Effective date:', effectiveDate)
+    
+    const attendanceSheet = await database.getClassAttendanceSheet(id, effectiveDate)
+    const attendanceRecords = await database.getClassAttendance(id, effectiveDate)
+    
+    console.log('[Get Attendance] Found', attendanceSheet?.length || 0, 'attendees,', attendanceRecords?.length || 0, 'records')
+    
+    res.json({ 
+      success: true, 
+      class: cls,
+      attendanceSheet,
+      attendanceRecords
+    })
+  } catch (error) {
+    console.error('Get attendance error:', error)
+    res.status(500).json({ success: false, message: 'Error al obtener asistencia' })
+  }
+})
+
+// Set attendance for a user in a class (admin/coach)
+app.post('/api/classes/:id/attendance', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date, user_id, status, notes } = req.body
+    
+    if (!user_id || !status) {
+      return res.status(400).json({ success: false, message: 'Usuario y estado son requeridos' })
+    }
+    
+    const validStatuses = ['present', 'absent', 'late_cancel', 'excused']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Estado de asistencia inválido' })
+    }
+    
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({ success: false, message: 'Clase no encontrada' })
+    }
+    
+    const user = await database.getUserById(user_id)
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado' })
+    }
+    
+    const record = await database.setAttendance({
+      classId: id,
+      occurrenceDate: occurrence_date || cls.date,
+      userId: user_id,
+      userName: user.nombre,
+      status,
+      markedBy: req.user.nombre || req.user.correo,
+      notes
+    })
+    
+    // Also update booking status if applicable
+    const bookingStatus = status === 'present' ? 'attended' : status === 'absent' ? 'no_show' : 'cancelled'
+    await database.run(`
+      UPDATE bookings 
+      SET status = ?, updated_at = datetime('now')
+      WHERE class_id = ? AND user_id = ? 
+        AND (occurrence_date = ? OR (occurrence_date IS NULL AND ? IS NULL))
+    `, [bookingStatus, id, user_id, occurrence_date, occurrence_date])
+    
+    res.json({ success: true, record })
+  } catch (error) {
+    console.error('Set attendance error:', error)
+    res.status(500).json({ success: false, message: 'Error al registrar asistencia' })
+  }
+})
+
+// Bulk set attendance for a class (admin/coach)
+app.post('/api/classes/:id/attendance/bulk', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date, attendances } = req.body
+    
+    console.log('[Bulk Attendance] Class:', id, 'Occurrence:', occurrence_date, 'Attendances:', JSON.stringify(attendances))
+    
+    if (!Array.isArray(attendances)) {
+      return res.status(400).json({ success: false, message: 'Lista de asistencias requerida' })
+    }
+    
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({ success: false, message: 'Clase no encontrada' })
+    }
+    
+    const results = []
+    for (const att of attendances) {
+      try {
+        const user = await database.getUserById(att.user_id)
+        if (!user) {
+          console.log('[Bulk Attendance] User not found:', att.user_id)
+          continue
+        }
+        
+        const markedBy = req.user.nombre || req.user.correo || req.user.email || 'Admin'
+        console.log('[Bulk Attendance] Setting attendance for:', user.nombre, 'status:', att.status, 'markedBy:', markedBy)
+        
+        const record = await database.setAttendance({
+          classId: id,
+          occurrenceDate: occurrence_date || cls.date,
+          userId: att.user_id,
+          userName: user.nombre,
+          status: att.status,
+          markedBy: markedBy,
+          notes: att.notes
+        })
+        
+        // Update booking status
+        const bookingStatus = att.status === 'present' ? 'attended' : att.status === 'absent' ? 'no_show' : 'cancelled'
+        await database.run(`
+          UPDATE bookings 
+          SET status = ?, updated_at = datetime('now')
+          WHERE class_id = ? AND user_id = ? 
+            AND (occurrence_date = ? OR (occurrence_date IS NULL AND ? IS NULL))
+        `, [bookingStatus, id, att.user_id, occurrence_date, occurrence_date])
+        
+        results.push(record)
+      } catch (attErr) {
+        console.error('[Bulk Attendance] Error for user', att.user_id, ':', attErr)
+      }
+    }
+    
+    res.json({ success: true, records: results })
+  } catch (error) {
+    console.error('Bulk attendance error:', error)
+    console.error('Bulk attendance error stack:', error.stack)
+    res.status(500).json({ success: false, message: 'Error al registrar asistencias: ' + error.message })
+  }
+})
+
+// Remove user from class attendance (admin/coach) - always refunds if credit was deducted
+app.post('/api/classes/:id/attendance/remove', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date, user_id } = req.body
+    
+    if (!user_id) {
+      return res.status(400).json({ success: false, message: 'ID de usuario requerido' })
+    }
+    
+    console.log('[Remove from Attendance] Class:', id, 'Occurrence:', occurrence_date, 'User:', user_id)
+    
+    // Get the booking to check if credit was deducted
+    const booking = await database.get(`
+      SELECT * FROM bookings 
+      WHERE class_id = ? AND user_id = ? 
+        AND (occurrence_date = ? OR (occurrence_date IS NULL AND ? IS NULL))
+        AND status IN ('confirmed', 'attended')
+    `, [id, user_id, occurrence_date, occurrence_date])
+    
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Reserva no encontrada' })
+    }
+    
+    // Cancel the booking
+    await database.run(`
+      UPDATE bookings SET status = 'cancelled', updated_at = datetime('now')
+      WHERE id = ?
+    `, [booking.id])
+    
+    // Delete any attendance record for this user/class/occurrence
+    await database.run(`
+      DELETE FROM attendance_records 
+      WHERE class_id = ? AND user_id = ? AND occurrence_date = ?
+    `, [id, user_id, occurrence_date])
+    
+    // Refund if credit was deducted
+    const shouldRefund = booking.credit_deducted === 1 || booking.credit_deducted === '1' || booking.credit_deducted === true
+    let refunded = false
+    
+    if (shouldRefund) {
+      const cls = await database.getClassById(id)
+      const classType = cls?.type === 'private' ? 'private' : 'group'
+      await database.addClassToUser(user_id, classType)
+      refunded = true
+      console.log(`[Remove from Attendance] Refunded ${classType} class to user ${user_id}`)
+    } else {
+      console.log(`[Remove from Attendance] No credit to refund for user ${user_id}`)
+    }
+
+    // Recompute current_bookings for this class (respect occurrence_date for recurring)
+    let remainingCount = 0
+    let remainingIds = []
+    if (occurrence_date) {
+      const row = await database.get(`
+        SELECT COUNT(*) as count
+        FROM bookings
+        WHERE class_id = ?
+          AND occurrence_date = ?
+          AND status IN ('confirmed', 'attended')
+      `, [id, occurrence_date])
+      remainingCount = row?.count || 0
+    } else {
+      const rows = await database.all(`
+        SELECT user_id
+        FROM bookings
+        WHERE class_id = ?
+          AND (occurrence_date IS NULL OR occurrence_date = '')
+          AND status IN ('confirmed', 'attended')
+      `, [id])
+      remainingCount = rows?.length || 0
+      remainingIds = rows ? rows.map(r => r.user_id) : []
+    }
+
+    await database.run(`UPDATE classes SET current_bookings = ? WHERE id = ?`, [remainingCount, id])
+    console.log(`[Remove from Attendance] Updated current_bookings to ${remainingCount}`)
+
+    // If non-recurring group class, also update assigned_client_ids to match remaining bookings
+    const cls = await database.getClassById(id)
+    if (cls && cls.type === 'group' && !(cls.is_recurring === 1 || cls.is_recurring === '1')) {
+      const assignedJson = JSON.stringify(remainingIds)
+      await database.run(`UPDATE classes SET assigned_client_ids = ? WHERE id = ?`, [assignedJson, id])
+      console.log(`[Remove from Attendance] Updated assigned_client_ids to`, assignedJson)
+    }
+    
+    res.json({ 
+      success: true, 
+      message: refunded ? 'Usuario removido y clase reembolsada' : 'Usuario removido (sin crédito para reembolsar)',
+      refunded 
+    })
+  } catch (error) {
+    console.error('Remove from attendance error:', error)
+    res.status(500).json({ success: false, message: 'Error al remover usuario' })
+  }
+})
+
+// Get user attendance record (admin only)
+app.get('/api/users/:id/attendance-record', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    
+    const user = await database.getUserById(id)
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado' })
+    }
+    
+    const record = await database.getUserAttendanceRecord(id)
+    
+    res.json({ 
+      success: true, 
+      user: { id: user.id, nombre: user.nombre, correo: user.correo },
+      ...record
+    })
+  } catch (error) {
+    console.error('Get user attendance record error:', error)
+    res.status(500).json({ success: false, message: 'Error al obtener historial de asistencia' })
+  }
+})
+
+// Get attendance status for current user's bookings (for color coding on client calendar)
+app.get('/api/my-attendance', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    
+    const attendance = await database.all(`
+      SELECT ar.class_id, ar.occurrence_date, ar.attendance_status
+      FROM attendance_records ar
+      WHERE ar.user_id = ?
+    `, [userId])
+    
+    res.json({ success: true, attendance })
+  } catch (error) {
+    console.error('Get my attendance error:', error)
+    res.status(500).json({ success: false, message: 'Error al obtener asistencia' })
+  }
+})
+
 // Assign package to client (admin only)
 app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
-    const { clientId, packageId, autoRenew, overrideNegativeBalance } = req.body
+    const { clientId, packageId, renewalMonths, overrideNegativeBalance } = req.body
 
     if (!clientId || !packageId) {
       return res.status(400).json({
@@ -2313,29 +2785,29 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
         message: 'Cliente y paquete son requeridos'
       })
     }
-
-    // Get package details with category
-    const packages = {
-      '1': { name: 'Clase Prueba', type: 'Clase Prueba', classes_included: 1, validity_days: 30, category: 'Grupal' },
-      '2': { name: '1 Clase Grupal', type: '1 Clase Grupal', classes_included: 1, validity_days: 30, category: 'Grupal' },
-      '3': { name: '4 Clases Grupales', type: '4 Clases Grupales', classes_included: 4, validity_days: 30, category: 'Grupal' },
-      '4': { name: '8 Clases Grupales', type: '8 Clases Grupales', classes_included: 8, validity_days: 30, category: 'Grupal' },
-      '5': { name: '12 Clases Grupales', type: '12 Clases Grupales', classes_included: 12, validity_days: 30, category: 'Grupal' },
-      '6': { name: 'Clases Grupales Ilimitadas', type: 'Clases Grupales Ilimitadas', classes_included: 999, validity_days: 30, category: 'Grupal' },
-      '7': { name: '1 Clase Privada', type: '1 Clase Privada', classes_included: 1, validity_days: 30, category: 'Privada' },
-      '8': { name: '4 Clases Privadas', type: '4 Clases Privadas', classes_included: 4, validity_days: 30, category: 'Privada' },
-      '9': { name: '8 Clases Privadas', type: '8 Clases Privadas', classes_included: 8, validity_days: 30, category: 'Privada' },
-      '10': { name: '12 Clases Privadas', type: '12 Clases Privadas', classes_included: 12, validity_days: 30, category: 'Privada' },
-      '11': { name: '15 Clases Privadas', type: '15 Clases Privadas', classes_included: 15, validity_days: 30, category: 'Privada' },
-      '12': { name: '20 Clases Privadas', type: '20 Clases Privadas', classes_included: 20, validity_days: 30, category: 'Privada' }
-    }
-
-    const selectedPackage = packages[packageId]
-    if (!selectedPackage) {
+    
+    if (renewalMonths === undefined || renewalMonths === null || renewalMonths < 1 || renewalMonths > 999) {
       return res.status(400).json({
         success: false,
-        message: 'Paquete no válido'
+        message: 'Los meses restantes deben estar entre 1 y 999'
       })
+    }
+
+    const selectedPackage = await database.getPackageById(packageId)
+    if (!selectedPackage || selectedPackage.is_active === 0) {
+      return res.status(400).json({ success: false, message: 'Paquete no válido o inactivo' })
+    }
+    
+    // Validate schedule if live
+    const todayStr = new Date().toISOString().split('T')[0]
+    if (selectedPackage.is_live === 0) {
+      return res.status(400).json({ success: false, message: 'Paquete no está activo en este momento' })
+    }
+    if (selectedPackage.live_from && selectedPackage.live_from > todayStr) {
+      return res.status(400).json({ success: false, message: 'Paquete aún no está disponible' })
+    }
+    if (selectedPackage.live_until && selectedPackage.live_until < todayStr) {
+      return res.status(400).json({ success: false, message: 'Paquete ya no está disponible' })
     }
 
     // Check for negative balance if adding package
@@ -2358,10 +2830,18 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
     const startDateString = startDate.toISOString().split('T')[0]
     const expirationDateString = expirationDate.toISOString().split('T')[0]
 
-    // Desactivar paquetes anteriores del mismo tipo si hay uno activo
-    const activePackage = await database.getActivePackageByUser(clientId, selectedPackage.category)
-    if (activePackage) {
-      await database.updatePackageStatus(activePackage.id, 'expired')
+    // Desactivar TODOS los paquetes anteriores del mismo tipo que estén activos
+    // This ensures no duplicate active packages exist
+    const activePackages = await database.all(`
+      SELECT * FROM package_history 
+      WHERE user_id = ? 
+      AND package_category = ?
+      AND status = 'active'
+    `, [clientId, selectedPackage.category])
+    
+    // Expire all active packages of this category
+    for (const pkg of activePackages) {
+      await database.updatePackageStatus(pkg.id, 'expired')
     }
 
     // Determine new class count
@@ -2402,8 +2882,9 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
       payment_method: 'N/A',
       amount_paid: 0,
       status: 'active',
-      auto_renew: autoRenew || false,
-      last_renewal_date: null
+      auto_renew: true,
+      last_renewal_date: null,
+      renewal_months: renewalMonths || 1
     })
 
     // Get updated client
@@ -2988,7 +3469,9 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
     const response = {
       success: true,
       packageHistory: packageHistory || [],
-      activePackage: activePackage || null
+      activePackage: activePackage || null,
+      activeGroupPackage: activeGroupPackage || null,
+      activePrivatePackage: activePrivatePackage || null
     }
     
     console.log(`  - Response JSON:`, JSON.stringify(response, null, 2))
@@ -3106,65 +3589,237 @@ app.post('/api/package-history/:id/deactivate', requireAuth, requireRole(['admin
   }
 })
 
-// Renew an expired package starting today (or keep existing start_date if already in current period)
-app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), async (req, res) => {
+
+// Update renewal months for a package
+app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { id } = req.params
-
-    const pkg = await database.get('SELECT * FROM package_history WHERE id = ?', [id])
+    const { renewal_months } = req.body
+    
+    console.log(`[Update Renewal] Package ID: ${id}, Renewal months: ${renewal_months}`)
+    
+    if (renewal_months === undefined || renewal_months === null) {
+      return res.status(400).json({
+        success: false,
+        message: 'Meses restantes requeridos'
+      })
+    }
+    
+    if (renewal_months < 1 || renewal_months > 999) {
+      return res.status(400).json({
+        success: false,
+        message: 'Los meses restantes deben estar entre 1 y 999'
+      })
+    }
+    
+    // Get the package
+    const pkg = await database.getPackageHistoryById(id)
     if (!pkg) {
-      return res.status(404).json({ success: false, message: 'Paquete no encontrado' })
+      console.log(`[Update Renewal] Package not found: ${id}`)
+      return res.status(404).json({
+        success: false,
+        message: 'Paquete no encontrado'
+      })
     }
-
-    const validityDays = pkg.validity_days || 30
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const startDate = today
-    const endDate = new Date(startDate)
-    endDate.setDate(endDate.getDate() + validityDays)
-
-    await database.run(
-      'UPDATE package_history SET start_date = ?, end_date = ?, status = "active", updated_at = datetime("now") WHERE id = ?',
-      [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0], id]
-    )
-
-    // Reset class counts for this package type
-    const userId = pkg.user_id
-    if (pkg.package_category === 'Grupal') {
-      await database.run(
-        'UPDATE users SET group_classes_remaining = ?, updated_at = datetime("now") WHERE id = ?',
-        [pkg.classes_included, userId]
-      )
-    } else if (pkg.package_category === 'Privada') {
-      await database.run(
-        'UPDATE users SET private_classes_remaining = ?, updated_at = datetime("now") WHERE id = ?',
-        [pkg.classes_included, userId]
-      )
+    
+    console.log(`[Update Renewal] Package found:`, {
+      id: pkg.id,
+      status: pkg.status,
+      package_category: pkg.package_category,
+      user_id: pkg.user_id
+    })
+    
+    // If this is an active package, cancel all other active packages of the same category
+    if (pkg.status === 'active' && pkg.package_category) {
+      try {
+        const otherActivePackages = await database.all(`
+          SELECT * FROM package_history 
+          WHERE user_id = ? 
+          AND package_category = ?
+          AND status = 'active'
+          AND id != ?
+        `, [pkg.user_id, pkg.package_category, id])
+        
+        console.log(`[Update Renewal] Found ${otherActivePackages.length} other active packages to expire`)
+        
+        // Expire all other active packages of this category
+        for (const otherPkg of otherActivePackages) {
+          await database.updatePackageStatus(otherPkg.id, 'expired')
+        }
+      } catch (err) {
+        console.error('[Update Renewal] Error expiring other packages:', err)
+        // Continue with the update even if this fails
+      }
     }
-
-    res.json({ success: true, message: 'Paquete renovado exitosamente' })
+    
+    // Update renewal_months
+    await database.run(`
+      UPDATE package_history 
+      SET renewal_months = ?
+      WHERE id = ?
+    `, [renewal_months, id])
+    
+    console.log(`[Update Renewal] Successfully updated package ${id}`)
+    
+    res.json({
+      success: true,
+      message: 'Meses restantes actualizados exitosamente'
+    })
   } catch (error) {
-    console.error('Renew package error:', error)
-    res.status(500).json({ success: false, message: 'Error al renovar paquete' })
+    console.error('[Update Renewal] Error:', error)
+    console.error('[Update Renewal] Error stack:', error.stack)
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar meses restantes',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    })
   }
 })
 
-// Delete a package history entry
+// Renew an expired package
+app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { months = 1 } = req.body
+    
+    // Check if package exists and is expired
+    const pkg = await database.getPackageHistoryById(id)
+    if (!pkg) {
+      return res.status(404).json({
+        success: false,
+        message: 'Paquete no encontrado'
+      })
+    }
+    
+    if (pkg.status !== 'expired') {
+      return res.status(400).json({
+        success: false,
+        message: 'Solo se pueden renovar paquetes expirados'
+      })
+    }
+
+    // First, cancel any other active packages of the same category for this user
+    const category = pkg.package_category
+    const activePackages = await database.all(`
+      SELECT id FROM package_history 
+      WHERE user_id = ? AND package_category = ? AND status = 'active' AND id != ?
+    `, [pkg.user_id, category, id])
+
+    for (const activePkg of activePackages) {
+      await database.updatePackageStatus(activePkg.id, 'expired')
+    }
+    
+    // Calculate new end date (from today + validity days from original package)
+    const originalPackage = await database.getPackageById(pkg.package_id)
+    const validityDays = originalPackage ? originalPackage.validity_days : 30
+    const newEndDate = new Date()
+    newEndDate.setDate(newEndDate.getDate() + validityDays)
+    
+    // Update the package: set to active, set new dates, set renewal months
+    const startDateStr = new Date().toISOString().split('T')[0]
+    await database.run(`
+      UPDATE package_history 
+      SET status = 'active', 
+          start_date = ?,
+          end_date = ?,
+          renewal_months = ?
+      WHERE id = ?
+    `, [startDateStr, newEndDate.toISOString().split('T')[0], months, id])
+
+    // Also add back the classes to the user
+    const classesIncluded = pkg.classes_included || 0
+    if (category === 'Grupal') {
+      await database.run(`
+        UPDATE users SET group_classes_remaining = group_classes_remaining + ? WHERE id = ?
+      `, [classesIncluded, pkg.user_id])
+    } else {
+      await database.run(`
+        UPDATE users SET private_classes_remaining = private_classes_remaining + ? WHERE id = ?
+      `, [classesIncluded, pkg.user_id])
+    }
+    
+    res.json({
+      success: true,
+      message: 'Paquete renovado exitosamente'
+    })
+  } catch (error) {
+    console.error('Renew package error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al renovar el paquete'
+    })
+  }
+})
+
+// Cancel (expire) an active package
+app.post('/api/package-history/:id/cancel', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const { id } = req.params
+    
+    // Check if package exists and is active
+    const pkg = await database.getPackageHistoryById(id)
+    if (!pkg) {
+      return res.status(404).json({
+        success: false,
+        message: 'Paquete no encontrado'
+      })
+    }
+    
+    if (pkg.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Solo se pueden cancelar paquetes activos'
+      })
+    }
+    
+    // Mark as expired
+    await database.updatePackageStatus(id, 'expired')
+    
+    res.json({
+      success: true,
+      message: 'Paquete cancelado exitosamente'
+    })
+  } catch (error) {
+    console.error('Cancel package error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al cancelar el paquete'
+    })
+  }
+})
+
+// Delete a package history entry (only expired packages)
 app.delete('/api/package-history/:id', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { id } = req.params
 
-    const pkg = await database.get('SELECT * FROM package_history WHERE id = ?', [id])
+    const pkg = await database.getPackageHistoryById(id)
     if (!pkg) {
-      return res.status(404).json({ success: false, message: 'Paquete no encontrado' })
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Paquete no encontrado' 
+      })
+    }
+    
+    if (pkg.status === 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'No se pueden eliminar paquetes activos. Cancélalos primero.'
+      })
     }
 
     await database.run('DELETE FROM package_history WHERE id = ?', [id])
 
-    res.json({ success: true, message: 'Registro de paquete eliminado exitosamente' })
+    res.json({ 
+      success: true, 
+      message: 'Registro de paquete eliminado exitosamente' 
+    })
   } catch (error) {
     console.error('Delete package history error:', error)
-    res.status(500).json({ success: false, message: 'Error al eliminar registro de paquete' })
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error al eliminar registro de paquete' 
+    })
   }
 })
 
@@ -3451,7 +4106,7 @@ async function sendExpirationNotificationEmail(packageInfo) {
 app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
-    const { class_id, payment_method, notes } = req.body
+    const { class_id, occurrence_date, payment_method, notes } = req.body
     const userId = req.user.id
 
     // Validate class_id
@@ -3479,6 +4134,17 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
       })
     }
 
+    // Fetch class information
+    const classInfo = await database.getClassById(class_id)
+    if (!classInfo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    const classType = classInfo.type
+
     // Verificar que el usuario tiene clases disponibles
     const userClasses = await database.checkUserAvailableClasses(userId)
     if (!userClasses.hasClasses) {
@@ -3488,7 +4154,21 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
       })
     }
 
-    if (classInfo.current_bookings >= classInfo.max_capacity) {
+    // For recurring classes, check capacity per occurrence; for regular classes, use current_bookings
+    const isRecurring = classInfo.is_recurring === 1 || classInfo.is_recurring === '1' || classInfo.is_recurring === true
+    if (isRecurring && occurrence_date) {
+      // Check booking count for this specific occurrence
+      const occurrenceBookings = await database.get(
+        'SELECT COUNT(*) as count FROM bookings WHERE class_id = ? AND occurrence_date = ? AND status = "confirmed"',
+        [class_id, occurrence_date]
+      )
+      if ((occurrenceBookings?.count || 0) >= classInfo.max_capacity) {
+        return res.status(400).json({
+          success: false,
+          message: 'Esta clase ya está llena'
+        })
+      }
+    } else if (!isRecurring && classInfo.current_bookings >= classInfo.max_capacity) {
       return res.status(400).json({
         success: false,
         message: 'Esta clase ya está llena'
@@ -3504,30 +4184,65 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
     }
 
     // Verificar que el usuario no está ya registrado en esta clase
-    const existingBooking = await database.get('SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND status != "cancelled"', [userId, class_id])
+    // For recurring classes, check by occurrence_date; for regular classes, check by class_id only (no occurrence_date)
+    // Note: isRecurring was already declared above, so we reuse it
+    let existingBooking
+    
+    if (isRecurring && occurrence_date) {
+      // Recurring class with occurrence_date - check for that specific occurrence
+      existingBooking = await database.get(
+        'SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND occurrence_date = ? AND status != "cancelled"',
+        [userId, class_id, occurrence_date]
+      )
+    } else if (!isRecurring) {
+      // Non-recurring class - check for any booking without occurrence_date
+      // IMPORTANT: For non-recurring classes, we ONLY want bookings where occurrence_date is NULL or empty
+      // We should NOT match bookings with occurrence_date set (those are for recurring classes)
+      // Also verify the class itself is not recurring to avoid false matches
+      existingBooking = await database.get(
+        'SELECT b.* FROM bookings b INNER JOIN classes c ON b.class_id = c.id WHERE b.user_id = ? AND b.class_id = ? AND (b.occurrence_date IS NULL OR b.occurrence_date = "") AND b.status != "cancelled" AND (c.is_recurring = 0 OR c.is_recurring IS NULL)',
+        [userId, class_id]
+      )
+    } else {
+      // Recurring class but no occurrence_date provided - this shouldn't happen, but check anyway
+      existingBooking = await database.get(
+        'SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND (occurrence_date IS NULL OR occurrence_date = "") AND status != "cancelled"',
+        [userId, class_id]
+      )
+    }
+    
     if (existingBooking) {
+      console.log(`[BOOKING] User ${userId} already has booking for class ${class_id}, isRecurring: ${isRecurring}, occurrence_date: ${occurrence_date || 'none'}, existing booking:`, existingBooking)
       return res.status(400).json({
         success: false,
         message: 'Ya estás registrado en esta clase'
       })
     }
 
+    // Determine the booking date - use occurrence_date if provided, otherwise use class date
+    const bookingDate = occurrence_date || classInfo.date
+
     // Crear la reserva
     const booking = await database.createBooking({
       user_id: userId,
       class_id: class_id,
-      booking_date: classInfo.date,
+      booking_date: bookingDate,
+      occurrence_date: occurrence_date || null,
       status: 'confirmed',
       payment_method: payment_method || 'package',
       notes: notes
     })
 
-    // Actualizar el conteo de la clase
-    await database.run(`
-      UPDATE classes 
-      SET current_bookings = current_bookings + 1, updated_at = datetime('now')
-      WHERE id = ?
-    `, [class_id])
+    // Actualizar el conteo de la clase (solo para clases no recurrentes)
+    // Para clases recurrentes, el conteo se calcula dinámicamente por occurrence_date
+    // Note: isRecurring was already declared above, so we reuse it
+    if (!isRecurring) {
+      await database.run(`
+        UPDATE classes 
+        SET current_bookings = current_bookings + 1, updated_at = datetime('now')
+        WHERE id = ?
+      `, [class_id])
+    }
 
     // Descontar una clase del paquete del usuario según el tipo
     await database.deductClassFromUser(userId, classType)
@@ -3589,10 +4304,24 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
   }
 })
 
-app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']), async (req, res) => {
+app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
+  console.log('[Cancel Booking] Endpoint hit')
+  console.log('[Cancel Booking] User:', req.user)
+  console.log('[Cancel Booking] Body:', req.body)
+  
   try {
-    const { class_id } = req.body
+    // Check role manually to avoid any middleware issues
+    if (req.user.role !== 'cliente' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para cancelar reservas'
+      })
+    }
+
+    const { class_id, occurrence_date } = req.body
     const userId = req.user.id
+
+    console.log(`[Cancel Booking] User ${userId} cancelling class ${class_id}, occurrence: ${occurrence_date || 'none'}`)
 
     if (!class_id) {
       return res.status(400).json({
@@ -3602,7 +4331,10 @@ app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']),
     }
 
     // Get class info to determine type
+    console.log('[Cancel Booking] Getting class info...')
     const classInfo = await database.getClassById(class_id)
+    console.log('[Cancel Booking] Class info:', classInfo)
+    
     if (!classInfo) {
       return res.status(404).json({
         success: false,
@@ -3613,10 +4345,21 @@ app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']),
     const classType = classInfo.type || 'group'
 
     // Buscar la reserva del usuario
-    const booking = await database.get(
-      'SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND status = "confirmed"',
-      [userId, class_id]
-    )
+    console.log('[Cancel Booking] Looking for booking...')
+    let booking
+    if (occurrence_date) {
+      booking = await database.get(
+        `SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND occurrence_date = ? AND status = 'confirmed'`,
+        [userId, class_id, occurrence_date]
+      )
+    } else {
+      booking = await database.get(
+        `SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND (occurrence_date IS NULL OR occurrence_date = '') AND status = 'confirmed'`,
+        [userId, class_id]
+      )
+    }
+
+    console.log('[Cancel Booking] Found booking:', booking)
 
     if (!booking) {
       return res.status(404).json({
@@ -3625,45 +4368,93 @@ app.post('/api/bookings/cancel', requireAuth, requireRole(['cliente', 'admin']),
       })
     }
 
-    // Check if cancellation is within 10 minutes of class start
-    const classDateTime = new Date(`${classInfo.date}T${classInfo.time}`)
+    // Check if cancellation is within 15 minutes of class start
+    const classDate = occurrence_date || classInfo.date
+    const classDateTime = new Date(`${classDate}T${classInfo.time}`)
     const now = new Date()
     const minutesUntilClass = (classDateTime.getTime() - now.getTime()) / (1000 * 60)
-    const within10Minutes = minutesUntilClass <= 10
+    const within15Minutes = minutesUntilClass <= 15
+
+    console.log(`[Cancel Booking] Minutes until class: ${minutesUntilClass}`)
 
     // Actualizar el estado de la reserva a cancelada
+    console.log('[Cancel Booking] Updating booking status...')
     await database.run(
-      'UPDATE bookings SET status = "cancelled", updated_at = datetime("now") WHERE id = ?',
+      `UPDATE bookings SET status = 'cancelled' WHERE id = ?`,
       [booking.id]
     )
+    console.log('[Cancel Booking] Booking cancelled')
 
-    // Actualizar el conteo de la clase
-    await database.run(`
-      UPDATE classes 
-      SET current_bookings = current_bookings - 1, updated_at = datetime('now')
-      WHERE id = ?
-    `, [class_id])
+    // Actualizar el conteo de la clase (solo para clases no recurrentes)
+    const isRecurring = classInfo.is_recurring === 1 || classInfo.is_recurring === '1' || classInfo.is_recurring === true
+    if (!isRecurring) {
+      console.log('[Cancel Booking] Decrementing class count...')
+      await database.run(
+        `UPDATE classes SET current_bookings = current_bookings - 1, updated_at = datetime('now') WHERE id = ?`,
+        [class_id]
+      )
+    }
 
-    // Devolver una clase al paquete del usuario solo if >10 minutes before
-    if (within10Minutes) {
-      res.json({
+    // For private classes, mark the entire class as cancelled since it depends on this one client
+    if (classType === 'private') {
+      console.log('[Cancel Booking] Marking private class as cancelled...')
+      await database.run(
+        `UPDATE classes SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?`,
+        [class_id]
+      )
+      console.log('[Cancel Booking] Private class marked as cancelled')
+    }
+
+    // Handle late cancellation (within 15 minutes)
+    if (within15Minutes) {
+      console.log('[Cancel Booking] Late cancellation - marking as no-show')
+      
+      // Mark booking as late cancellation
+      await database.run(
+        `UPDATE bookings SET late_cancellation = 1 WHERE id = ?`,
+        [booking.id]
+      )
+      
+      // Create attendance record for late cancellation
+      const user = await database.getUserById(userId)
+      await database.setAttendance({
+        classId: class_id,
+        occurrenceDate: classDate,
+        userId: userId,
+        userName: user?.nombre || 'Unknown',
+        status: 'late_cancel',
+        markedBy: 'Sistema (cancelación tardía)',
+        notes: 'Cancelado menos de 15 minutos antes de la clase'
+      })
+      
+      return res.json({
         success: true,
-        message: 'Reserva cancelada exitosamente. Nota: No se reembolsó la clase automáticamente debido a la cancelación de último momento. Por favor, contacta con un coach si necesitas ayuda.',
-        refunded: false
+        message: 'Reserva cancelada exitosamente. Nota: No se reembolsó la clase automáticamente debido a la cancelación de último momento.',
+        refunded: false,
+        lateCancellation: true
       })
     } else {
-      await database.addClassToUser(userId, classType)
-      res.json({
+      console.log('[Cancel Booking] Refunding class...')
+      try {
+        await database.addClassToUser(userId, classType)
+        console.log('[Cancel Booking] Class refunded')
+      } catch (refundErr) {
+        console.error('[Cancel Booking] Refund error:', refundErr)
+        // Still return success since booking was cancelled
+      }
+      return res.json({
         success: true,
-        message: 'Reserva cancelada exitosamente',
-        refunded: true
+        message: 'Reserva cancelada exitosamente. Se ha reembolsado una clase a tu paquete.',
+        refunded: true,
+        lateCancellation: false
       })
     }
   } catch (error) {
-    console.error('Cancel booking error:', error)
+    console.error('[Cancel Booking] ERROR:', error.message)
+    console.error('[Cancel Booking] Stack:', error.stack)
     res.status(500).json({
       success: false,
-      message: 'Error al cancelar la reserva'
+      message: 'Error al cancelar la reserva: ' + error.message
     })
   }
 })
@@ -3892,6 +4683,7 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       instructors,
       is_recurring,
       recurrence_end_date,
+      recurrence_days_of_week,
       is_public,
       walk_ins_welcome,
       assigned_client_ids,
@@ -3913,41 +4705,64 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       : (Number.isFinite(requestedMax) && requestedMax >= 1
         ? Math.min(Math.max(requestedMax, 1), 9999)
         : 10)
-    const currentBookings = type === 'private' ? 1 : 0
+    
+    // Properly parse is_recurring (could be boolean, string "true"/"false", or number 1/0)
+    const isRecurringBool = is_recurring === true || is_recurring === 1 || is_recurring === '1' || is_recurring === 'true'
+    
+    // For private classes with a client, start with 1 booking; otherwise 0
+    const currentBookings = (type === 'private' && client_id) ? 1 : 0
+    
+    console.log(`[Create Class] type=${type}, is_recurring=${is_recurring}, isRecurringBool=${isRecurringBool}, client_id=${client_id}, currentBookings=${currentBookings}`)
+    
     const normalizedInstructors = Array.isArray(instructors)
       ? JSON.stringify(instructors.slice(0, 10))
       : instructors
         ? JSON.stringify([instructors])
         : null
 
+    // Parse recurrence_days_of_week if provided
+    let recurrenceDaysArray = []
+    if (recurrence_days_of_week) {
+      try {
+        recurrenceDaysArray = typeof recurrence_days_of_week === 'string' 
+          ? JSON.parse(recurrence_days_of_week) 
+          : recurrence_days_of_week
+      } catch (e) {
+        console.error('Error parsing recurrence_days_of_week:', e)
+      }
+    }
+
+    // For recurring classes, create only ONE entry (not individual occurrences)
+    // The date field stores the start date of the recurrence period
     await database.run(`
       INSERT INTO classes (
         id, title, type, coach_id, date, time, end_time, duration, max_capacity,
         current_bookings, status, description, instructors, is_recurring, 
-        recurrence_end_date, is_public, walk_ins_welcome, assigned_client_ids, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        recurrence_end_date, recurrence_days_of_week, is_public, walk_ins_welcome, assigned_client_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
       id,
       title,
       type,
       coach_id,
-      date,
+      date, // For recurring classes, this is the start date
       time,
       end_time || null,
       duration,
       maxCapacity,
-      currentBookings,
+      isRecurringBool ? 0 : currentBookings, // Recurring classes start with 0 bookings; private with client starts with 1
       status || 'scheduled',
       description,
       normalizedInstructors,
-      is_recurring ? 1 : 0,
+      isRecurringBool ? 1 : 0,
       recurrence_end_date || null,
+      recurrence_days_of_week ? JSON.stringify(recurrenceDaysArray) : null,
       is_public !== undefined ? (is_public ? 1 : 0) : (type === 'group' ? 1 : 1),
       walk_ins_welcome !== undefined ? (walk_ins_welcome ? 1 : 0) : (type === 'group' ? 1 : 0),
-      assigned_client_ids || null
+      isRecurringBool ? null : assigned_client_ids || null // No assigned clients for recurring classes
     ])
 
-    // Si es una clase privada, agregar al historial de clases del cliente y deducir clase
+    // Si es una clase privada, agregar al historial de clases del cliente, crear booking, y deducir clase
     if (type === 'private' && client_id) {
       // Check if client has enough classes (unless override)
       if (!override_insufficient_classes) {
@@ -3973,6 +4788,17 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
         await database.deductClassFromUser(client_id, 'private')
       }
       // If override_type === 'free', don't deduct
+
+      // Create a booking so the client can cancel the class
+      await database.createBooking({
+        user_id: client_id,
+        class_id: id,
+        booking_date: date,
+        status: 'confirmed',
+        payment_method: 'package',
+        occurrence_date: null // Private classes are not recurring
+      })
+      console.log(`[Create Class] Created booking for private class ${id}, client ${client_id}`)
 
       await database.addClassHistory({
         class_id: id,
@@ -4099,8 +4925,8 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
     
     const rawClasses = await database.all(query, [todayStr])
 
-    // Normalizar campo instructors a arreglo
-    const classes = rawClasses.map(cls => {
+    // Normalizar campo instructors a arreglo y calculate booking counts for recurring classes
+    const classes = await Promise.all(rawClasses.map(async cls => {
       let instructors = []
       if (cls.instructors) {
         if (Array.isArray(cls.instructors)) {
@@ -4114,8 +4940,13 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
           }
         }
       }
+      
+      // For recurring classes, current_bookings is not accurate (it's for the template)
+      // We'll keep it as-is and calculate per-occurrence counts on the frontend
+      // The frontend will calculate it dynamically based on bookings with occurrence_date
+      
       return { ...cls, instructors }
-    })
+    }))
     
     res.json({
       success: true,
@@ -4130,18 +4961,61 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
   }
 })
 
-// Get bookings for a specific class
-app.get('/api/classes/:id/bookings', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+// Get booking counts per occurrence for a recurring class
+app.get('/api/recurring-classes/:id/booking-counts', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
   try {
     const { id } = req.params
     
+    // Get all confirmed bookings for this recurring class with occurrence_date
     const bookings = await database.all(`
+      SELECT occurrence_date, COUNT(*) as count
+      FROM bookings
+      WHERE class_id = ? AND occurrence_date IS NOT NULL AND occurrence_date != '' AND status = 'confirmed'
+      GROUP BY occurrence_date
+    `, [id])
+    
+    // Convert to object for easy lookup
+    const counts = {}
+    bookings.forEach((b) => {
+      counts[b.occurrence_date] = b.count
+    })
+    
+    res.json({
+      success: true,
+      booking_counts: counts
+    })
+  } catch (error) {
+    console.error('Get booking counts error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener conteos de reservas'
+    })
+  }
+})
+
+// Get bookings for a specific class (optionally for a specific occurrence date)
+app.get('/api/classes/:id/bookings', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date } = req.query
+    
+    let query = `
       SELECT b.*, u.nombre as user_name, u.correo as user_email
       FROM bookings b
       JOIN users u ON b.user_id = u.id
       WHERE b.class_id = ? AND b.status != 'cancelled'
-      ORDER BY u.nombre ASC
-    `, [id])
+    `
+    const params = [id]
+    
+    // If occurrence_date is provided, filter by it (for recurring class occurrences)
+    if (occurrence_date) {
+      query += ` AND b.occurrence_date = ?`
+      params.push(occurrence_date)
+    }
+    
+    query += ` ORDER BY u.nombre ASC`
+    
+    const bookings = await database.all(query, params)
     
     res.json({
       success: true,
@@ -4152,6 +5026,111 @@ app.get('/api/classes/:id/bookings', requireAuth, requireRole(['admin', 'coach']
     res.status(500).json({
       success: false,
       message: 'Error al obtener las reservas de la clase'
+    })
+  }
+})
+
+// Update bookings for a specific occurrence of a recurring class (admin only)
+app.post('/api/classes/:id/occurrence-bookings', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date, client_ids } = req.body
+    
+    if (!occurrence_date) {
+      return res.status(400).json({ success: false, message: 'Fecha de ocurrencia requerida' })
+    }
+    
+    const clientIds = Array.isArray(client_ids) ? client_ids : []
+    
+    console.log(`[Occurrence Bookings] Class: ${id}, Date: ${occurrence_date}, Clients: ${clientIds.join(', ')}`)
+    
+    // Get existing bookings for this occurrence
+    const existingBookings = await database.all(`
+      SELECT b.*, u.nombre as user_name
+      FROM bookings b
+      JOIN users u ON b.user_id = u.id
+      WHERE b.class_id = ? AND b.occurrence_date = ? AND b.status IN ('confirmed', 'attended')
+    `, [id, occurrence_date])
+    
+    console.log('[Occurrence Bookings] Existing bookings:', existingBookings.map(b => ({ user_id: b.user_id, credit_deducted: b.credit_deducted })))
+    
+    const existingClientIds = existingBookings.map(b => b.user_id)
+    
+    // Find clients to add and clients to remove
+    const clientsToAdd = clientIds.filter(cid => !existingClientIds.includes(cid))
+    const clientsToRemove = existingClientIds.filter(cid => !clientIds.includes(cid))
+    
+    console.log(`[Occurrence Bookings] Adding: ${clientsToAdd.length}, Removing: ${clientsToRemove.length}`)
+    
+    // Remove bookings for clients no longer in the list (refund them only if credit was deducted)
+    for (const clientId of clientsToRemove) {
+      // Check if credit was deducted for this booking
+      const booking = existingBookings.find(b => b.user_id === clientId)
+      const shouldRefund = booking && (booking.credit_deducted === 1 || booking.credit_deducted === '1' || booking.credit_deducted === true)
+      
+      await database.run(`
+        UPDATE bookings SET status = 'cancelled' WHERE class_id = ? AND occurrence_date = ? AND user_id = ?
+      `, [id, occurrence_date, clientId])
+      
+      if (shouldRefund) {
+        await database.addClassToUser(clientId, 'group')
+        console.log(`[Occurrence Bookings] Removed and refunded client ${clientId}`)
+      } else {
+        console.log(`[Occurrence Bookings] Removed client ${clientId} (no credit to refund)`)
+      }
+    }
+    
+    // Add bookings for new clients
+    const errors = []
+    for (const clientId of clientsToAdd) {
+      try {
+        // Check if user has available classes
+        const userClasses = await database.checkUserAvailableClasses(clientId, 'group')
+        if (!userClasses || !userClasses.hasClasses) {
+          // Log warning but still add them
+          console.log(`[Occurrence Bookings] Warning: Client ${clientId} has no group classes remaining (${userClasses?.groupRemaining || 0})`)
+        }
+        
+        // Create booking
+        const bookingId = require('uuid').v4()
+        const today = new Date().toISOString().split('T')[0]
+        
+        // Try to deduct class from user
+        let creditDeducted = 0
+        try {
+          await database.deductClassFromUser(clientId, 'group')
+          creditDeducted = 1
+          console.log(`[Occurrence Bookings] Deducted class from client ${clientId}`)
+        } catch (deductErr) {
+          console.log(`[Occurrence Bookings] Could not deduct class from ${clientId}: ${deductErr.message}`)
+          // Still add them but mark that no credit was deducted
+          creditDeducted = 0
+        }
+        
+        await database.run(`
+          INSERT INTO bookings (id, class_id, user_id, booking_date, status, occurrence_date, credit_deducted, created_at)
+          VALUES (?, ?, ?, ?, 'confirmed', ?, ?, CURRENT_TIMESTAMP)
+        `, [bookingId, id, clientId, today, occurrence_date, creditDeducted])
+        
+        console.log(`[Occurrence Bookings] Added client ${clientId}, creditDeducted: ${creditDeducted}`)
+      } catch (err) {
+        console.error(`[Occurrence Bookings] Error adding client ${clientId}:`, err)
+        errors.push(`Error al agregar cliente: ${err.message}`)
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Asistentes actualizados: ${clientsToAdd.length} agregados, ${clientsToRemove.length} removidos`,
+      added: clientsToAdd.length,
+      removed: clientsToRemove.length,
+      errors: errors.length > 0 ? errors : undefined
+    })
+  } catch (error) {
+    console.error('Update occurrence bookings error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar los asistentes de la clase'
     })
   }
 })
@@ -4179,6 +5158,15 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
       max_capacity
     } = req.body
 
+    // Get the existing class to check its type
+    const existingClass = await database.getClassById(id)
+    if (!existingClass) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
     const updates = {}
     if (title !== undefined) updates.title = title
     if (date !== undefined) updates.date = date
@@ -4189,15 +5177,79 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
     if (description !== undefined) updates.description = description
     if (instructors !== undefined) updates.instructors = instructors
     if (coach_id !== undefined) updates.coach_id = coach_id
-    if (coach_name !== undefined) updates.coach_name = coach_name
-    if (is_recurring !== undefined) updates.is_recurring = is_recurring ? 1 : 0
-    if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
-    if (is_public !== undefined) updates.is_public = is_public ? 1 : 0
-    if (walk_ins_welcome !== undefined) updates.walk_ins_welcome = walk_ins_welcome ? 1 : 0
-    if (assigned_client_ids !== undefined) updates.assigned_client_ids = assigned_client_ids
-    if (max_capacity !== undefined) updates.max_capacity = max_capacity
+    // Note: coach_name is not a column in the classes table, it's computed from a JOIN
+    // So we don't update it directly - it will be derived from coach_id
+    
+    // Group class specific fields - only update if it's a group class
+    if (existingClass.type === 'group') {
+      // Always set these fields for group classes (even if 0/false)
+      // Explicitly handle boolean/number conversion - 0 and false should become 0
+      if (is_recurring !== undefined) {
+        // Convert: true/1/'1' -> 1, false/0/'0'/null/undefined -> 0
+        const recurringValue = (is_recurring === true || is_recurring === 1 || is_recurring === '1')
+        updates.is_recurring = recurringValue ? 1 : 0
+      }
+      if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
+      if (is_public !== undefined) {
+        const publicValue = (is_public === true || is_public === 1 || is_public === '1')
+        updates.is_public = publicValue ? 1 : 0
+      }
+      if (walk_ins_welcome !== undefined) {
+        const walkInsValue = (walk_ins_welcome === true || walk_ins_welcome === 1 || walk_ins_welcome === '1')
+        updates.walk_ins_welcome = walkInsValue ? 1 : 0
+      }
+      if (assigned_client_ids !== undefined) {
+        // For recurring classes, always set to null
+        if (existingClass.type === 'group' && (existingClass.is_recurring === 1 || existingClass.is_recurring === '1')) {
+          updates.assigned_client_ids = null
+        } else {
+          // Sanitize assigned_client_ids (handle HTML-encoded quotes)
+          let cleaned = assigned_client_ids
+          if (typeof cleaned === 'string') {
+            let str = cleaned.replace(/&quot;/g, '"')
+            try {
+              const arr = JSON.parse(str)
+              cleaned = JSON.stringify(Array.isArray(arr) ? arr : [])
+            } catch {
+              cleaned = '[]'
+            }
+          } else if (Array.isArray(cleaned)) {
+            cleaned = JSON.stringify(cleaned)
+          } else {
+            cleaned = '[]'
+          }
+          updates.assigned_client_ids = cleaned
+        }
+      }
+      if (max_capacity !== undefined) updates.max_capacity = max_capacity
+      if (req.body.recurrence_days_of_week !== undefined) {
+        // Parse and store recurrence days
+        let recurrenceDaysArray = []
+        if (req.body.recurrence_days_of_week) {
+          try {
+            recurrenceDaysArray = typeof req.body.recurrence_days_of_week === 'string'
+              ? JSON.parse(req.body.recurrence_days_of_week)
+              : req.body.recurrence_days_of_week
+          } catch (e) {
+            console.error('Error parsing recurrence_days_of_week:', e)
+          }
+        }
+        updates.recurrence_days_of_week = recurrenceDaysArray.length > 0 ? JSON.stringify(recurrenceDaysArray) : null
+      }
+    } else {
+      // For private classes, ensure these fields are not set (they don't apply)
+      // Clear group-specific fields if they exist
+      updates.is_recurring = 0
+      updates.recurrence_end_date = null
+      updates.is_public = 1
+      updates.walk_ins_welcome = 0
+      updates.assigned_client_ids = null
+      updates.max_capacity = 1
+    }
 
-    console.log('Updating class:', id, 'with updates:', JSON.stringify(updates, null, 2))
+    console.log('Updating class:', id, 'type:', existingClass.type)
+    console.log('Request body is_recurring:', is_recurring, 'type:', typeof is_recurring)
+    console.log('Updates object:', JSON.stringify(updates, null, 2))
 
     const updatedClass = await database.updateClass(id, updates)
 
@@ -4219,12 +5271,138 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
       }
     }
 
+    // If it's a non-recurring group class and assigned_client_ids was provided, sync bookings
+    if (existingClass.type === 'group' && (existingClass.is_recurring !== 1 && existingClass.is_recurring !== '1')) {
+      if (assigned_client_ids !== undefined) {
+        try {
+          // Sanitize assigned_client_ids (handle HTML-encoded quotes)
+          let parsedIds = []
+          if (assigned_client_ids) {
+            if (typeof assigned_client_ids === 'string') {
+              const str = assigned_client_ids.replace(/&quot;/g, '"')
+              try {
+                const arr = JSON.parse(str)
+                parsedIds = Array.isArray(arr) ? arr : []
+              } catch (parseErr) {
+                console.error('Error parsing assigned_client_ids:', parseErr, 'value:', assigned_client_ids)
+                parsedIds = []
+              }
+            } else if (Array.isArray(assigned_client_ids)) {
+              parsedIds = assigned_client_ids
+            }
+          }
+          const desiredClientIds = Array.isArray(parsedIds) ? parsedIds : []
+
+          console.log('[Sync Assigned Clients] desiredClientIds:', desiredClientIds)
+
+          // Fetch existing active bookings for this non-recurring class (no occurrence_date)
+          const existingBookings = await database.all(`
+            SELECT * FROM bookings
+            WHERE class_id = ?
+              AND (occurrence_date IS NULL OR occurrence_date = '')
+              AND status IN ('confirmed', 'attended')
+          `, [id])
+
+          const existingIds = existingBookings.map(b => b.user_id)
+
+          const toAdd = desiredClientIds.filter(cid => !existingIds.includes(cid))
+          const toRemove = existingIds.filter(cid => !desiredClientIds.includes(cid))
+
+          console.log('[Sync Assigned Clients] existingIds:', existingIds, 'toAdd:', toAdd, 'toRemove:', toRemove)
+
+          // Remove bookings not in the list (refund only if credit_deducted)
+          for (const clientId of toRemove) {
+            const booking = existingBookings.find(b => b.user_id === clientId)
+            const shouldRefund = booking && (booking.credit_deducted === 1 || booking.credit_deducted === '1' || booking.credit_deducted === true)
+
+            await database.run(`
+              UPDATE bookings
+              SET status = 'cancelled', updated_at = datetime('now')
+              WHERE class_id = ? AND user_id = ? AND (occurrence_date IS NULL OR occurrence_date = '')
+            `, [id, clientId])
+
+            if (shouldRefund) {
+              await database.addClassToUser(clientId, 'group')
+            }
+          }
+
+          // Add bookings for new clients
+          for (const clientId of toAdd) {
+            const bookingId = uuidv4()
+            const today = new Date().toISOString().split('T')[0]
+            let creditDeducted = 0
+            // Try to deduct a class; if not possible, still add booking with credit_deducted = 0
+            try {
+              await database.deductClassFromUser(clientId, 'group')
+              creditDeducted = 1
+            } catch (e) {
+              creditDeducted = 0
+            }
+
+            await database.run(`
+              INSERT INTO bookings (id, class_id, user_id, booking_date, status, credit_deducted, created_at)
+              VALUES (?, ?, ?, ?, 'confirmed', ?, CURRENT_TIMESTAMP)
+            `, [bookingId, id, clientId, today, creditDeducted])
+
+            console.log('[Sync Assigned Clients] Added booking for client', clientId, 'creditDeducted:', creditDeducted)
+          }
+
+          // Update current_bookings to match desired clients
+          const newCount = desiredClientIds.length
+          await database.run(`UPDATE classes SET current_bookings = ? WHERE id = ?`, [newCount, id])
+          console.log('[Sync Assigned Clients] Updated current_bookings to', newCount)
+        } catch (syncErr) {
+          console.error('Error syncing assigned clients to bookings:', syncErr)
+        }
+      }
+    }
+
     res.json({
       success: true,
       class: { ...updatedClass, instructors: normalizedInstructors }
     })
   } catch (error) {
     console.error('Update class error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Get client for a private class
+app.get('/api/classes/:id/client', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Verify class exists
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    if (cls.type !== 'private') {
+      return res.status(400).json({
+        success: false,
+        message: 'Esta clase no es privada'
+      })
+    }
+
+    // Get client from class_history
+    const classHistory = await database.get(
+      'SELECT user_id FROM class_history WHERE class_id = ? AND status = ? LIMIT 1',
+      [id, 'scheduled']
+    )
+
+    res.json({
+      success: true,
+      client_id: classHistory?.user_id || null
+    })
+  } catch (error) {
+    console.error('Get client for class error:', error)
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor'
@@ -4270,6 +5448,318 @@ app.post('/api/classes/:id/assign-client', requireAuth, requireRole(['admin']), 
   }
 })
 
+// Reinstate a cancelled class
+app.post('/api/classes/:id/reinstate', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { skipUsers = [] } = req.body // Users to skip charging (already confirmed by admin)
+
+    // Get the class
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    if (cls.status !== 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'Esta clase no está cancelada'
+      })
+    }
+
+    const classType = cls.type === 'group' ? 'group' : 'private'
+    const usersWithInsufficientClasses = []
+    const usersCharged = []
+    const usersSkipped = []
+    const usersToReinstateBookings = [] // Track which users need bookings reinstated/created
+
+    // For private classes, check assigned_client_ids first
+    if (cls.type === 'private' && cls.assigned_client_ids) {
+      console.log(`[Reinstate] Private class with assigned_client_ids: ${cls.assigned_client_ids}`)
+      
+      try {
+        // assigned_client_ids can be a single ID or JSON array
+        let clientIds = []
+        if (cls.assigned_client_ids.startsWith('[')) {
+          clientIds = JSON.parse(cls.assigned_client_ids)
+        } else {
+          clientIds = [cls.assigned_client_ids]
+        }
+
+        for (const clientId of clientIds) {
+          // Get user info
+          const user = await database.get('SELECT id, nombre, correo FROM users WHERE id = ?', [clientId])
+          if (!user) {
+            console.log(`[Reinstate] User ${clientId} not found, skipping`)
+            continue
+          }
+
+          // Skip users that admin already confirmed to skip
+          if (skipUsers.includes(clientId)) {
+            usersSkipped.push({
+              userId: clientId,
+              userName: user.nombre,
+              userEmail: user.correo
+            })
+            usersToReinstateBookings.push({ userId: clientId, skipCharge: true })
+            continue
+          }
+
+          // Check if user has available classes
+          const availableClasses = await database.checkUserAvailableClasses(clientId)
+          const availableCount = availableClasses.privateClasses
+
+          if (availableCount <= 0) {
+            usersWithInsufficientClasses.push({
+              userId: clientId,
+              userName: user.nombre,
+              userEmail: user.correo,
+              available: availableCount,
+              required: 1,
+              type: 'private'
+            })
+          } else {
+            usersCharged.push({
+              userId: clientId,
+              userName: user.nombre,
+              available: availableCount
+            })
+            usersToReinstateBookings.push({ userId: clientId, skipCharge: false })
+          }
+        }
+      } catch (parseErr) {
+        console.error('[Reinstate] Error parsing assigned_client_ids:', parseErr)
+      }
+    } else {
+      // For group classes (or private without assigned_client_ids), check bookings table
+      const bookings = await database.all(`
+        SELECT b.*, u.nombre as user_name, u.correo as user_email
+        FROM bookings b
+        JOIN users u ON b.user_id = u.id
+        WHERE b.class_id = ?
+      `, [id])
+
+      console.log(`[Reinstate] Found ${bookings.length} bookings for class ${id}`)
+
+      // Check each booking
+      for (const booking of bookings) {
+        // Skip users that admin already confirmed
+        if (skipUsers.includes(booking.user_id)) {
+          usersSkipped.push({
+            userId: booking.user_id,
+            userName: booking.user_name,
+            userEmail: booking.user_email
+          })
+          usersToReinstateBookings.push({ userId: booking.user_id, skipCharge: true })
+          continue
+        }
+
+        // Check if user has available classes
+        const availableClasses = await database.checkUserAvailableClasses(booking.user_id)
+        const availableCount = classType === 'group' ? availableClasses.groupClasses : availableClasses.privateClasses
+
+        if (availableCount <= 0) {
+          usersWithInsufficientClasses.push({
+            userId: booking.user_id,
+            userName: booking.user_name,
+            userEmail: booking.user_email,
+            available: availableCount,
+            required: 1,
+            type: classType
+          })
+        } else {
+          usersCharged.push({
+            userId: booking.user_id,
+            userName: booking.user_name,
+            available: availableCount
+          })
+          usersToReinstateBookings.push({ userId: booking.user_id, skipCharge: false })
+        }
+      }
+    }
+
+    // If there are users with insufficient classes and we haven't skipped them, return for confirmation
+    if (usersWithInsufficientClasses.length > 0) {
+      return res.status(200).json({
+        success: false,
+        needsConfirmation: true,
+        message: 'Algunos usuarios no tienen clases suficientes',
+        usersWithInsufficientClasses,
+        usersToCharge: usersCharged.length
+      })
+    }
+
+    // All good - reinstate the class
+    // 1. Update class status
+    await database.run(
+      `UPDATE classes SET status = 'scheduled', updated_at = datetime('now') WHERE id = ?`,
+      [id]
+    )
+
+    // 2. For private classes with assigned clients, ensure booking exists and is confirmed
+    if (cls.type === 'private' && cls.assigned_client_ids) {
+      for (const reinstateInfo of usersToReinstateBookings) {
+        // Check if booking exists
+        const existingBooking = await database.get(
+          'SELECT id FROM bookings WHERE class_id = ? AND user_id = ?',
+          [id, reinstateInfo.userId]
+        )
+
+        if (existingBooking) {
+          // Update existing booking to confirmed
+          await database.run(
+            `UPDATE bookings SET status = 'confirmed' WHERE id = ?`,
+            [existingBooking.id]
+          )
+          console.log(`[Reinstate] Reactivated booking for user ${reinstateInfo.userId}`)
+        } else {
+          // Create new booking for this user
+          const bookingId = require('uuid').v4()
+          await database.run(`
+            INSERT INTO bookings (id, class_id, user_id, status, created_at)
+            VALUES (?, ?, ?, 'confirmed', datetime('now'))
+          `, [bookingId, id, reinstateInfo.userId])
+          console.log(`[Reinstate] Created new booking for user ${reinstateInfo.userId}`)
+        }
+
+        // Deduct class from user if not skipped
+        if (!reinstateInfo.skipCharge) {
+          try {
+            await database.deductClassFromUser(reinstateInfo.userId, 'private')
+            console.log(`[Reinstate] Deducted private class from user ${reinstateInfo.userId}`)
+          } catch (err) {
+            console.error(`[Reinstate] Error deducting class from user ${reinstateInfo.userId}:`, err)
+          }
+        }
+      }
+
+      // Update current_bookings count
+      await database.run(
+        `UPDATE classes SET current_bookings = ? WHERE id = ?`,
+        [usersToReinstateBookings.length, id]
+      )
+    } else {
+      // 2. Reactivate all bookings for group classes
+      await database.run(
+        `UPDATE bookings SET status = 'confirmed' WHERE class_id = ?`,
+        [id]
+      )
+
+      // 3. Deduct classes from users who weren't skipped
+      for (const user of usersCharged) {
+        try {
+          await database.deductClassFromUser(user.userId, classType)
+          console.log(`[Reinstate] Deducted ${classType} class from user ${user.userId}`)
+        } catch (err) {
+          console.error(`[Reinstate] Error deducting class from user ${user.userId}:`, err)
+        }
+      }
+    }
+
+    // For skipped users, still reactivate their booking but don't charge them
+    console.log(`[Reinstate] Skipped users (not charged): ${usersSkipped.map(u => u.userName).join(', ')}`)
+
+    res.json({
+      success: true,
+      message: `Clase reinstalada exitosamente. ${usersCharged.length} usuario(s) fueron cobrados.${usersSkipped.length > 0 ? ` ${usersSkipped.length} usuario(s) fueron omitidos.` : ''}`,
+      usersCharged: usersCharged.length,
+      usersSkipped: usersSkipped.length
+    })
+  } catch (error) {
+    console.error('Reinstate class error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error al reinstalar la clase'
+    })
+  }
+})
+
+// Cancel specific occurrence of a recurring class
+app.post('/api/recurring-classes/:id/cancel-occurrence', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
+  try {
+    const { id } = req.params
+    const { occurrence_date } = req.body
+
+    if (!occurrence_date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Fecha de ocurrencia requerida'
+      })
+    }
+
+    // Verify class exists and is recurring
+    const cls = await database.getClassById(id)
+    if (!cls) {
+      return res.status(404).json({
+        success: false,
+        message: 'Clase no encontrada'
+      })
+    }
+
+    const isRecurring = cls.type === 'group' && (cls.is_recurring === 1 || cls.is_recurring === '1' || cls.is_recurring === true)
+    if (!isRecurring) {
+      return res.status(400).json({
+        success: false,
+        message: 'Esta clase no es recurrente'
+      })
+    }
+
+    // Check if already canceled
+    const existing = await database.get(
+      'SELECT * FROM recurring_class_cancellations WHERE class_id = ? AND occurrence_date = ?',
+      [id, occurrence_date]
+    )
+
+    if (existing) {
+      return res.json({
+        success: true,
+        message: 'Esta ocurrencia ya estaba cancelada'
+      })
+    }
+
+    // Add cancellation record
+    const cancellationId = require('uuid').v4()
+    await database.run(
+      'INSERT INTO recurring_class_cancellations (id, class_id, occurrence_date) VALUES (?, ?, ?)',
+      [cancellationId, id, occurrence_date]
+    )
+
+    res.json({
+      success: true,
+      message: 'Ocurrencia cancelada exitosamente'
+    })
+  } catch (error) {
+    console.error('Cancel occurrence error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
+// Get all canceled occurrences
+app.get('/api/recurring-classes/canceled-occurrences', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
+  try {
+    const canceled = await database.all(
+      'SELECT class_id, occurrence_date FROM recurring_class_cancellations'
+    )
+
+    res.json({
+      success: true,
+      canceled_occurrences: canceled || []
+    })
+  } catch (error) {
+    console.error('Get canceled occurrences error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    })
+  }
+})
+
 // Delete class (admin only)
 app.delete('/api/classes/:id', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
@@ -4284,14 +5774,47 @@ app.delete('/api/classes/:id', requireAuth, requireRole(['admin']), async (req, 
       })
     }
 
-    // Delete related records
+    const classType = cls.type === 'group' ? 'group' : 'private'
+    const isRecurring = cls.type === 'group' && (cls.is_recurring === 1 || cls.is_recurring === '1' || cls.is_recurring === true)
+
+    // Get all active bookings for this class and refund them
+    const bookings = await database.all(`
+      SELECT b.*, u.nombre as user_name
+      FROM bookings b
+      JOIN users u ON b.user_id = u.id
+      WHERE b.class_id = ? AND b.status IN ('confirmed', 'attended')
+    `, [id])
+
+    console.log(`[Delete Class] Found ${bookings.length} active bookings to refund`)
+
+    let refundedCount = 0
+    for (const booking of bookings) {
+      try {
+        // Refund the class to the user
+        await database.addClassToUser(booking.user_id, classType)
+        refundedCount++
+        console.log(`[Delete Class] Refunded ${classType} class to user ${booking.user_id} (${booking.user_name})`)
+      } catch (refundErr) {
+        console.error(`[Delete Class] Error refunding user ${booking.user_id}:`, refundErr)
+        // Continue with other refunds even if one fails
+      }
+    }
+
+    // Delete all related records first, then the class
+    await database.run('DELETE FROM attendance_records WHERE class_id = ?', [id])
     await database.run('DELETE FROM class_history WHERE class_id = ?', [id])
     await database.run('DELETE FROM bookings WHERE class_id = ?', [id])
+    await database.run('DELETE FROM recurring_class_cancellations WHERE class_id = ?', [id])
     await database.run('DELETE FROM classes WHERE id = ?', [id])
+
+    const message = isRecurring 
+      ? `Clase recurrente eliminada. ${refundedCount} estudiante(s) reembolsados.`
+      : `Clase eliminada. ${refundedCount} estudiante(s) reembolsados.`
 
     res.json({
       success: true,
-      message: 'Clase eliminada correctamente'
+      message: message,
+      refundedCount
     })
   } catch (error) {
     console.error('Delete class error:', error)

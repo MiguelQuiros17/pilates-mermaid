@@ -57,6 +57,7 @@
     "zod": "^3.22.2"
   },
   "devDependencies": {
+    "@swc/core": "^1.15.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10"
   }

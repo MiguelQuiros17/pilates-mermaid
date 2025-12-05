@@ -1,70 +1,157 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Package,
   Plus,
   Edit,
   Trash2,
-  Users,
   DollarSign,
   Calendar,
-  CheckCircle
+  X,
+  Clock,
+  CheckCircle,
+  Users,
+  User,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  Gift,
+  Percent,
+  Tag,
+  Sparkles
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import WhatsAppButton, { WhatsAppTemplates } from '@/components/WhatsAppButton'
 
-interface Package {
+interface PackageType {
     id: string
     name: string
     type: string
     classes_included: number
     price: number
     validity_days: number
+  validity_months: number
     is_active: boolean
+  is_live: boolean
+  live_from: string
+  live_until: string
+  description: string
     category: 'Grupal' | 'Privada'
+  original_price?: number
+  sale_price?: number
 }
 
-interface Client {
+interface PackageBundle {
   id: string
-  nombre: string
-  correo: string
-  type_of_class: string
-  expiration_date?: string
+  name: string
+  description: string
+  package_id: string
+  group_package_id?: string
+  private_package_id?: string
+  package_name: string
+  package_price: number
+  group_package_name?: string
+  group_package_price?: number
+  group_classes_included?: number
+  private_package_name?: string
+  private_package_price?: number
+  private_classes_included?: number
+  classes_included: number
+  category: 'Grupal' | 'Privada' | 'Combo'
+  validity_months: number
+  months_included: number
+  price: number
+  regular_total: number
+  combined_monthly_price?: number
+  savings: number
+  percent_off: number
+  is_live: boolean
+  live_from: string
+  live_until: string
+  is_active: boolean
+  is_combo?: boolean
+}
+
+const defaultFormState = {
+  name: '',
+  type: '',
+  classes_included: 1,
+  price: 0,
+  validity_months: 1,
+  category: 'Grupal' as 'Grupal' | 'Privada',
+  description: '',
+  is_live: true,
+  live_from: '',
+  live_until: '',
+  is_active: true,
+  original_price: '' as number | string,
+  sale_price: '' as number | string,
+}
+
+const defaultBundleFormState = {
+  name: '',
+  description: '',
+  package_id: '',
+  group_package_id: '',
+  private_package_id: '',
+  months_included: 3,
+  price: 0,
+  is_live: true,
+  live_from: '',
+  live_until: '',
+  is_active: true,
 }
 
 export default function PackagesPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
-  const [packages, setPackages] = useState<Package[]>([])
-  const [clients, setClients] = useState<Client[]>([])
+  const [availablePackages, setAvailablePackages] = useState<PackageType[]>([])
+  const [adminPackages, setAdminPackages] = useState<PackageType[]>([])
+  const [bundles, setBundles] = useState<PackageBundle[]>([])
+  const [isSavingPackage, setIsSavingPackage] = useState(false)
+  const [isSavingBundle, setIsSavingBundle] = useState(false)
+  const [editingPackage, setEditingPackage] = useState<PackageType | null>(null)
+  const [editingBundle, setEditingBundle] = useState<PackageBundle | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isBundleModalOpen, setIsBundleModalOpen] = useState(false)
+  const [modalCategory, setModalCategory] = useState<'Grupal' | 'Privada'>('Grupal')
+  const [packageForm, setPackageForm] = useState(defaultFormState)
+  const [bundleForm, setBundleForm] = useState(defaultBundleFormState)
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
-  const [selectedClient, setSelectedClient] = useState<string>('')
-  const [selectedPackage, setSelectedPackage] = useState<string>('')
+  const [classCounts, setClassCounts] = useState<{private: number, group: number}>({private: 0, group: 0})
+  const [activeGroupPackage, setActiveGroupPackage] = useState<any>(null)
+  const [activePrivatePackage, setActivePrivatePackage] = useState<any>(null)
+  const [packageHistory, setPackageHistory] = useState<any[]>([])
 
-  const fetchClients = async () => {
+  const loadUserPackageInfo = async (userId: string) => {
     try {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch('/api/users/clients', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const countsResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/class-counts`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       })
+      if (countsResponse.ok) {
+        const countsData = await countsResponse.json()
+        setClassCounts({
+          private: countsData.private_classes_remaining || 0,
+          group: countsData.group_classes_remaining || 0
+        })
+      }
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log('📋 Fetched clients:', data.clients?.length || 0, 'clients')
-        setClients(data.clients || [])
-      } else {
-        console.error('Error fetching clients:', response.status, response.statusText)
-        const errorData = await response.json().catch(() => ({ message: 'Error fetching clients' }))
-        console.error('Error details:', errorData)
+      const packageResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/package-history`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (packageResponse.ok) {
+        const packageData = await packageResponse.json()
+        setActiveGroupPackage(packageData.activeGroupPackage)
+        setActivePrivatePackage(packageData.activePrivatePackage)
+        setPackageHistory(packageData.packageHistory || [])
       }
     } catch (error) {
-      console.error('Error fetching clients:', error)
+      console.error('Error loading user package info:', error)
     }
   }
 
@@ -73,303 +160,415 @@ export default function PackagesPage() {
     if (userData) {
       const parsedUser = JSON.parse(userData)
       setUser(parsedUser)
-
-      // Solo hacer fetch si es admin
-      if (parsedUser?.role === 'admin') {
-        fetchClients()
+      if (parsedUser?.role === 'cliente' && parsedUser?.id) {
+        loadUserPackageInfo(parsedUser.id)
       }
     }
-  }, []) // Empty dependency array - only run once on mount
+  }, [])
 
-  useEffect(() => {
-    // Paquetes reales de Pilates Mermaid
-    const samplePackages: Package[] = [
-      // Clases Grupales
-      {
-        id: '1',
-        name: 'Clase Prueba',
-        type: 'Clase Prueba',
-        classes_included: 1,
-        price: 300,
-        validity_days: 30,
-        is_active: true,
-        category: 'Grupal',
-      },
-      {
-        id: '2',
-        name: '1 Clase Grupal',
-        type: '1 Clase Grupal',
-        classes_included: 1,
-        price: 400,
-        validity_days: 30,
-        is_active: true,
-        category: 'Grupal',
-      },
-      {
-        id: '3',
-        name: '4 Clases Grupales',
-        type: '4 Clases Grupales',
-        classes_included: 4,
-        price: 1400,
-        validity_days: 30,
-        is_active: true,
-        category: 'Grupal'
-      },
-      {
-        id: '4',
-        name: '8 Clases Grupales',
-        type: '8 Clases Grupales',
-        classes_included: 8,
-        price: 2600,
-        validity_days: 30,
-        is_active: true,
-        category: 'Grupal'
-      },
-      {
-        id: '5',
-        name: '12 Clases Grupales',
-        type: '12 Clases Grupales',
-        classes_included: 12,
-        price: 3600,
-        validity_days: 30,
-        is_active: true,
-        category: 'Grupal'
-      },
-      {
-        id: '6',
-        name: 'Clases Grupales Ilimitadas',
-        type: 'Clases Grupales Ilimitadas',
-        classes_included: 999,
-        price: 4000,
-        validity_days: 30,
-        is_active: true,
-        category: 'Grupal'
-      },
-      // Clases Privadas
-      {
-        id: '7',
-        name: '1 Clase Privada',
-        type: '1 Clase Privada',
-        classes_included: 1,
-        price: 1200,
-        validity_days: 30,
-        is_active: true,
-        category: 'Privada'
-      },
-      {
-        id: '8',
-        name: '4 Clases Privadas',
-        type: '4 Clases Privadas',
-        classes_included: 4,
-        price: 4400,
-        validity_days: 30,
-        is_active: true,
-        category: 'Privada'
-      },
-      {
-        id: '9',
-        name: '8 Clases Privadas',
-        type: '8 Clases Privadas',
-        classes_included: 8,
-        price: 8000,
-        validity_days: 30,
-        is_active: true,
-        category: 'Privada'
-      },
-      {
-        id: '10',
-        name: '12 Clases Privadas',
-        type: '12 Clases Privadas',
-        classes_included: 12,
-        price: 10800,
-        validity_days: 30,
-        is_active: true,
-        category: 'Privada'
-      },
-      {
-        id: '11',
-        name: '16 Clases Privadas',
-        type: '16 Clases Privadas',
-        classes_included: 16,
-        price: 13600,
-        validity_days: 30,
-        is_active: true,
-        category: 'Privada'
-      },
-      {
-        id: '12',
-        name: '20 Clases Privadas',
-        type: '20 Clases Privadas',
-        classes_included: 20,
-        price: 17000,
-        validity_days: 30,
-        is_active: true,
-        category: 'Privada'
+  const loadPackages = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        setIsLoading(false)
+        return
       }
-    ]
 
-    setPackages(samplePackages)
+      const response = await fetch(`${API_BASE_URL}/api/packages?includeInactive=1&includeScheduled=1`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        const list = Array.isArray(data.packages) ? data.packages : []
+        const sorted = [...list].sort((a, b) => a.price - b.price)
+        const validPackages = sorted.filter(p => p.category === 'Grupal' || p.category === 'Privada')
+        
+        if (user?.role === 'admin') {
+          setAvailablePackages(validPackages)
+          setAdminPackages(validPackages)
+        } else {
+          setAvailablePackages(validPackages.filter(p => p.is_active !== false && p.is_active !== 0))
+        }
+      }
+    } catch (error) {
+      console.error('Error loading packages:', error)
+    } finally {
     setIsLoading(false)
-  }, []) // Removed user dependency to prevent infinite loop
-
-  const getPackageDisplayName = (packageType: string) => {
-    switch (packageType) {
-      case 'Cortesía': return 'Cortesía'
-      case 'Muestra': return 'Muestra'
-      case 'Individual': return 'Individual'
-      case '4': return '4 clases'
-      case '8': return '8 clases'
-      case '12': return '12 clases'
-      case 'Ilimitado': return 'Ilimitado'
-      case 'Sin paquete': return 'Sin paquete'
-      default: return packageType
     }
   }
 
-  const getStatusColor = (expirationDate?: string) => {
-    if (!expirationDate) return 'bg-gray-100 text-gray-800'
-    
-    const today = new Date()
-    const expiration = new Date(expirationDate)
-    const daysUntilExpiration = Math.ceil((expiration.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    
-    if (daysUntilExpiration < 0) return 'bg-red-100 text-red-800'
-    if (daysUntilExpiration <= 7) return 'bg-yellow-100 text-yellow-800'
-    return 'bg-green-100 text-green-800'
-  }
-
-  const getStatusText = (expirationDate?: string) => {
-    if (!expirationDate) return 'Sin fecha'
-    
-    const today = new Date()
-    const expiration = new Date(expirationDate)
-    const daysUntilExpiration = Math.ceil((expiration.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    
-    if (daysUntilExpiration < 0) return 'Expirado'
-    if (daysUntilExpiration <= 7) return `Expira en ${daysUntilExpiration} días`
-    return 'Activo'
-  }
-
-
-  const refreshClients = async () => {
+  const loadBundles = async () => {
     try {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch('/api/users/clients', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await fetch(`${API_BASE_URL}/api/package-bundles`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       })
-
+      
       if (response.ok) {
         const data = await response.json()
-        setClients(data.clients || [])
+        setBundles(Array.isArray(data.bundles) ? data.bundles : [])
       }
     } catch (error) {
-      console.error('Error refreshing clients:', error)
+      console.error('Error loading bundles:', error)
     }
   }
 
-  const handleAssignPackage = async () => {
-    if (!selectedClient || !selectedPackage) {
-      alert('Por favor selecciona un cliente y un paquete')
+  useEffect(() => {
+    loadPackages()
+    loadBundles()
+  }, [user])
+
+  const openCreateModal = (category: 'Grupal' | 'Privada') => {
+    setEditingPackage(null)
+    setModalCategory(category)
+    setPackageForm({ ...defaultFormState, category })
+    setIsModalOpen(true)
+  }
+
+  const openEditModal = (pkg: PackageType) => {
+    setEditingPackage(pkg)
+    setModalCategory(pkg.category)
+    setPackageForm({
+      name: pkg.name,
+      type: pkg.type || '',
+      classes_included: pkg.classes_included,
+      price: pkg.price,
+      validity_months: pkg.validity_months || Math.ceil(pkg.validity_days / 30) || 1,
+      category: pkg.category,
+      description: pkg.description || '',
+      is_live: pkg.is_live !== false,
+      live_from: pkg.live_from || '',
+      live_until: pkg.live_until || '',
+      is_active: pkg.is_active !== false,
+      original_price: pkg.original_price || '',
+      sale_price: pkg.sale_price || '',
+    })
+    setIsModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    setEditingPackage(null)
+    setPackageForm(defaultFormState)
+  }
+
+  const openCreateBundleModal = () => {
+    setEditingBundle(null)
+    setBundleForm(defaultBundleFormState)
+    setIsBundleModalOpen(true)
+  }
+
+  const openEditBundleModal = (bundle: PackageBundle) => {
+    setEditingBundle(bundle)
+    setBundleForm({
+      name: bundle.name,
+      description: bundle.description || '',
+      package_id: bundle.package_id || '',
+      group_package_id: bundle.group_package_id || '',
+      private_package_id: bundle.private_package_id || '',
+      months_included: bundle.months_included,
+      price: bundle.price,
+      is_live: bundle.is_live !== false,
+      live_from: bundle.live_from || '',
+      live_until: bundle.live_until || '',
+      is_active: bundle.is_active !== false,
+    })
+    setIsBundleModalOpen(true)
+  }
+
+  const closeBundleModal = () => {
+    setIsBundleModalOpen(false)
+    setEditingBundle(null)
+    setBundleForm(defaultBundleFormState)
+  }
+
+  const savePackage = async () => {
+    if (isSavingPackage) return
+    if (!packageForm.name || !packageForm.classes_included || !packageForm.price || !packageForm.validity_months) {
+      alert('Por favor completa todos los campos requeridos')
       return
     }
 
+    setIsSavingPackage(true)
     try {
       const token = localStorage.getItem('token')
-      if (!token) {
-        alert('No tienes autorización para realizar esta acción')
+      const url = editingPackage 
+        ? `${API_BASE_URL}/api/packages/${editingPackage.id}`
+        : `${API_BASE_URL}/api/packages`
+      
+      const body = {
+        ...packageForm,
+        validity_days: packageForm.validity_months * 30,
+        original_price: packageForm.original_price || null,
+        sale_price: packageForm.sale_price || null,
+      }
+      
+      const response = await fetch(url, {
+        method: editingPackage ? 'PUT' : 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      })
+
+      if (response.ok) {
+        closeModal()
+        loadPackages()
+      } else {
+        const data = await response.json()
+        alert(data.message || 'Error al guardar paquete')
+      }
+    } catch (err) {
+      console.error('savePackage error', err)
+      alert('Error al guardar paquete')
+    } finally {
+      setIsSavingPackage(false)
+    }
+  }
+
+  const deletePackage = async (id: string, name: string) => {
+    if (!confirm(`¿Eliminar el paquete "${name}"?`)) return
+
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_BASE_URL}/api/packages/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        loadPackages()
+      } else {
+        alert('Error al eliminar paquete')
+      }
+    } catch (err) {
+      console.error('deletePackage error', err)
+      alert('Error al eliminar paquete')
+    }
+  }
+
+  const saveBundle = async () => {
+    if (isSavingBundle) return
+    // Need at least one package selected (group or private or both)
+    const hasPackage = bundleForm.group_package_id || bundleForm.private_package_id || bundleForm.package_id
+    if (!bundleForm.name || !hasPackage || !bundleForm.months_included || bundleForm.price === undefined) {
+      alert('Por favor completa todos los campos requeridos (nombre, al menos un paquete, meses y precio)')
         return
       }
 
-      console.log('Sending request to assign package:', {
-        clientId: selectedClient,
-        packageId: selectedPackage
-      })
-
-      const response = await fetch('/api/packages/assign', {
-        method: 'POST',
+    setIsSavingBundle(true)
+    try {
+      const token = localStorage.getItem('token')
+      const url = editingBundle 
+        ? `${API_BASE_URL}/api/package-bundles/${editingBundle.id}`
+        : `${API_BASE_URL}/api/package-bundles`
+      
+      const response = await fetch(url, {
+        method: editingBundle ? 'PUT' : 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          clientId: selectedClient,
-          packageId: selectedPackage,
-          autoRenew: autoRenew,
-          overrideNegativeBalance: true // Default to override
+          ...bundleForm,
+          // Clear legacy package_id if using new fields
+          package_id: (!bundleForm.group_package_id && !bundleForm.private_package_id) ? bundleForm.package_id : null
         })
       })
 
-      console.log('Response status:', response.status)
-      console.log('Response headers:', response.headers)
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      console.log('Response data:', data)
-
-      if (data.success) {
-        alert(data.message)
-        
-        // Refresh clients data from server
-        await refreshClients()
-        
-        // Notify other pages that clients data has been updated
-        localStorage.setItem('clientsUpdated', 'true')
-        
-        // Si el cliente asignado es el usuario actual, actualizar su información en localStorage
-        const currentUser = localStorage.getItem('user')
-        if (currentUser) {
-          try {
-            const parsedUser = JSON.parse(currentUser)
-            if (parsedUser.id === selectedClient && data.client) {
-              // Actualizar información del usuario en localStorage
-              const updatedUser = {
-                ...parsedUser,
-                type_of_class: data.client.type_of_class,
-                expiration_date: data.client.expiration_date
-              }
-              localStorage.setItem('user', JSON.stringify(updatedUser))
-              
-              // Notificar que el usuario actual fue actualizado
-              localStorage.setItem('userPackageUpdated', 'true')
-              
-              // Disparar evento personalizado para notificar a otras pestañas/ventanas
-              window.dispatchEvent(new CustomEvent('userPackageUpdated', {
-                detail: { client: data.client }
-              }))
-            }
-          } catch (error) {
-            console.error('Error updating user in localStorage:', error)
-          }
-        }
-        
-        // Notificar que un paquete fue asignado a un cliente específico
-        localStorage.setItem(`clientPackageUpdated_${selectedClient}`, 'true')
-        window.dispatchEvent(new CustomEvent('clientPackageUpdated', {
-          detail: { clientId: selectedClient, client: data.client }
-        }))
-        
-        // Reset form
-        setSelectedClient('')
-        setSelectedPackage('')
+      if (response.ok) {
+        closeBundleModal()
+        loadBundles()
       } else {
-        alert(data.message || 'Error al asignar paquete')
+        const data = await response.json()
+        alert(data.message || 'Error al guardar bundle')
       }
-      } catch (error) {
-          console.error('Error assigning package:', error)
+    } catch (err) {
+      console.error('saveBundle error', err)
+      alert('Error al guardar bundle')
+    } finally {
+      setIsSavingBundle(false)
+    }
+  }
 
-          if (error instanceof Error) {
-              alert('Error al conectar con el servidor: ' + error.message)
-          } else {
-              alert('Error al conectar con el servidor')
-          }
+  const deleteBundle = async (id: string, name: string) => {
+    if (!confirm(`¿Eliminar el bundle "${name}"?`)) return
+    
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_BASE_URL}/api/package-bundles/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        loadBundles()
+      } else {
+        alert('Error al eliminar bundle')
       }
+    } catch (err) {
+      console.error('deleteBundle error', err)
+      alert('Error al eliminar bundle')
+    }
+  }
+
+  // Calculate bundle preview pricing
+  const bundlePreview = useMemo(() => {
+    // Get selected packages
+    const groupPkg = bundleForm.group_package_id ? adminPackages.find(p => p.id === bundleForm.group_package_id) : null
+    const privatePkg = bundleForm.private_package_id ? adminPackages.find(p => p.id === bundleForm.private_package_id) : null
+    const legacyPkg = bundleForm.package_id && !bundleForm.group_package_id && !bundleForm.private_package_id 
+      ? adminPackages.find(p => p.id === bundleForm.package_id) 
+      : null
+    
+    // If no packages selected, return null
+    if (!groupPkg && !privatePkg && !legacyPkg) return null
+    
+    // Calculate combined monthly price and regular total
+    const groupMonthly = groupPkg?.price || 0
+    const privateMonthly = privatePkg?.price || 0
+    const legacyMonthly = legacyPkg?.price || 0
+    const combinedMonthly = groupMonthly + privateMonthly + legacyMonthly
+    const regularTotal = combinedMonthly * bundleForm.months_included
+    const savings = regularTotal - bundleForm.price
+    const percentOff = regularTotal > 0 ? Math.round((savings / regularTotal) * 100) : 0
+    
+    const packageNames = [
+      groupPkg?.name,
+      privatePkg?.name,
+      legacyPkg?.name
+    ].filter(Boolean).join(' + ')
+    
+    return { 
+      regularTotal, 
+      savings, 
+      percentOff, 
+      packageName: packageNames, 
+      combinedMonthly,
+      groupPkg,
+      privatePkg,
+      isCombo: !!(groupPkg && privatePkg)
+    }
+  }, [bundleForm.group_package_id, bundleForm.private_package_id, bundleForm.package_id, bundleForm.months_included, bundleForm.price, adminPackages])
+
+  // Compute package data for client cards
+  const groupPackageData = useMemo(() => {
+    const allGroupPackages = packageHistory && packageHistory.length > 0
+      ? packageHistory
+          .filter((pkg: any) => pkg.package_category === 'Grupal')
+          .sort((a: any, b: any) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime())
+      : []
+    
+    const groupPkg = activeGroupPackage || (allGroupPackages.length > 0 ? allGroupPackages[0] : null)
+    const isExpired = !activeGroupPackage && groupPkg && (groupPkg.status === 'expired' || groupPkg.renewal_months === 0)
+    const hasNoHistory = allGroupPackages.length === 0
+    const outOfClasses = classCounts.group === 0
+    const hasRenewalMonths = groupPkg && groupPkg.renewal_months && groupPkg.renewal_months > 0
+    const isActiveButNoMonths = activeGroupPackage && (!groupPkg?.renewal_months || groupPkg.renewal_months === 0)
+    const renewalMonths = groupPkg?.renewal_months || 0
+    
+    // Calculate next renewal date
+    let nextRenewalDate = null
+    if (groupPkg && groupPkg.end_date && hasRenewalMonths) {
+      nextRenewalDate = new Date(groupPkg.end_date)
+    }
+    
+    return { allGroupPackages, groupPkg, isExpired, hasNoHistory, outOfClasses, hasRenewalMonths, isActiveButNoMonths, renewalMonths, nextRenewalDate }
+  }, [packageHistory, activeGroupPackage, classCounts.group])
+
+  const privatePackageData = useMemo(() => {
+    const allPrivatePackages = packageHistory && packageHistory.length > 0
+      ? packageHistory
+          .filter((pkg: any) => pkg.package_category === 'Privada')
+          .sort((a: any, b: any) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime())
+      : []
+    
+    const privatePkg = activePrivatePackage || (allPrivatePackages.length > 0 ? allPrivatePackages[0] : null)
+    const isExpired = !activePrivatePackage && privatePkg && (privatePkg.status === 'expired' || privatePkg.renewal_months === 0)
+    const hasNoHistory = allPrivatePackages.length === 0
+    const outOfClasses = classCounts.private === 0
+    const hasRenewalMonths = privatePkg && privatePkg.renewal_months && privatePkg.renewal_months > 0
+    const isActiveButNoMonths = activePrivatePackage && (!privatePkg?.renewal_months || privatePkg.renewal_months === 0)
+    const renewalMonths = privatePkg?.renewal_months || 0
+    
+    // Calculate next renewal date
+    let nextRenewalDate = null
+    if (privatePkg && privatePkg.end_date && hasRenewalMonths) {
+      nextRenewalDate = new Date(privatePkg.end_date)
+    }
+    
+    return { allPrivatePackages, privatePkg, isExpired, hasNoHistory, outOfClasses, hasRenewalMonths, isActiveButNoMonths, renewalMonths, nextRenewalDate }
+  }, [packageHistory, activePrivatePackage, classCounts.private])
+
+  const groupPackages = adminPackages.filter(p => p.category === 'Grupal').sort((a, b) => a.price - b.price)
+  const privatePackages = adminPackages.filter(p => p.category === 'Privada').sort((a, b) => a.price - b.price)
+  const groupBundles = bundles.filter(b => b.category === 'Grupal')
+  const privateBundles = bundles.filter(b => b.category === 'Privada')
+  const comboBundles = bundles.filter(b => b.category === 'Combo' || b.is_combo)
+
+  // Helper to render notification for a package card
+  const renderPackageNotifications = (data: any, classCount: number, type: 'group' | 'private') => {
+    const notifications: JSX.Element[] = []
+    
+    // No history - prompt to get first package
+    if (data.hasNoHistory) {
+      notifications.push(
+        <div key="no-history" className="p-3 bg-blue-500/30 rounded-lg flex items-start gap-2">
+          <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>Contacta a un instructor o dueño para agregar tu primer paquete a tu cuenta.</span>
+        </div>
+      )
+      return notifications
+    }
+    
+    // Expired package
+    if (data.isExpired) {
+      notifications.push(
+        <div key="expired" className="p-3 bg-red-500/40 rounded-lg flex items-start gap-2 font-semibold">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>Tu paquete se ha agotado. Contacta a un instructor o dueño para renovar.</span>
+        </div>
+      )
+      return notifications
+    }
+    
+    // Out of classes but has renewal months - suggest waiting
+    if (data.outOfClasses && data.hasRenewalMonths && !data.isExpired) {
+      notifications.push(
+        <div key="out-of-classes" className="p-3 bg-amber-500/30 rounded-lg flex items-start gap-2">
+          <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Has usado todas tus clases este mes. Más clases llegarán 
+            {data.nextRenewalDate && ` el ${data.nextRenewalDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}`}.
+            ¿Necesitas más? Contacta al equipo para mejorar tu paquete.
+          </span>
+        </div>
+      )
+    }
+    
+    // Out of classes AND no more renewal months (but still "active" technically)
+    if (data.outOfClasses && data.isActiveButNoMonths) {
+      notifications.push(
+        <div key="out-no-renewal" className="p-3 bg-red-500/40 rounded-lg flex items-start gap-2 font-semibold">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>Te quedaste sin clases y sin meses de renovación. Contacta a un instructor o dueño para renovar.</span>
+        </div>
+      )
+    }
+    
+    // Only 1 month left - warning
+    if (!data.isExpired && !data.outOfClasses && data.renewalMonths === 1) {
+      notifications.push(
+        <div key="one-month" className="p-3 bg-amber-500/30 rounded-lg flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>¡Solo te queda 1 mes de renovación! Contacta a un instructor o dueño para extender tu membresía.</span>
+        </div>
+      )
+    }
+    
+    return notifications
   }
 
   if (isLoading) {
@@ -382,265 +581,1374 @@ export default function PackagesPage() {
     )
   }
 
+  // Package Card Component for Admin
+  const PackageCard = ({ pkg }: { pkg: PackageType }) => {
+    const isOnSale = pkg.original_price && pkg.sale_price && pkg.sale_price < pkg.original_price
+    const percentOff = isOnSale ? Math.round(((pkg.original_price! - pkg.sale_price!) / pkg.original_price!) * 100) : 0
+
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col space-y-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {user?.role === 'cliente' ? 'Mi Paquete' : 'Gestión de Paquetes'}
-            </h1>
-            <p className="text-gray-600 mt-1">
-              {user?.role === 'cliente' 
-                ? 'Ve tu paquete actual y clases restantes'
-                : 'Administra los tipos de paquetes disponibles en el estudio'
-              }
-            </p>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow"
+      >
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1">
+            <h4 className="font-semibold text-gray-900 text-lg">{pkg.name}</h4>
+            <p className="text-sm text-gray-500">{pkg.type}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isOnSale && (
+              <span className="px-2 py-1 text-xs font-bold bg-red-100 text-red-600 rounded-full flex items-center gap-1">
+                <Tag className="h-3 w-3" />
+                -{percentOff}%
+              </span>
+            )}
+            {pkg.is_active ? (
+              <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                Activo
+              </span>
+            ) : (
+              <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                Inactivo
+              </span>
+            )}
+          </div>
           </div>
 
-          {user?.role === 'admin' && (
-            <div className="card bg-blue-50 border border-blue-200">
-              <p className="text-sm text-blue-900">
-                La asignación de paquetes a clientes ahora se realiza desde la pantalla de{' '}
-                <span className="font-semibold">Gestión de Clientes</span>. Ve a{' '}
-                <span className="font-mono text-xs">Dashboard &gt; Clientes</span> para asignar,
-                renovar o ajustar paquetes individuales.
-              </p>
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <Package className="h-5 w-5 mx-auto mb-1 text-gray-400" />
+            <div className="text-lg font-bold text-gray-900">{pkg.classes_included}</div>
+            <div className="text-xs text-gray-500">clases</div>
             </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <DollarSign className="h-5 w-5 mx-auto mb-1 text-gray-400" />
+            {isOnSale ? (
+              <>
+                <div className="text-sm text-gray-400 line-through">${pkg.original_price!.toLocaleString()}</div>
+                <div className="text-lg font-bold text-red-600">${pkg.sale_price!.toLocaleString()}</div>
+              </>
+            ) : (
+              <div className="text-lg font-bold text-gray-900">${pkg.price.toLocaleString()}</div>
+            )}
+            <div className="text-xs text-gray-500">MXN</div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <Calendar className="h-5 w-5 mx-auto mb-1 text-gray-400" />
+            <div className="text-lg font-bold text-gray-900">{pkg.validity_months || Math.ceil(pkg.validity_days / 30)}</div>
+            <div className="text-xs text-gray-500">{(pkg.validity_months || Math.ceil(pkg.validity_days / 30)) === 1 ? 'mes' : 'meses'}</div>
+          </div>
+        </div>
+
+        {pkg.description && (
+          <p className="text-sm text-gray-600 mb-4 line-clamp-2">{pkg.description}</p>
+        )}
+
+        {(pkg.live_from || pkg.live_until) && (
+          <div className="text-xs text-gray-500 mb-4 flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {pkg.live_from && <span>Desde: {pkg.live_from}</span>}
+            {pkg.live_from && pkg.live_until && <span>·</span>}
+            {pkg.live_until && <span>Hasta: {pkg.live_until}</span>}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-3 border-t border-gray-100">
+          <button
+            onClick={() => openEditModal(pkg)}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+          >
+            <Edit className="h-4 w-4" />
+            Editar
+          </button>
+          <button
+            onClick={() => deletePackage(pkg.id, pkg.name)}
+            className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </motion.div>
+    )
+  }
+
+  // Client Package Card for purchasing
+  const ClientPackageCard = ({ pkg, index }: { pkg: PackageType, index: number }) => {
+    const isOnSale = pkg.original_price && pkg.sale_price && pkg.sale_price < pkg.original_price
+    const percentOff = isOnSale ? Math.round(((pkg.original_price! - pkg.sale_price!) / pkg.original_price!) * 100) : 0
+    const displayPrice = isOnSale ? pkg.sale_price! : pkg.price
+    
+    return (
+            <motion.div
+              key={pkg.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+        className={`bg-white border rounded-xl p-5 hover:shadow-lg transition-all relative ${isOnSale ? 'border-red-200 ring-2 ring-red-100' : 'border-gray-200'}`}
+      >
+        {isOnSale && (
+          <div className="absolute -top-3 -right-3 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 shadow-lg">
+            <Percent className="h-3 w-3" />
+            -{percentOff}%
+          </div>
+        )}
+        
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{pkg.name}</h3>
+            <p className="text-sm text-gray-500">{pkg.type}</p>
+                </div>
+              </div>
+
+        <div className="space-y-3 mb-4">
+                <div className="flex items-center text-sm text-gray-600">
+            <Package className="h-4 w-4 mr-2 text-gray-400" />
+                  {pkg.classes_included} clases incluidas
+                </div>
+          <div className="flex items-center text-sm">
+            <DollarSign className="h-4 w-4 mr-2 text-gray-400" />
+            {isOnSale ? (
+              <span className="flex items-center gap-2">
+                <span className="text-gray-400 line-through">${pkg.original_price!.toLocaleString()}</span>
+                <span className="text-red-600 font-bold">${displayPrice.toLocaleString()} MXN</span>
+              </span>
+            ) : (
+              <span className="text-gray-600">${displayPrice.toLocaleString()} MXN</span>
+            )}
+                </div>
+                <div className="flex items-center text-sm text-gray-600">
+            <Calendar className="h-4 w-4 mr-2 text-gray-400" />
+            Válido por {pkg.validity_months || Math.ceil(pkg.validity_days / 30)} {(pkg.validity_months || Math.ceil(pkg.validity_days / 30)) === 1 ? 'mes' : 'meses'}
+                </div>
+              </div>
+
+        <div className="pt-4 border-t border-gray-100">
+                  <WhatsAppButton
+                    message={WhatsAppTemplates.packagePurchase(
+                      user?.nombre || 'Cliente',
+              pkg.type,
+                      pkg.name,
+              displayPrice
+                    )}
+                    variant="primary"
+                    className="w-full"
+                  >
+                    Comprar Paquete
+                  </WhatsAppButton>
+              </div>
+
+        <p className="mt-3 text-[11px] text-gray-400 italic text-center">
+          Solo con cita previa · Disponibilidad limitada
+              </p>
+            </motion.div>
+    )
+  }
+
+  // Client Bundle Card
+  const ClientBundleCard = ({ bundle, index }: { bundle: PackageBundle, index: number }) => {
+    const isCombo = bundle.is_combo || bundle.category === 'Combo'
+    
+    return (
+      <motion.div
+        key={bundle.id}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.05 }}
+        className={`${isCombo 
+          ? 'bg-gradient-to-br from-purple-50 via-blue-50 to-purple-50 border-2 border-purple-200' 
+          : 'bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200'
+        } rounded-xl p-5 hover:shadow-lg transition-all relative`}
+      >
+        {/* Discount badge */}
+        <div className={`absolute -top-3 -right-3 ${isCombo 
+          ? 'bg-gradient-to-r from-purple-500 to-blue-500' 
+          : 'bg-gradient-to-r from-amber-500 to-orange-500'
+        } text-white px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 shadow-lg`}>
+          <Gift className="h-3 w-3" />
+          -{bundle.percent_off}%
+          </div>
+
+        {/* Combo badge */}
+        {isCombo && (
+          <div className="absolute -top-3 left-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg">
+            <Sparkles className="h-3 w-3" />
+            COMBO
+        </div>
+        )}
+        
+        <div className="mb-4 mt-1">
+          <h3 className="text-lg font-bold text-gray-900">{bundle.name}</h3>
+          {isCombo ? (
+            <div className="space-y-1 mt-2">
+              {bundle.group_package_name && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Users className="h-3 w-3 text-blue-500" />
+                  <span className="text-blue-700">{bundle.group_package_name}</span>
+                  {bundle.group_classes_included && (
+                    <span className="text-gray-500">({bundle.group_classes_included} clases)</span>
+                  )}
+                </div>
+              )}
+              {bundle.private_package_name && (
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-3 w-3 text-purple-500" />
+                  <span className="text-purple-700">{bundle.private_package_name}</span>
+                  {bundle.private_classes_included && (
+                    <span className="text-gray-500">({bundle.private_classes_included} clases)</span>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-amber-700">Basado en: {bundle.package_name}</p>
           )}
         </div>
 
-        {/* Packages Grid */}
-        {/* Clases Grupales */}
-        <div className="space-y-6">
-          <h3 className="text-xl font-semibold text-gray-900">Clases Grupales</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {packages.filter(pkg => pkg.category === 'Grupal').map((pkg, index) => (
-            <motion.div
-              key={pkg.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="card-hover"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{pkg.name}</h3>
-                  <p className="text-sm text-gray-600">{getPackageDisplayName(pkg.type)}</p>
-                </div>
-                <span className={`status-badge ${pkg.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                  {pkg.is_active ? 'Activo' : 'Inactivo'}
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Package className="h-4 w-4 mr-2" />
-                  {pkg.classes_included} clases incluidas
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  ${pkg.price.toLocaleString()} MXN
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Válido por {pkg.validity_days} días
-                </div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                {user?.role === 'admin' ? (
-                  <div className="flex space-x-2">
-                    <button className="text-blue-600 hover:text-blue-900">
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button className="text-red-600 hover:text-red-900">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <WhatsAppButton
-                    message={WhatsAppTemplates.packagePurchase(
-                      user?.nombre || 'Cliente',
-                      getPackageDisplayName(pkg.type),
-                      pkg.name,
-                      pkg.price
-                    )}
-                    variant="primary"
-                    className="w-full"
-                  >
-                    Comprar Paquete
-                  </WhatsAppButton>
-                )}
-              </div>
-
-              <p className="mt-3 text-[11px] text-gray-500 italic">
-                Válido por {pkg.validity_days} días · Solo con cita previa · Disponibilidad limitada ·
-                Los precios pueden cambiar sin previo aviso
-              </p>
-            </motion.div>
-          ))}
+        {bundle.description && (
+          <p className="text-sm text-gray-600 mb-4">{bundle.description}</p>
+        )}
+        
+        <div className="space-y-2 mb-4 p-3 bg-white/50 rounded-lg">
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-gray-600">Duración:</span>
+            <span className="font-semibold">{bundle.months_included} meses</span>
           </div>
-        </div>
-
-        {/* Clases Privadas */}
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">Clases Privadas</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {packages.filter(pkg => pkg.category === 'Privada').map((pkg, index) => (
-            <motion.div
-              key={pkg.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="card-hover"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{pkg.name}</h3>
-                  <p className="text-sm text-gray-600">{getPackageDisplayName(pkg.type)}</p>
-                </div>
-                <span className={`status-badge ${pkg.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                  {pkg.is_active ? 'Activo' : 'Inactivo'}
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Package className="h-4 w-4 mr-2" />
-                  {pkg.classes_included} clases incluidas
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  ${pkg.price.toLocaleString()} MXN
-                </div>
-
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Válido por {pkg.validity_days} días
-                </div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                {user?.role === 'admin' ? (
-                  <div className="flex space-x-2">
-                    <button className="text-blue-600 hover:text-blue-900">
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button className="text-red-600 hover:text-red-900">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <WhatsAppButton
-                    message={WhatsAppTemplates.packagePurchase(
-                      user?.nombre || 'Cliente',
-                      getPackageDisplayName(pkg.type),
-                      pkg.name,
-                      pkg.price
-                    )}
-                    variant="primary"
-                    className="w-full"
-                  >
-                    Comprar Paquete
-                  </WhatsAppButton>
-                )}
-              </div>
-
-              <p className="mt-3 text-[11px] text-gray-500 italic">
-                Válido por {pkg.validity_days} días · Solo con cita previa · Disponibilidad limitada ·
-                Los precios pueden cambiar sin previo aviso
-              </p>
-            </motion.div>
-          ))}
-          </div>
-        </div>
-
-        {/* Client Packages - Only for Admin */}
-        {user?.role === 'admin' && (
-          <div className="card">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Clientes y sus Paquetes</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cliente
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Paquete Actual
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Estado
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {clients.map((client, index) => (
-                    <motion.tr
-                      key={client.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="hover:bg-gray-50"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
-                            <Users className="h-5 w-5 text-gray-600" />
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {client.nombre}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {client.correo}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="status-badge bg-blue-100 text-blue-800">
-                          {getPackageDisplayName(client.type_of_class)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`status-badge ${getStatusColor(client.expiration_date)}`}>
-                          {getStatusText(client.expiration_date)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                        <button className="text-blue-600 hover:text-blue-900">
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <WhatsAppButton
-                          message={WhatsAppTemplates.packageRenewal(
-                            client.nombre,
-                            getPackageDisplayName(client.type_of_class),
-                            0
-                          )}
-                          variant="secondary"
-                          size="sm"
-                        >
-                          <Package className="h-4 w-4" />
-                        </WhatsAppButton>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
+          {isCombo && bundle.combined_monthly_price && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">Precio mensual (combinado):</span>
+              <span className="text-gray-500">${bundle.combined_monthly_price.toLocaleString()}/mes</span>
             </div>
+          )}
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-gray-600">Precio normal:</span>
+            <span className="text-gray-400 line-through">${bundle.regular_total.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-600">Tu precio:</span>
+            <span className={`text-xl font-bold ${isCombo ? 'text-purple-600' : 'text-amber-600'}`}>
+              ${bundle.price.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-gray-600">Ahorras:</span>
+            <span className="text-green-600 font-semibold">${bundle.savings.toLocaleString()} MXN</span>
+          </div>
+        </div>
+        
+        <div className={`pt-4 border-t ${isCombo ? 'border-purple-200' : 'border-amber-200'}`}>
+          <WhatsAppButton
+            message={WhatsAppTemplates.packagePurchase(
+              user?.nombre || 'Cliente',
+              `Bundle ${bundle.months_included} meses${isCombo ? ' (Combo)' : ''}`,
+              bundle.name,
+              bundle.price
+            )}
+            variant="primary"
+            className={`w-full ${isCombo 
+              ? 'bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600' 
+              : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+            }`}
+          >
+            Comprar Bundle
+          </WhatsAppButton>
+        </div>
+      </motion.div>
+    )
+  }
+
+  // Admin Bundle Card
+  const AdminBundleCard = ({ bundle }: { bundle: PackageBundle }) => {
+    const isCombo = bundle.is_combo || bundle.category === 'Combo'
+    
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`${isCombo 
+          ? 'bg-gradient-to-br from-purple-50 via-blue-50 to-purple-50 border border-purple-200' 
+          : 'bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200'
+        } rounded-xl p-5 hover:shadow-md transition-shadow`}
+      >
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <h4 className="font-semibold text-gray-900 text-lg">{bundle.name}</h4>
+              {isCombo && (
+                <span className="px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-full flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  COMBO
+                </span>
+              )}
+            </div>
+            {isCombo ? (
+              <div className="space-y-1">
+                {bundle.group_package_name && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Users className="h-3 w-3 text-blue-500" />
+                    <span className="text-blue-700">{bundle.group_package_name}</span>
+                    <span className="text-gray-400">${bundle.group_package_price?.toLocaleString()}/mes</span>
+                  </div>
+                )}
+                {bundle.private_package_name && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-3 w-3 text-purple-500" />
+                    <span className="text-purple-700">{bundle.private_package_name}</span>
+                    <span className="text-gray-400">${bundle.private_package_price?.toLocaleString()}/mes</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-amber-700">Basado en: {bundle.package_name}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`px-2 py-1 text-xs font-bold ${isCombo ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'} rounded-full flex items-center gap-1`}>
+              <Percent className="h-3 w-3" />
+              -{bundle.percent_off}%
+            </span>
+            {bundle.is_active ? (
+              <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                Activo
+              </span>
+            ) : (
+              <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                Inactivo
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="text-center p-3 bg-white/60 rounded-lg">
+            <Calendar className={`h-5 w-5 mx-auto mb-1 ${isCombo ? 'text-purple-500' : 'text-amber-500'}`} />
+            <div className="text-lg font-bold text-gray-900">{bundle.months_included}</div>
+            <div className="text-xs text-gray-500">meses</div>
+          </div>
+          <div className="text-center p-3 bg-white/60 rounded-lg">
+            <DollarSign className={`h-5 w-5 mx-auto mb-1 ${isCombo ? 'text-purple-500' : 'text-amber-500'}`} />
+            <div className="text-sm text-gray-400 line-through">${bundle.regular_total.toLocaleString()}</div>
+            <div className={`text-lg font-bold ${isCombo ? 'text-purple-600' : 'text-amber-600'}`}>${bundle.price.toLocaleString()}</div>
+          </div>
+          <div className="text-center p-3 bg-white/60 rounded-lg">
+            <Gift className={`h-5 w-5 mx-auto mb-1 ${isCombo ? 'text-purple-500' : 'text-amber-500'}`} />
+            <div className="text-lg font-bold text-green-600">${bundle.savings.toLocaleString()}</div>
+            <div className="text-xs text-gray-500">ahorro</div>
+          </div>
+        </div>
+
+        {bundle.description && (
+          <p className="text-sm text-gray-600 mb-4 line-clamp-2">{bundle.description}</p>
+        )}
+
+        <div className={`flex gap-2 pt-3 border-t ${isCombo ? 'border-purple-200' : 'border-amber-200'}`}>
+          <button
+            onClick={() => openEditBundleModal(bundle)}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium ${isCombo ? 'text-purple-700 bg-purple-100 hover:bg-purple-200' : 'text-amber-700 bg-amber-100 hover:bg-amber-200'} rounded-lg transition-colors`}
+          >
+            <Edit className="h-4 w-4" />
+            Editar
+          </button>
+          <button
+            onClick={() => deleteBundle(bundle.id, bundle.name)}
+            className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </motion.div>
+    )
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-8">
+        {/* Header */}
+          <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {user?.role === 'cliente' ? 'Mi Paquete' : 'Gestión de Paquetes'}
+          </h1>
+          <p className="text-gray-600 mt-1">
+            {user?.role === 'cliente' 
+              ? 'Ve tu paquete actual y clases restantes'
+              : 'Administra los tipos de paquetes disponibles en el estudio'
+            }
+          </p>
+          </div>
+
+        {/* Client View: Class Count Cards */}
+        {user?.role === 'cliente' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Group Classes Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className={`${groupPackageData.isExpired ? 'bg-gradient-to-br from-gray-400 to-gray-500' : 'bg-gradient-to-br from-blue-500 to-blue-600'} rounded-2xl p-6 text-white shadow-lg`}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold">Clases Grupales</h3>
+                <Users className="h-8 w-8 opacity-80" />
+                </div>
+              <div className="mb-4">
+                <div className="flex items-baseline gap-2 mb-2">
+                  <div className="text-4xl font-bold">{groupPackageData.isExpired ? 0 : classCounts.group}</div>
+                  {groupPackageData.groupPkg?.classes_included && (
+                    <div className="text-xl opacity-70">/{groupPackageData.groupPkg.classes_included}</div>
+                  )}
+              </div>
+                <div className="text-sm opacity-90">clases restantes este mes</div>
+              </div>
+              {groupPackageData.groupPkg && (
+                <div className="mb-4 pb-4 border-b border-white/20">
+                  <div className="text-sm font-semibold">{groupPackageData.groupPkg.package_name || 'Paquete Grupal'}</div>
+                </div>
+              )}
+              
+              {/* Months remaining and renewal info */}
+              {!groupPackageData.hasNoHistory && groupPackageData.groupPkg && (
+                <div className="mb-4 text-sm space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    {groupPackageData.isExpired ? (
+                      <span>0 meses restantes</span>
+                    ) : groupPackageData.renewalMonths > 0 ? (
+                      <span>{groupPackageData.renewalMonths} {groupPackageData.renewalMonths === 1 ? 'mes' : 'meses'} de renovación restantes</span>
+                    ) : (
+                      <span>Sin meses de renovación</span>
+                    )}
+                </div>
+                  {groupPackageData.nextRenewalDate && groupPackageData.hasRenewalMonths && !groupPackageData.isExpired && (
+                    <div className="text-xs opacity-75">
+                      Próxima renovación: {groupPackageData.nextRenewalDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Notifications */}
+              <div className="text-xs space-y-2">
+                {renderPackageNotifications(groupPackageData, classCounts.group, 'group')}
+                </div>
+            </motion.div>
+
+            {/* Private Classes Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className={`${privatePackageData.isExpired ? 'bg-gradient-to-br from-gray-400 to-gray-500' : 'bg-gradient-to-br from-purple-500 to-purple-600'} rounded-2xl p-6 text-white shadow-lg`}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold">Clases Privadas</h3>
+                <User className="h-8 w-8 opacity-80" />
+                </div>
+              <div className="mb-4">
+                <div className="flex items-baseline gap-2 mb-2">
+                  <div className="text-4xl font-bold">{privatePackageData.isExpired ? 0 : classCounts.private}</div>
+                  {privatePackageData.privatePkg?.classes_included && (
+                    <div className="text-xl opacity-70">/{privatePackageData.privatePkg.classes_included}</div>
+                  )}
+              </div>
+                <div className="text-sm opacity-90">clases restantes este mes</div>
+              </div>
+              {privatePackageData.privatePkg && (
+                <div className="mb-4 pb-4 border-b border-white/20">
+                  <div className="text-sm font-semibold">{privatePackageData.privatePkg.package_name || 'Paquete Privado'}</div>
+                </div>
+              )}
+              
+              {/* Months remaining and renewal info */}
+              {!privatePackageData.hasNoHistory && privatePackageData.privatePkg && (
+                <div className="mb-4 text-sm space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    {privatePackageData.isExpired ? (
+                      <span>0 meses restantes</span>
+                    ) : privatePackageData.renewalMonths > 0 ? (
+                      <span>{privatePackageData.renewalMonths} {privatePackageData.renewalMonths === 1 ? 'mes' : 'meses'} de renovación restantes</span>
+                    ) : (
+                      <span>Sin meses de renovación</span>
+                    )}
+                  </div>
+                  {privatePackageData.nextRenewalDate && privatePackageData.hasRenewalMonths && !privatePackageData.isExpired && (
+                    <div className="text-xs opacity-75">
+                      Próxima renovación: {privatePackageData.nextRenewalDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Notifications */}
+              <div className="text-xs space-y-2">
+                {renderPackageNotifications(privatePackageData, classCounts.private, 'private')}
+              </div>
+            </motion.div>
           </div>
         )}
+
+        {/* Admin View: Package Management */}
+                {user?.role === 'admin' ? (
+          <>
+            {/* Group Packages Section */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Users className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Paquetes Grupales</h2>
+                    <p className="text-sm text-gray-500">{groupPackages.length} paquetes disponibles</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => openCreateModal('Grupal')}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <Plus className="h-5 w-5" />
+                  Agregar Paquete
+                    </button>
+              </div>
+              
+              {groupPackages.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {groupPackages.map(pkg => (
+                    <PackageCard key={pkg.id} pkg={pkg} />
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
+                  <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 mb-4">No hay paquetes grupales creados</p>
+                  <button
+                    onClick={() => openCreateModal('Grupal')}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Crear primer paquete
+                    </button>
+                  </div>
+              )}
+            </section>
+
+            {/* Private Packages Section */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <User className="h-6 w-6 text-purple-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Paquetes Privados</h2>
+                    <p className="text-sm text-gray-500">{privatePackages.length} paquetes disponibles</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => openCreateModal('Privada')}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                >
+                  <Plus className="h-5 w-5" />
+                  Agregar Paquete
+                </button>
+              </div>
+              
+              {privatePackages.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {privatePackages.map(pkg => (
+                    <PackageCard key={pkg.id} pkg={pkg} />
+                  ))}
+                  </div>
+                ) : (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
+                  <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 mb-4">No hay paquetes privados creados</p>
+                  <button
+                    onClick={() => openCreateModal('Privada')}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Crear primer paquete
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* Bundles Section - Admin */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gradient-to-br from-amber-100 to-orange-100 rounded-lg">
+                    <Gift className="h-6 w-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Bundles de Renovación</h2>
+                    <p className="text-sm text-gray-500">{bundles.length} bundles disponibles · Paquetes multi-mes con descuento</p>
+                  </div>
+                </div>
+                <button
+                  onClick={openCreateBundleModal}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 transition-colors font-medium"
+                >
+                  <Plus className="h-5 w-5" />
+                  Agregar Bundle
+                </button>
+              </div>
+              
+              {bundles.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {bundles.map(bundle => (
+                    <AdminBundleCard key={bundle.id} bundle={bundle} />
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-dashed border-amber-200 rounded-xl p-8 text-center">
+                  <Gift className="h-12 w-12 text-amber-300 mx-auto mb-3" />
+                  <p className="text-gray-500 mb-4">No hay bundles de renovación creados</p>
+                  <button
+                    onClick={openCreateBundleModal}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 transition-colors font-medium"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Crear primer bundle
+                  </button>
+                </div>
+              )}
+            </section>
+          </>
+        ) : null}
+
+        {/* Available Packages for Purchase - shown to clients */}
+        {user?.role === 'cliente' && (
+          <>
+            {/* Group Packages Section */}
+            <section>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Users className="h-6 w-6 text-blue-600" />
+              </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Paquetes Grupales</h2>
+                  <p className="text-sm text-gray-500">
+                    {availablePackages.filter(p => p.category === 'Grupal').length} paquetes disponibles
+                  </p>
+                </div>
+              </div>
+              {availablePackages.filter(p => p.category === 'Grupal').length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {availablePackages
+                    .filter(p => p.category === 'Grupal')
+                    .sort((a, b) => a.price - b.price)
+                    .map((pkg, index) => (
+                      <ClientPackageCard key={pkg.id} pkg={pkg} index={index} />
+                    ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
+                  <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">No hay paquetes grupales disponibles en este momento</p>
+                </div>
+              )}
+            </section>
+
+            {/* Private Packages Section */}
+            <section>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <User className="h-6 w-6 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Paquetes Privados</h2>
+                  <p className="text-sm text-gray-500">
+                    {availablePackages.filter(p => p.category === 'Privada').length} paquetes disponibles
+                  </p>
+                </div>
+              </div>
+              {availablePackages.filter(p => p.category === 'Privada').length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {availablePackages
+                    .filter(p => p.category === 'Privada')
+                    .sort((a, b) => a.price - b.price)
+                    .map((pkg, index) => (
+                      <ClientPackageCard key={pkg.id} pkg={pkg} index={index} />
+          ))}
+          </div>
+              ) : (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
+                  <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">No hay paquetes privados disponibles en este momento</p>
+        </div>
+              )}
+            </section>
+
+            {/* Bundles Section - Client (only show if there are bundles) */}
+            {bundles.length > 0 && (
+              <section>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-gradient-to-br from-amber-100 to-orange-100 rounded-lg">
+                    <Gift className="h-6 w-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Bundles de Renovación</h2>
+                    <p className="text-sm text-gray-500">
+                      Ahorra con paquetes multi-mes
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Combo Bundles */}
+                {comboBundles.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-purple-500" />
+                      Bundles Combo (Grupal + Privado)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {comboBundles.map((bundle, index) => (
+                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Group Bundles */}
+                {groupBundles.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Bundles Grupales</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {groupBundles.map((bundle, index) => (
+                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Private Bundles */}
+                {privateBundles.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Bundles Privados</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {privateBundles.map((bundle, index) => (
+                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+          </>
+        )}
+
+        {/* Modal for Create/Edit Package */}
+        <AnimatePresence>
+          {isModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+              onClick={(e) => e.target === e.currentTarget && closeModal()}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+              >
+                {/* Modal Header */}
+                <div className={`p-6 border-b border-gray-100 ${modalCategory === 'Grupal' ? 'bg-blue-50' : 'bg-purple-50'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${modalCategory === 'Grupal' ? 'bg-blue-100' : 'bg-purple-100'}`}>
+                        {modalCategory === 'Grupal' ? (
+                          <Users className={`h-6 w-6 text-blue-600`} />
+                        ) : (
+                          <User className={`h-6 w-6 text-purple-600`} />
+                        )}
+                          </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900">
+                          {editingPackage ? 'Editar Paquete' : 'Nuevo Paquete'}
+                        </h2>
+                        <p className="text-sm text-gray-500">
+                          {modalCategory === 'Grupal' ? 'Paquete Grupal' : 'Paquete Privado'}
+                        </p>
+                            </div>
+                            </div>
+                    <button
+                      onClick={closeModal}
+                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                          </div>
+                        </div>
+
+                {/* Modal Body */}
+                <div className="p-6 space-y-5">
+                  {/* Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nombre del Paquete *
+                    </label>
+                    <input
+                      type="text"
+                      value={packageForm.name}
+                      onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })}
+                      placeholder="Ej: Paquete Básico"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+
+                  {/* Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tipo / Etiqueta
+                    </label>
+                    <input
+                      type="text"
+                      value={packageForm.type}
+                      onChange={(e) => setPackageForm({ ...packageForm, type: e.target.value })}
+                      placeholder="Ej: 4 clases, Individual, Ilimitado"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+
+                  {/* Classes and Validity */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Clases Incluidas *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={packageForm.classes_included}
+                        onChange={(e) => setPackageForm({ ...packageForm, classes_included: Number(e.target.value) || 1 })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Duración (meses) *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={packageForm.validity_months}
+                        onChange={(e) => setPackageForm({ ...packageForm, validity_months: Number(e.target.value) || 1 })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Price */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Precio (MXN) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={packageForm.price}
+                        onChange={(e) => setPackageForm({ ...packageForm, price: Number(e.target.value) || 0 })}
+                        className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sale Price Section */}
+                  <div className="p-4 bg-red-50 rounded-lg border border-red-100 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Tag className="h-4 w-4 text-red-500" />
+                      <h4 className="font-medium text-red-700">Precio de Oferta (Opcional)</h4>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Precio Original</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={packageForm.original_price}
+                            onChange={(e) => setPackageForm({ ...packageForm, original_price: e.target.value ? Number(e.target.value) : '' })}
+                            placeholder="0"
+                            className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Precio de Oferta</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={packageForm.sale_price}
+                            onChange={(e) => setPackageForm({ ...packageForm, sale_price: e.target.value ? Number(e.target.value) : '' })}
+                            placeholder="0"
+                            className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {packageForm.original_price && packageForm.sale_price && Number(packageForm.sale_price) < Number(packageForm.original_price) && (
+                      <div className="text-sm text-red-600 font-medium flex items-center gap-2">
+                        <Percent className="h-4 w-4" />
+                        {Math.round(((Number(packageForm.original_price) - Number(packageForm.sale_price)) / Number(packageForm.original_price)) * 100)}% de descuento
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Descripción
+                    </label>
+                    <textarea
+                      value={packageForm.description}
+                      onChange={(e) => setPackageForm({ ...packageForm, description: e.target.value })}
+                      placeholder="Descripción opcional del paquete..."
+                      rows={3}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none"
+                    />
+                  </div>
+
+                  {/* Scheduling */}
+                  <div className="p-4 bg-gray-50 rounded-lg space-y-4">
+                    <h4 className="font-medium text-gray-700">Programación (Opcional)</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Disponible desde</label>
+                        <input
+                          type="date"
+                          value={packageForm.live_from}
+                          onChange={(e) => setPackageForm({ ...packageForm, live_from: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Disponible hasta</label>
+                        <input
+                          type="date"
+                          value={packageForm.live_until}
+                          onChange={(e) => setPackageForm({ ...packageForm, live_until: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status toggles */}
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={packageForm.is_active}
+                        onChange={(e) => setPackageForm({ ...packageForm, is_active: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Paquete activo</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={packageForm.is_live}
+                        onChange={(e) => setPackageForm({ ...packageForm, is_live: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Visible para clientes</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex gap-3">
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                  >
+                    Cancelar
+                        </button>
+                  <button
+                    onClick={savePackage}
+                    disabled={isSavingPackage}
+                    className={`flex-1 px-4 py-2.5 text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2 ${
+                      modalCategory === 'Grupal' 
+                        ? 'bg-blue-600 hover:bg-blue-700' 
+                        : 'bg-purple-600 hover:bg-purple-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {isSavingPackage ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-5 w-5" />
+                        {editingPackage ? 'Guardar Cambios' : 'Crear Paquete'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Modal for Create/Edit Bundle */}
+        <AnimatePresence>
+          {isBundleModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+              onClick={(e) => e.target === e.currentTarget && closeBundleModal()}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+              >
+                {/* Modal Header */}
+                <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-amber-50 to-orange-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100">
+                        <Gift className="h-6 w-6 text-amber-600" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900">
+                          {editingBundle ? 'Editar Bundle' : 'Nuevo Bundle'}
+                        </h2>
+                        <p className="text-sm text-gray-500">
+                          Paquete multi-mes con descuento
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={closeBundleModal}
+                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 space-y-5">
+                  {/* Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nombre del Bundle *
+                    </label>
+                    <input
+                      type="text"
+                      value={bundleForm.name}
+                      onChange={(e) => setBundleForm({ ...bundleForm, name: e.target.value })}
+                      placeholder="Ej: Bundle Trimestral"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    />
+                  </div>
+
+                  {/* Package Selection - Dual selectors for combo bundles */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Info className="h-4 w-4" />
+                      <span>Selecciona uno o ambos tipos de paquete para crear un bundle combo</span>
+                    </div>
+                    
+                    {/* Group Package */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <span className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-blue-500" />
+                          Paquete Grupal (Opcional)
+                        </span>
+                      </label>
+                      <select
+                        value={bundleForm.group_package_id}
+                        onChange={(e) => {
+                          const newGroupId = e.target.value
+                          const groupPkg = adminPackages.find(p => p.id === newGroupId)
+                          const privatePkg = adminPackages.find(p => p.id === bundleForm.private_package_id)
+                          const combinedPrice = ((groupPkg?.price || 0) + (privatePkg?.price || 0)) * bundleForm.months_included
+                          setBundleForm({ 
+                            ...bundleForm, 
+                            group_package_id: newGroupId,
+                            package_id: '', // Clear legacy field
+                            price: combinedPrice
+                          })
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      >
+                        <option value="">Sin paquete grupal</option>
+                        {adminPackages.filter(p => p.category === 'Grupal').map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>
+                            {pkg.name} - ${pkg.price.toLocaleString()}/mes ({pkg.classes_included} clases)
+                            {!pkg.is_live && ' [NO PÚBLICO]'}
+                            {!pkg.is_active && ' [INACTIVO]'}
+                          </option>
+                        ))}
+                      </select>
+            </div>
+                    
+                    {/* Private Package */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <span className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-purple-500" />
+                          Paquete Privado (Opcional)
+                        </span>
+                      </label>
+                      <select
+                        value={bundleForm.private_package_id}
+                        onChange={(e) => {
+                          const newPrivateId = e.target.value
+                          const groupPkg = adminPackages.find(p => p.id === bundleForm.group_package_id)
+                          const privatePkg = adminPackages.find(p => p.id === newPrivateId)
+                          const combinedPrice = ((groupPkg?.price || 0) + (privatePkg?.price || 0)) * bundleForm.months_included
+                          setBundleForm({ 
+                            ...bundleForm, 
+                            private_package_id: newPrivateId,
+                            package_id: '', // Clear legacy field
+                            price: combinedPrice
+                          })
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                      >
+                        <option value="">Sin paquete privado</option>
+                        {adminPackages.filter(p => p.category === 'Privada').map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>
+                            {pkg.name} - ${pkg.price.toLocaleString()}/mes ({pkg.classes_included} clases)
+                            {!pkg.is_live && ' [NO PÚBLICO]'}
+                            {!pkg.is_active && ' [INACTIVO]'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Show combo indicator */}
+                    {bundleForm.group_package_id && bundleForm.private_package_id && (
+                      <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                        <Sparkles className="h-5 w-5 text-purple-500" />
+                        <span className="text-sm font-medium text-purple-700">
+                          ¡Bundle Combo! Incluye clases grupales y privadas
+                        </span>
+          </div>
+        )}
+
+                    {/* Show warning if no package selected */}
+                    {!bundleForm.group_package_id && !bundleForm.private_package_id && (
+                      <div className="text-sm text-amber-600 flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" />
+                        Selecciona al menos un tipo de paquete
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Months and Price */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Meses Incluidos *
+                      </label>
+                      <input
+                        type="number"
+                        min="2"
+                        value={bundleForm.months_included}
+                        onChange={(e) => {
+                          const months = Number(e.target.value) || 2
+                          // Don't auto-update price - let admin set their discount manually
+                          setBundleForm({ 
+                            ...bundleForm, 
+                            months_included: months
+                          })
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                      />
+          </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Precio del Bundle (MXN) *
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={bundleForm.price}
+                          onChange={(e) => setBundleForm({ ...bundleForm, price: Number(e.target.value) || 0 })}
+                          className="w-full pl-8 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Price Preview */}
+                  {bundlePreview && (
+                    <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg border border-amber-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-amber-800 flex items-center gap-2">
+                          <Percent className="h-4 w-4" />
+                          Vista Previa de Descuento
+                          {bundlePreview.isCombo && (
+                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Combo</span>
+                          )}
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setBundleForm({ ...bundleForm, price: bundlePreview.regularTotal })}
+                          className="text-xs text-amber-600 hover:text-amber-800 underline"
+                        >
+                          Usar precio normal
+                        </button>
+                      </div>
+                      
+                      {/* Breakdown by package type */}
+                      <div className="text-sm space-y-2">
+                        <div className="text-gray-600">Precio normal ({bundleForm.months_included} meses):</div>
+                        {bundlePreview.groupPkg && (
+                          <div className="flex justify-between items-center pl-2 border-l-2 border-blue-300">
+                            <span className="text-blue-700">{bundlePreview.groupPkg.name}</span>
+                            <span className="text-gray-700">${bundlePreview.groupPkg.price.toLocaleString()} × {bundleForm.months_included} = ${(bundlePreview.groupPkg.price * bundleForm.months_included).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {bundlePreview.privatePkg && (
+                          <div className="flex justify-between items-center pl-2 border-l-2 border-purple-300">
+                            <span className="text-purple-700">{bundlePreview.privatePkg.name}</span>
+                            <span className="text-gray-700">${bundlePreview.privatePkg.price.toLocaleString()} × {bundleForm.months_included} = ${(bundlePreview.privatePkg.price * bundleForm.months_included).toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center font-semibold text-gray-900 pt-1 border-t border-amber-200">
+                          <span>Total normal:</span>
+                          <span>${bundlePreview.regularTotal.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-sm pt-2 border-t border-amber-200">
+                        <div>
+                          <span className="text-gray-600">Precio mensual combinado:</span>
+                          <div className="font-semibold text-gray-900">${bundlePreview.combinedMonthly.toLocaleString()}/mes</div>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Tu precio bundle:</span>
+                          <div className="font-semibold text-amber-600">${bundleForm.price.toLocaleString()}</div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t border-amber-200">
+                        <span className="text-gray-600">Ahorro para cliente:</span>
+                        <span className={`font-bold text-lg ${bundlePreview.percentOff > 0 ? 'text-green-600' : bundlePreview.percentOff < 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                          {bundlePreview.percentOff > 0 ? (
+                            <>-{bundlePreview.percentOff}% (${bundlePreview.savings.toLocaleString()})</>
+                          ) : bundlePreview.percentOff < 0 ? (
+                            <>+{Math.abs(bundlePreview.percentOff)}% (más caro)</>
+                          ) : (
+                            'Sin descuento'
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Descripción
+                    </label>
+                    <textarea
+                      value={bundleForm.description}
+                      onChange={(e) => setBundleForm({ ...bundleForm, description: e.target.value })}
+                      placeholder="Descripción opcional del bundle..."
+                      rows={3}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+                    />
+                  </div>
+
+                  {/* Scheduling */}
+                  <div className="p-4 bg-gray-50 rounded-lg space-y-4">
+                    <h4 className="font-medium text-gray-700">Programación (Opcional)</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Disponible desde</label>
+                        <input
+                          type="date"
+                          value={bundleForm.live_from}
+                          onChange={(e) => setBundleForm({ ...bundleForm, live_from: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Disponible hasta</label>
+                        <input
+                          type="date"
+                          value={bundleForm.live_until}
+                          onChange={(e) => setBundleForm({ ...bundleForm, live_until: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status toggles */}
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bundleForm.is_active}
+                        onChange={(e) => setBundleForm({ ...bundleForm, is_active: e.target.checked })}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                      />
+                      <span className="text-sm text-gray-700">Bundle activo</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bundleForm.is_live}
+                        onChange={(e) => setBundleForm({ ...bundleForm, is_live: e.target.checked })}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                      />
+                      <span className="text-sm text-gray-700">Visible para clientes</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex gap-3">
+                  <button
+                    onClick={closeBundleModal}
+                    className="flex-1 px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={saveBundle}
+                    disabled={isSavingBundle}
+                    className="flex-1 px-4 py-2.5 text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSavingBundle ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-5 w-5" />
+                        {editingBundle ? 'Guardar Cambios' : 'Crear Bundle'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </DashboardLayout>
   )
