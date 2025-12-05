@@ -1207,11 +1207,7 @@ export default function ClassesPage(): JSX.Element {
   }
 
   const openViewClassModal = (cls: Class) => {
-      setViewingClass({
-        ...cls,
-        // Ensure assigned_client_ids is parsed for display
-        assigned_client_ids: (cls as any).assigned_client_ids
-      })
+      setViewingClass(cls as any)
       setShowViewClassModal(true)
   }
 
