@@ -2399,15 +2399,39 @@ app.get('/api/packages', requireAuth, async (req, res) => {
       }
 
       // Only include if still active after cleanup
-      if (pkg.is_active === 1 || pkg.is_active === true) {
+      // Handle SQLite returning 0/1 as numbers, booleans, or strings ('1', 'true', 'false', etc.)
+      const isActive = pkg.is_active === 1 || 
+                       pkg.is_active === true || 
+                       pkg.is_active === '1' || 
+                       pkg.is_active === 'true' ||
+                       (typeof pkg.is_active === 'string' && pkg.is_active.toLowerCase() === 'true') ||
+                       Number(pkg.is_active) === 1
+      if (isActive) {
         cleanedPackages.push(pkg)
+      } else {
+        console.log(`[GET /api/packages] Filtered out package (inactive): ${pkg.id} ${pkg.name} is_active=${pkg.is_active} (type: ${typeof pkg.is_active})`)
       }
     }
 
     // For clients, only return active packages; admins see all
+    const totalPackagesBeforeCleanup = packages.length
     packages = isAdmin ? packages : cleanedPackages
 
-    console.log(`[GET /api/packages] User ${user.correo} (${user.role}) - returning ${packages.length} packages`)
+    console.log(`[GET /api/packages] User ${user.correo} (${user.role}) - returning ${packages.length} packages (${totalPackagesBeforeCleanup} total before cleanup)`)
+    if (!isAdmin && packages.length === 0 && totalPackagesBeforeCleanup > 0) {
+      console.log(`[GET /api/packages] WARNING: No active packages found for client. Total packages before cleanup: ${totalPackagesBeforeCleanup}, cleanedPackages: ${cleanedPackages.length}`)
+      // Log first few packages to debug - get fresh from DB
+      const allPackagesForDebug = await database.getPackages({ includeInactive: true, includeScheduled: true, onlyLive: false })
+      console.log(`[GET /api/packages] Sample packages from DB:`, allPackagesForDebug.slice(0, 3).map(p => ({
+        id: p.id,
+        name: p.name,
+        is_active: p.is_active,
+        is_live: p.is_live,
+        live_from: p.live_from,
+        live_until: p.live_until,
+        category: p.category
+      })))
+    }
     
     res.json({ success: true, packages })
   } catch (error) {

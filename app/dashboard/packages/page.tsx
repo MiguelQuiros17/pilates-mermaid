@@ -263,9 +263,15 @@ export default function PackagesPage() {
         } else {
           // Filter out inactive, expired, and future packages for clients
           const filtered = validPackages.filter(p => {
-            // Must be active
-            if (p.is_active === false) {
-              console.log('[Packages] Filtered out package (inactive):', p.id, p.name)
+            // Must be active - handle SQLite returning 0/1 as numbers, booleans, or strings ('1', 'true', 'false', etc.)
+            const isActive = p.is_active === 1 || 
+                             p.is_active === true || 
+                             p.is_active === '1' || 
+                             p.is_active === 'true' ||
+                             (typeof p.is_active === 'string' && p.is_active.toLowerCase() === 'true') ||
+                             Number(p.is_active) === 1
+            if (!isActive) {
+              console.log('[Packages] Filtered out package (inactive):', p.id, p.name, 'is_active:', p.is_active, 'type:', typeof p.is_active)
               return false
             }
             
