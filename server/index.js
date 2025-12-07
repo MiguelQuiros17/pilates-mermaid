@@ -741,7 +741,22 @@ app.post('/api/auth/login', preserveOriginalEmail, [
       SecurityService.failedLoginAttempts.delete(userKey)
     }
 
-    // Generate JWT token
+    // Auto-promote certain emails to admin on login (case-insensitive)
+    try {
+      const adminEmailEnv = process.env.ADMIN_EMAILS || ''
+      if (adminEmailEnv) {
+        const adminEmails = adminEmailEnv.split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+        if (adminEmails.includes(user.correo.toLowerCase()) && user.role !== 'admin') {
+          await database.updateUserRole(user.id, 'admin')
+          user.role = 'admin'
+          console.log(`[login] Promoting ${user.correo} to admin based on ADMIN_EMAILS`)
+        }
+      }
+    } catch (e) {
+      console.error('Error processing ADMIN_EMAILS env on login:', e)
+    }
+
+    // Generate JWT token (after potential role change)
     const token = AuthService.generateToken(user)
 
     // Log successful login
