@@ -587,11 +587,9 @@ export default function ClassesPage(): JSX.Element {
     if (user) {
       loadClasses()
       loadCanceledOccurrences()
-      // Solo admin necesita la lista completa de clientes y coaches
-      if (user.role === 'admin') {
+      // Admins and coaches need full client/coach lists for class management
+      if (user.role === 'admin' || user.role === 'coach') {
         loadClients()
-        loadCoaches()
-      } else if (user.role === 'coach') {
         loadCoaches()
       }
       // Load user bookings and class history for clients (needed for client filtering)
