@@ -2393,18 +2393,120 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
     const user = req.user
     const isAdmin = user.role === 'admin'
     
+    console.log('[Get Bundles] User:', user.role, 'isAdmin:', isAdmin, 'includeInactive:', isAdmin, 'onlyLive:', !isAdmin)
+    
+    // For debugging: get all bundles first to see what exists
+    const allBundles = await database.getAllPackageBundles({
+      includeInactive: true,
+      onlyLive: false
+    })
+    console.log('[Get Bundles] Total bundles in DB:', allBundles.length)
+    if (allBundles.length > 0) {
+      console.log('[Get Bundles] All bundles:', allBundles.map(b => ({
+        id: b.id,
+        name: b.name,
+        is_active: b.is_active,
+        is_live: b.is_live,
+        live_from: b.live_from,
+        live_until: b.live_until
+      })))
+    }
+    
+    // Get ALL bundles from database (no filtering at DB level)
+    // We'll do all filtering in JavaScript so we can see what exists
     const bundles = await database.getAllPackageBundles({
-      includeInactive: isAdmin,
-      onlyLive: !isAdmin
+      includeInactive: true, // Get all bundles
+      onlyLive: false // Don't filter by is_live
     })
     
+    console.log('[Get Bundles] Raw bundles from DB:', bundles.length)
+    if (bundles.length > 0) {
+      bundles.forEach(b => {
+        console.log('[Get Bundles] Bundle:', {
+          id: b.id,
+          name: b.name,
+          is_active: b.is_active,
+          is_live: b.is_live,
+          live_from: b.live_from,
+          live_until: b.live_until,
+          group_package_id: b.group_package_id,
+          private_package_id: b.private_package_id
+        })
+      })
+    }
+    
+    // For clients, filter by active status and date ranges
+    let filteredBundles = bundles
+    if (!isAdmin) {
+      console.log('[Get Bundles] Before client filtering:', bundles.length, 'bundles')
+      filteredBundles = bundles.filter(b => {
+        // Must be active (SQLite stores as 0/1, so check both)
+        const isActive = b.is_active === 1 || b.is_active === true || (b.is_active !== 0 && b.is_active !== false)
+        if (!isActive) {
+          console.log('[Get Bundles] Filtered out bundle (inactive):', b.id, b.name, 'is_active:', b.is_active)
+          return false
+        }
+        
+        // Check date ranges (only if set)
+        const now = new Date()
+        now.setHours(0, 0, 0, 0)
+        
+        if (b.live_from) {
+          const liveFrom = new Date(b.live_from)
+          liveFrom.setHours(0, 0, 0, 0)
+          if (now < liveFrom) {
+            console.log('[Get Bundles] Filtered out bundle (future):', b.id, b.name, 'live_from:', b.live_from)
+            return false
+          }
+        }
+        if (b.live_until) {
+          const liveUntil = new Date(b.live_until)
+          liveUntil.setHours(23, 59, 59, 999)
+          if (now > liveUntil) {
+            console.log('[Get Bundles] Filtered out bundle (expired):', b.id, b.name, 'live_until:', b.live_until)
+            return false
+          }
+        }
+        
+        console.log('[Get Bundles] Keeping bundle:', b.id, b.name, 'is_active:', b.is_active)
+        return true
+      })
+      console.log('[Get Bundles] After client filtering:', filteredBundles.length, 'bundles')
+    }
+    
+    console.log('[Get Bundles] Found', bundles.length, 'total bundles,', filteredBundles.length, 'after filtering for', user.role)
+    if (bundles.length > 0) {
+      console.log('[Get Bundles] Bundle details:', bundles.map(b => ({
+        id: b.id,
+        name: b.name,
+        is_active: b.is_active,
+        is_live: b.is_live,
+        category: b.category || 'unknown'
+      })))
+    }
+    
     // Add calculated savings to each bundle
-    const bundlesWithSavings = bundles.map(bundle => {
-      // Calculate regular total based on both packages
+    const bundlesWithSavings = filteredBundles.map(bundle => {
+      // Calculate regular total based on both packages with separate months
       const groupMonthlyPrice = bundle.group_package_price || 0
       const privateMonthlyPrice = bundle.private_package_price || 0
-      const combinedMonthlyPrice = groupMonthlyPrice + privateMonthlyPrice
-      const regularTotal = combinedMonthlyPrice * bundle.months_included
+      
+      // Use separate months if available, otherwise fall back to months_included
+      const groupMonths = bundle.group_months_included !== null && bundle.group_months_included !== undefined 
+        ? bundle.group_months_included 
+        : (bundle.months_included || 0)
+      const privateMonths = bundle.private_months_included !== null && bundle.private_months_included !== undefined 
+        ? bundle.private_months_included 
+        : (bundle.months_included || 0)
+      
+      // Calculate regular total: (group price * group months) + (private price * private months)
+      const groupTotal = groupMonthlyPrice * groupMonths
+      const privateTotal = privateMonthlyPrice * privateMonths
+      const regularTotal = groupTotal + privateTotal
+      
+      // Combined monthly price for display (average if both exist)
+      const combinedMonthlyPrice = (groupMonthlyPrice + privateMonthlyPrice) || groupMonthlyPrice || privateMonthlyPrice
+      
       const savings = regularTotal - bundle.price
       const percentOff = regularTotal > 0 ? Math.round((savings / regularTotal) * 100) : 0
       
@@ -2412,6 +2514,8 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
         ...bundle,
         regular_total: regularTotal,
         combined_monthly_price: combinedMonthlyPrice,
+        group_months_included: groupMonths,
+        private_months_included: privateMonths,
         savings,
         percent_off: percentOff,
         is_combo: !!(bundle.group_package_id && bundle.private_package_id)
@@ -2428,25 +2532,41 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
 // Create package bundle (admin)
 app.post('/api/package-bundles', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
-    const { name, description, package_id, group_package_id, private_package_id, months_included, price, is_live, live_from, live_until, is_active } = req.body
+    const { name, description, package_id, group_package_id, private_package_id, months_included, group_months_included, private_months_included, price, is_live, live_from, live_until, is_active } = req.body
     
     // Need at least one package (group, private, or legacy package_id)
-    if (!name || (!package_id && !group_package_id && !private_package_id) || !months_included || price === undefined) {
-      return res.status(400).json({ success: false, message: 'Faltan datos del bundle. Se requiere nombre, al menos un paquete, meses y precio.' })
+    if (!name || (!package_id && !group_package_id && !private_package_id) || price === undefined) {
+      return res.status(400).json({ success: false, message: 'Faltan datos del bundle. Se requiere nombre, al menos un paquete y precio.' })
     }
     
+    // Validate months: if group_package_id is set, group_months_included is required
+    // If private_package_id is set, private_months_included is required
+    // If only legacy package_id is set, months_included is required
+    if (group_package_id && (group_months_included === undefined || group_months_included === null || group_months_included < 1)) {
+      return res.status(400).json({ success: false, message: 'Se requiere especificar cuántos meses del paquete grupal están incluidos.' })
+    }
+    if (private_package_id && (private_months_included === undefined || private_months_included === null || private_months_included < 1)) {
+      return res.status(400).json({ success: false, message: 'Se requiere especificar cuántos meses del paquete privado están incluidos.' })
+    }
+    if (package_id && !group_package_id && !private_package_id && (!months_included || months_included < 1)) {
+      return res.status(400).json({ success: false, message: 'Se requiere especificar cuántos meses están incluidos.' })
+    }
+    
+    // Set is_live to match is_active (they're now the same thing)
     const bundle = await database.createPackageBundle({
       name,
       description,
       package_id: package_id || null,
       group_package_id: group_package_id || null,
       private_package_id: private_package_id || null,
-      months_included,
+      months_included: months_included || null, // Legacy support
+      group_months_included: group_months_included || null,
+      private_months_included: private_months_included || null,
       price,
-      is_live,
+      is_live: is_active !== undefined ? is_active : true, // Match is_active
       live_from: live_from || null,
       live_until: live_until || null,
-      is_active
+      is_active: is_active !== undefined ? is_active : true
     })
     
     res.json({ success: true, bundle })
@@ -2461,6 +2581,11 @@ app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (
   try {
     const { id } = req.params
     const updates = req.body || {}
+    
+    // Sync is_live with is_active (they're now the same thing)
+    if (updates.is_active !== undefined) {
+      updates.is_live = updates.is_active
+    }
     
     console.log('[Update Bundle] ID:', id, 'Updates:', JSON.stringify(updates))
     
@@ -4734,6 +4859,26 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
 
     // For recurring classes, create only ONE entry (not individual occurrences)
     // The date field stores the start date of the recurrence period
+    
+    // Calculate is_public value (matching edit endpoint logic)
+    let isPublicValue = 1 // default
+    if (is_public !== undefined) {
+      const publicValue = (is_public === true || is_public === 1 || is_public === '1' || is_public === 'true')
+      isPublicValue = publicValue ? 1 : 0
+    } else {
+      isPublicValue = type === 'group' ? 1 : 1
+    }
+    
+    // Calculate walk_ins_welcome value (matching edit endpoint logic)
+    let walkInsValue = type === 'group' ? 1 : 0 // default
+    if (walk_ins_welcome !== undefined) {
+      const walkInsBool = (walk_ins_welcome === true || walk_ins_welcome === 1 || walk_ins_welcome === '1')
+      walkInsValue = walkInsBool ? 1 : 0
+    }
+    
+    console.log('[Create Class] is_public received:', is_public, 'type:', typeof is_public, 'converted to:', isPublicValue)
+    console.log('[Create Class] walk_ins_welcome received:', walk_ins_welcome, 'type:', typeof walk_ins_welcome, 'converted to:', walkInsValue)
+    
     await database.run(`
       INSERT INTO classes (
         id, title, type, coach_id, date, time, end_time, duration, max_capacity,
@@ -4757,8 +4902,8 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       isRecurringBool ? 1 : 0,
       recurrence_end_date || null,
       recurrence_days_of_week ? JSON.stringify(recurrenceDaysArray) : null,
-      is_public !== undefined ? (is_public ? 1 : 0) : (type === 'group' ? 1 : 1),
-      walk_ins_welcome !== undefined ? (walk_ins_welcome ? 1 : 0) : (type === 'group' ? 1 : 0),
+      isPublicValue,
+      walkInsValue,
       isRecurringBool ? null : assigned_client_ids || null // No assigned clients for recurring classes
     ])
 
@@ -5190,9 +5335,12 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
         updates.is_recurring = recurringValue ? 1 : 0
       }
       if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
+      // Always update is_public if provided (even if 0/false)
       if (is_public !== undefined) {
-        const publicValue = (is_public === true || is_public === 1 || is_public === '1')
+        // Explicitly handle all possible values: true/1/'1'/'true' -> 1, everything else -> 0
+        const publicValue = (is_public === true || is_public === 1 || is_public === '1' || is_public === 'true')
         updates.is_public = publicValue ? 1 : 0
+        console.log('[Update Class] is_public received:', is_public, 'type:', typeof is_public, 'converted to:', updates.is_public)
       }
       if (walk_ins_welcome !== undefined) {
         const walkInsValue = (walk_ins_welcome === true || walk_ins_welcome === 1 || walk_ins_welcome === '1')

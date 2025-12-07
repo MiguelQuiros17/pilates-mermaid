@@ -873,11 +873,11 @@ export default function ClassesPage(): JSX.Element {
         ? `${selectedCoach?.nombre || 'Coach'}'s one-on-one class with ${client?.nombre || 'cliente'}`
         : 'Clase grupal'),
       status: 'scheduled',
-      is_recurring: classType === 'group' ? isRecurring : false,
+      is_recurring: classType === 'group' ? (isRecurring ? 1 : 0) : 0,
       recurrence_end_date: classType === 'group' && isRecurring ? (recurrenceEndDate || null) : null,
       recurrence_days_of_week: (classType === 'group' && isRecurring) ? JSON.stringify(recurrenceDaysOfWeek) : null,
-      is_public: classType === 'group' ? isPublic : true,
-      walk_ins_welcome: classType === 'group' ? walkInsWelcome : false,
+      is_public: classType === 'group' ? (isPublic ? 1 : 0) : 1,
+      walk_ins_welcome: classType === 'group' ? (walkInsWelcome ? 1 : 0) : 0,
       max_capacity: classType === 'group' ? groupMaxCapacity : 1
     }
   }
@@ -1025,6 +1025,7 @@ export default function ClassesPage(): JSX.Element {
       }
 
       const classData = await getClassCreationData()
+      console.log('[Create Class] isPublic state:', isPublic, 'classData.is_public:', classData.is_public, 'full classData:', classData)
       const response = await fetch(`${API_BASE_URL}/api/classes`, {
         method: 'POST',
         headers: {
@@ -1141,8 +1142,11 @@ export default function ClassesPage(): JSX.Element {
       }
       
       // Properly handle SQLite boolean values (can be 0, 1, "0", "1", null, undefined)
-      setIsPublic(Number((classToEdit as any).is_public || 0) === 1)
-      setWalkInsWelcome(Number((classToEdit as any).walk_ins_welcome || 0) === 1)
+      const isPublicValue = Number((classToEdit as any).is_public || 0) === 1
+      const walkInsValue = Number((classToEdit as any).walk_ins_welcome || 0) === 1
+      console.log('[openEditModal] is_public raw:', (classToEdit as any).is_public, 'parsed:', isPublicValue)
+      setIsPublic(isPublicValue)
+      setWalkInsWelcome(walkInsValue)
       setIsRecurring(classIsRecurring)
       setRecurrenceEndDate((classToEdit as any).recurrence_end_date || '')
       setGroupMaxCapacity(Number((classToEdit as any).max_capacity) || 10)
@@ -1263,16 +1267,61 @@ export default function ClassesPage(): JSX.Element {
         })
 
         const data = await response.json().catch(() => ({}))
-        console.log('[handleSaveGroupClass] Response:', data)
 
         if (!response.ok || !data.success) {
           setGroupEditModalError(data.message || 'Error al actualizar los asistentes.')
           return
         }
 
+        // Also update main class properties (is_public, walk_ins_welcome, etc.) for recurring classes
+        let finalEndTime = editEndTime
+        if (!finalEndTime && editTime) {
+          const [hourStr, minuteStr] = editTime.split(':')
+          const hour = parseInt(hourStr, 10)
+          const minute = parseInt(minuteStr, 10) || 0
+          if (!isNaN(hour)) {
+            const endHour = (hour + 1) % 24
+            finalEndTime = `${String(endHour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+          }
+        }
+        
+        const classUpdates: any = {
+          is_public: isPublic ? 1 : 0,
+          walk_ins_welcome: walkInsWelcome ? 1 : 0,
+          title: editTitle,
+          description: editDescription,
+          time: editTime,
+          end_time: finalEndTime || null,
+          duration: calculateDuration(editTime, finalEndTime || ''),
+          max_capacity: Number(groupMaxCapacity) || 10
+        }
+        
+        if (editCoachId) {
+          const selectedCoach = coaches.find(c => c.id === editCoachId)
+          if (selectedCoach) {
+            classUpdates.coach_id = editCoachId
+            classUpdates.coach_name = selectedCoach.nombre
+          }
+        }
+        
+        // Update main class properties
+        const classResponse = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(classUpdates)
+        })
+        
+        const classData = await classResponse.json().catch(() => ({}))
+        if (!classResponse.ok || !classData.success) {
+          console.error('[handleSaveGroupClass] Failed to update main class:', classData)
+        }
+
         setNotification({
           type: 'success',
-          message: `Asistentes actualizados para ${editOccurrenceDate}`
+          message: `Clase y asistentes actualizados para ${editOccurrenceDate}`
         })
         setShowEditClassModal(false)
         setEditingClass(null)
@@ -1311,6 +1360,7 @@ export default function ClassesPage(): JSX.Element {
       }
 
       console.log('Saving group class updates:', updates)
+      console.log('[handleSaveGroupClass] isPublic state:', isPublic, 'sending:', updates.is_public)
 
       const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
         method: 'PUT',
@@ -1729,7 +1779,17 @@ export default function ClassesPage(): JSX.Element {
       if (!isRecurring) {
         // Non-recurring: only on its specific date
         if (baseDateStr === dateStr) {
-          filtered.push(cls)
+          // Apply template replacement for non-recurring classes too
+          const [clsYear, clsMonth, clsDay] = baseDateStr.split('-').map(Number)
+          const clsDate = new Date(clsYear, clsMonth - 1, clsDay)
+          clsDate.setHours(0, 0, 0, 0)
+          
+          const processedClass = {
+            ...cls,
+            title: replaceTemplateVariables(cls.title || '', clsDate, cls),
+            description: replaceTemplateVariables(cls.description || '', clsDate, cls)
+          }
+          filtered.push(processedClass)
         }
         return
       }
@@ -1836,11 +1896,10 @@ export default function ClassesPage(): JSX.Element {
             return bookedInClass
           }
           
-          // For group classes: show if booked OR if public
+          // For group classes: show if client is booked OR if class is public
           if (cls.type === 'group') {
-            if (bookedInClass) return true
-            const isPublic = (cls as any).is_public
-            return isPublic === 1 || isPublic === '1' || isPublic === true || Number(isPublic) === 1
+            const isPublic = (cls as any).is_public === 1 || (cls as any).is_public === true || (cls as any).is_public === '1'
+            return bookedInClass || isPublic
           }
           
           return false
@@ -2125,7 +2184,7 @@ export default function ClassesPage(): JSX.Element {
                               ) : (
                                 <div 
                                   className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
-                                  title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''} - ${cls.current_bookings}/${cls.max_capacity} reservas - ${cls.coach_name}`}
+                                  title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''}${cls.type === 'group' ? ` - ${cls.current_bookings}/${cls.max_capacity} reservas` : ''} - ${cls.coach_name}`}
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     openViewClassModal(cls)
@@ -2134,7 +2193,7 @@ export default function ClassesPage(): JSX.Element {
                                   {isCancelled ? (
                                     <span className="line-through">{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}</span>
                                   ) : (
-                                    <span>{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} ({cls.current_bookings}/{cls.max_capacity})</span>
+                                    <span>{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}{cls.type === 'group' ? ` (${cls.current_bookings}/${cls.max_capacity})` : ''}</span>
                                   )}
                                 </div>
                               )}
@@ -2228,7 +2287,7 @@ export default function ClassesPage(): JSX.Element {
                                   <div className="text-xs text-gray-600 truncate mt-0.5">
                                     {cls.title || (cls.type === 'private' ? 'Clase Privada' : 'Clase Grupal')}
                                   </div>
-                                  {user?.role !== 'cliente' && (
+                                  {user?.role !== 'cliente' && cls.type === 'group' && (
                                     <div className="text-xs text-gray-500 mt-1">
                                       {cls.current_bookings}/{cls.max_capacity} reservas
                                     </div>
@@ -2340,8 +2399,8 @@ export default function ClassesPage(): JSX.Element {
                           
                           {/* Booking info and actions */}
                           <div className="flex items-center gap-4">
-                            {/* Capacity indicator (for admins/coaches or group classes) */}
-                            {(user?.role !== 'cliente' || cls.type === 'group') && (
+                            {/* Capacity indicator (only for group classes) */}
+                            {cls.type === 'group' && (
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-gray-900 mb-1">
                                   {cls.current_bookings}/{cls.max_capacity}
@@ -2442,18 +2501,25 @@ export default function ClassesPage(): JSX.Element {
               </h2>
               <p className="text-sm text-gray-600 mt-1">
                 {(() => {
-                  // For clients, calculate based on filtered classes
+                  // For clients, calculate based on filtered classes (booked OR public group classes)
                   if (user?.role === 'cliente') {
                     const filtered = classes.filter(cls => {
-                      if (isUserBooked(cls.id, (cls as any).occurrence_date)) return true
-                      if (cls.type === 'group') {
-                        const isPublic = (cls as any).is_public
-                        return isPublic === 1 || isPublic === '1' || isPublic === true || Number(isPublic) === 1
+                      const bookedInClass = isUserBooked(cls.id, (cls as any).occurrence_date)
+                      
+                      // For private classes: ONLY show if client is booked in it
+                      if (cls.type === 'private') {
+                        return bookedInClass
                       }
-                      if (cls.type === 'private') return true
+                      
+                      // For group classes: show if client is booked OR if class is public
+                      if (cls.type === 'group') {
+                        const isPublic = (cls as any).is_public === 1 || (cls as any).is_public === true || (cls as any).is_public === '1'
+                        return bookedInClass || isPublic
+                      }
+                      
                       return false
                     })
-                    const count = filtered.filter(cls => isUserBooked(cls.id, (cls as any).occurrence_date)).length
+                    const count = filtered.length
                     return `${count} ${count === 1 ? 'clase disponible' : 'clases disponibles'}`
                   }
                   return `${classes.length} ${classes.length === 1 ? 'clase disponible' : 'clases disponibles'}`
@@ -2464,23 +2530,21 @@ export default function ClassesPage(): JSX.Element {
             {/* List Content */}
             <div className="p-6">
               {(() => {
-                // For clients, show:
-                // 1. Public group classes (is_public === 1)
-                // 2. Private classes (they can see all, booking will handle assignment)
-                // 3. Classes they've already booked
+                // For clients, show classes they're booked in OR public group classes
                 const allClasses = user?.role === 'cliente' 
                   ? classes.filter(cls => {
-                      // Show if already booked
-                      if (isUserBooked(cls.id, (cls as any).occurrence_date)) return true
+                      const bookedInClass = isUserBooked(cls.id, (cls as any).occurrence_date)
                       
-                      // Show public group classes
-                      if (cls.type === 'group') {
-                        const isPublic = (cls as any).is_public
-                        return isPublic === 1 || isPublic === '1' || isPublic === true || Number(isPublic) === 1
+                      // For private classes: ONLY show if client is booked in it
+                      if (cls.type === 'private') {
+                        return bookedInClass
                       }
                       
-                      // Show private classes (booking logic will handle assignment)
-                      if (cls.type === 'private') return true
+                      // For group classes: show if client is booked OR if class is public
+                      if (cls.type === 'group') {
+                        const isPublic = (cls as any).is_public === 1 || (cls as any).is_public === true || (cls as any).is_public === '1'
+                        return bookedInClass || isPublic
+                      }
                       
                       return false
                     })
@@ -2579,15 +2643,12 @@ export default function ClassesPage(): JSX.Element {
                               }}
                             >
                               {(() => {
-                                // For regular classes, show title as-is (or with template variables if it's a recurring occurrence)
-                                if ((cls as any).is_recurring_occurrence) {
-                                  // This shouldn't happen in regular classes section, but handle it
-                                  const classDate = new Date(cls.date + 'T00:00:00')
-                                  return decodeHtmlEntities(replaceTemplateVariables(cls.title || '', classDate, cls))
-                                }
-                                return decodeHtmlEntities(cls.title || (cls.type === 'private'
+                                // Apply template replacement for all classes
+                                const classDate = new Date(cls.date + 'T00:00:00')
+                                const title = cls.title || (cls.type === 'private'
                                   ? `${(clients.find(c => c.id === (cls as any).client_id)?.nombre || 'Cliente')} - Sesión Privada`
-                                  : 'Clase'))
+                                  : 'Clase')
+                                return decodeHtmlEntities(replaceTemplateVariables(title, classDate, cls))
                               })()}
                               {isCancelled && <span className="italic text-gray-500 ml-2">(canceled)</span>}
                               {user.role === 'cliente' && !isUserBooked(cls.id, (cls as any).occurrence_date) && cls.current_bookings >= cls.max_capacity && !isCancelled && (
@@ -2629,22 +2690,24 @@ export default function ClassesPage(): JSX.Element {
                         </div>
                         
                         <div className="ml-6 flex items-center space-x-6">
-                          <div className="text-right">
-                            <div className="text-sm font-semibold text-gray-900 mb-1">
-                              {cls.current_bookings}/{cls.max_capacity} reservas
+                          {cls.type === 'group' && (
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-gray-900 mb-1">
+                                {cls.current_bookings}/{cls.max_capacity} reservas
+                              </div>
+                              <div className="w-32 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
+                                    (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                    (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
+                                    'bg-green-500'
+                                  }`}
+                                  style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
+                                ></div>
+                              </div>
                             </div>
-                            <div className="w-32 bg-gray-200 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
-                                  (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                  (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
-                                  'bg-green-500'
-                                }`}
-                                style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
-                              ></div>
-                            </div>
-                          </div>
+                          )}
                           
                           {/* Acciones según el rol */}
                           {user.role === 'cliente' && (
@@ -2656,7 +2719,7 @@ export default function ClassesPage(): JSX.Element {
                             </button>
                           )}
                           
-                          {(user.role === 'admin' || user.role === 'coach') && (
+                          {(user.role === 'admin' || user.role === 'coach') && cls.type === 'group' && (
                             <div className="text-sm text-gray-500 space-y-1">
                               <div className="flex items-center space-x-2">
                                 <div className={`w-3 h-3 rounded-full ${
@@ -2778,22 +2841,24 @@ export default function ClassesPage(): JSX.Element {
                                     </div>
                                     
                                     <div className="ml-6 flex items-center space-x-6">
-                                      <div className="text-right">
-                                        <div className="text-sm font-semibold text-gray-900 mb-1">
-                                          {cls.current_bookings}/{cls.max_capacity} reservas
+                                      {cls.type === 'group' && (
+                                        <div className="text-right">
+                                          <div className="text-sm font-semibold text-gray-900 mb-1">
+                                            {cls.current_bookings}/{cls.max_capacity} reservas
+                                          </div>
+                                          <div className="w-32 bg-gray-200 rounded-full h-2">
+                                            <div
+                                              className={`h-2 rounded-full ${
+                                                (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
+                                                (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                                (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
+                                                'bg-green-500'
+                                              }`}
+                                              style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
+                                            ></div>
+                                          </div>
                                         </div>
-                                        <div className="w-32 bg-gray-200 rounded-full h-2">
-                                          <div
-                                            className={`h-2 rounded-full ${
-                                              (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
-                                              (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                              (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
-                                              'bg-green-500'
-                                            }`}
-                                            style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
-                                          ></div>
-                                        </div>
-                                      </div>
+                                      )}
                                       
                                       {/* Acciones según el rol */}
                                       {user.role === 'cliente' && (
@@ -2821,7 +2886,7 @@ export default function ClassesPage(): JSX.Element {
                                         </div>
                                       )}
                                       
-                                      {(user.role === 'admin' || user.role === 'coach') && (
+                                      {(user.role === 'admin' || user.role === 'coach') && cls.type === 'group' && (
                                         <div className="text-sm text-gray-500 space-y-1">
                                           <div className="flex items-center space-x-2">
                                             <div className={`w-3 h-3 rounded-full ${
@@ -3779,7 +3844,16 @@ export default function ClassesPage(): JSX.Element {
                       {viewingClass.type === 'group' ? 'Clase Grupal' : 'Clase Privada'}
                     </span>
                     <h3 className={`text-xl font-bold mt-1 ${viewingClass.status === 'cancelled' ? 'line-through' : ''}`}>
-                      {decodeHtmlEntities(viewingClass.title || (viewingClass.type === 'group' ? 'Clase Grupal' : 'Clase Privada'))}
+                      {decodeHtmlEntities((() => {
+                        const classDate = (viewingClass as any).occurrence_date || viewingClass.date
+                        if (classDate) {
+                          const [year, month, day] = classDate.split('T')[0].split('-').map(Number)
+                          const date = new Date(year, month - 1, day)
+                          date.setHours(0, 0, 0, 0)
+                          return replaceTemplateVariables(viewingClass.title || (viewingClass.type === 'group' ? 'Clase Grupal' : 'Clase Privada'), date, viewingClass)
+                        }
+                        return viewingClass.title || (viewingClass.type === 'group' ? 'Clase Grupal' : 'Clase Privada')
+                      })())}
                     </h3>
                     {viewingClass.status === 'cancelled' && (
                       <span className="inline-block mt-2 px-2 py-1 bg-white/20 rounded text-xs font-medium">
@@ -3837,7 +3911,16 @@ export default function ClassesPage(): JSX.Element {
                 {viewingClass.description && (
                   <div className="mb-4">
                     <p className="text-sm text-gray-600 leading-relaxed">
-                      {decodeHtmlEntities(viewingClass.description)}
+                      {decodeHtmlEntities((() => {
+                        const classDate = (viewingClass as any).occurrence_date || viewingClass.date
+                        if (classDate) {
+                          const [year, month, day] = classDate.split('T')[0].split('-').map(Number)
+                          const date = new Date(year, month - 1, day)
+                          date.setHours(0, 0, 0, 0)
+                          return replaceTemplateVariables(viewingClass.description || '', date, viewingClass)
+                        }
+                        return viewingClass.description || ''
+                      })())}
                     </p>
                   </div>
                 )}
@@ -3861,8 +3944,8 @@ export default function ClassesPage(): JSX.Element {
                   </div>
                 </div>
 
-                {/* Capacity (for group classes or admins) */}
-                {(viewingClass.type === 'group' || user?.role !== 'cliente') && (
+                {/* Capacity (only for group classes) */}
+                {viewingClass.type === 'group' && (
                   <div className="bg-gray-50 rounded-lg p-4 mb-4">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center">

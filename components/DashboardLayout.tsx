@@ -54,6 +54,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [hasViewedNotifications, setHasViewedNotifications] = useState(false)
+  const [userBookings, setUserBookings] = useState<any[]>([])
 
   const [isLoading, setIsLoading] = useState(true)
 
@@ -124,16 +125,31 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/notifications`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
+      // Load notifications and bookings in parallel
+      const [notificationsRes, bookingsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/users/${user.id}/notifications`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }),
+        fetch(`${API_BASE_URL}/api/users/${user.id}/bookings`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+      ])
 
-      if (response.ok) {
-        const data = await response.json()
+      if (notificationsRes.ok) {
+        const data = await notificationsRes.json()
         if (data.success) {
           setNotifications(data.notifications || [])
+        }
+      }
+
+      if (bookingsRes.ok) {
+        const bookingsData = await bookingsRes.json()
+        if (bookingsData.success) {
+          setUserBookings(bookingsData.bookings || [])
         }
       }
     } catch (error) {
@@ -175,6 +191,107 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       'package_assigned': 'Paquete asignado'
     }
     return labels[type] || type
+  }
+
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return ''
+    const [hour, minute] = time24.split(':').map(Number)
+    if (isNaN(hour)) return time24
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const hour12 = hour % 12 || 12
+    return `${hour12}:${String(minute || 0).padStart(2, '0')} ${period}`
+  }
+
+  const replaceTemplateVariables = (text: string, occurrenceDate: Date, classData: any): string => {
+    if (!text) return text
+    
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const dayName = dayNames[occurrenceDate.getDay()]
+    
+    const month = String(occurrenceDate.getMonth() + 1).padStart(2, '0')
+    const day = String(occurrenceDate.getDate()).padStart(2, '0')
+    const year = String(occurrenceDate.getFullYear()).slice(-2)
+    const fullDate = `${month}/${day}/${year}`
+    const shortDate = `${month}/${day}`
+    
+    const startTime24 = classData.class_time || classData.time || ''
+    const endTime24 = classData.end_time || ''
+    const startTime12 = formatTime12Hour(startTime24)
+    const endTime12 = formatTime12Hour(endTime24)
+    const duration = classData.duration || 0
+    
+    return text
+      .replace(/{day}/g, dayName)
+      .replace(/{start_time}/g, startTime12)
+      .replace(/{end_time}/g, endTime12)
+      .replace(/{duration}/g, String(duration))
+      .replace(/{date}/g, fullDate)
+      .replace(/{short_date}/g, shortDate)
+  }
+
+  const processNotificationSubject = (notification: Notification): string => {
+    // Only process class-related notifications
+    if (notification.type !== 'class_confirmation' && notification.type !== 'class_reminder') {
+      return notification.subject
+    }
+
+    // Extract class title from notification subject (format: "Confirmación de clase: {title}" or "Recordatorio de clase: {title}")
+    const titleMatch = notification.subject.match(/Confirmación de clase: (.+)|Recordatorio de clase: (.+)/)
+    if (!titleMatch) {
+      return notification.subject
+    }
+
+    const classTitle = titleMatch[1] || titleMatch[2] || ''
+    
+    // If the title doesn't contain template variables, return as-is
+    if (!classTitle.includes('{')) {
+      return notification.subject
+    }
+
+    // Try to find a matching booking
+    // First, try bookings created around the notification time
+    const notificationDate = new Date(notification.sent_at)
+    let matchingBooking = userBookings.find(booking => {
+      const bookingDate = new Date(booking.created_at || booking.booking_date || 0)
+      // Check if booking was created within 1 hour of notification
+      return Math.abs(bookingDate.getTime() - notificationDate.getTime()) < 3600000
+    })
+
+    // If no match by time, try to find any upcoming booking (for reminders)
+    if (!matchingBooking && notification.type === 'class_reminder') {
+      const now = new Date()
+      matchingBooking = userBookings.find(booking => {
+        const bookingDate = new Date(booking.occurrence_date || booking.class_date || booking.date)
+        return bookingDate >= now && booking.status === 'confirmed'
+      })
+    }
+
+    // If still no match, use the most recent booking
+    if (!matchingBooking && userBookings.length > 0) {
+      matchingBooking = userBookings
+        .filter(b => b.status === 'confirmed')
+        .sort((a, b) => {
+          const dateA = new Date(a.created_at || a.booking_date || 0)
+          const dateB = new Date(b.created_at || b.booking_date || 0)
+          return dateB.getTime() - dateA.getTime()
+        })[0]
+    }
+
+    if (matchingBooking) {
+      const bookingDate = new Date(matchingBooking.occurrence_date || matchingBooking.class_date || matchingBooking.date)
+      bookingDate.setHours(0, 0, 0, 0)
+      
+      const classData = {
+        class_time: matchingBooking.class_time || matchingBooking.time,
+        end_time: matchingBooking.end_time,
+        duration: matchingBooking.duration || 60
+      }
+      
+      const processedTitle = replaceTemplateVariables(classTitle, bookingDate, classData)
+      return notification.subject.replace(classTitle, processedTitle)
+    }
+
+    return notification.subject
   }
 
   const formatNotificationDate = (dateString: string) => {
@@ -430,7 +547,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                                         {getNotificationTypeLabel(notification.type)}
                                       </p>
                                       <p className="text-sm text-gray-600 mt-1">
-                                        {notification.subject}
+                                        {processNotificationSubject(notification)}
                                       </p>
                                       <p className="text-xs text-gray-400 mt-2">
                                         {formatNotificationDate(notification.sent_at)}

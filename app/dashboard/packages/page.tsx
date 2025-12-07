@@ -61,7 +61,9 @@ interface PackageBundle {
   classes_included: number
   category: 'Grupal' | 'Privada' | 'Combo'
   validity_months: number
-  months_included: number
+  months_included: number // Legacy support
+  group_months_included?: number
+  private_months_included?: number
   price: number
   regular_total: number
   combined_monthly_price?: number
@@ -96,9 +98,10 @@ const defaultBundleFormState = {
   package_id: '',
   group_package_id: '',
   private_package_id: '',
-  months_included: 3,
+  months_included: 3, // Legacy support
+  group_months_included: 3,
+  private_months_included: 3,
   price: 0,
-  is_live: true,
   live_from: '',
   live_until: '',
   is_active: true,
@@ -209,7 +212,11 @@ export default function PackagesPage() {
       
       if (response.ok) {
         const data = await response.json()
-        setBundles(Array.isArray(data.bundles) ? data.bundles : [])
+        const bundlesList = Array.isArray(data.bundles) ? data.bundles : []
+        console.log('[Packages] Loaded bundles:', bundlesList.length, bundlesList)
+        setBundles(bundlesList)
+      } else {
+        console.error('[Packages] Failed to load bundles:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error loading bundles:', error)
@@ -269,9 +276,14 @@ export default function PackagesPage() {
       package_id: bundle.package_id || '',
       group_package_id: bundle.group_package_id || '',
       private_package_id: bundle.private_package_id || '',
-      months_included: bundle.months_included,
+      months_included: bundle.months_included || 3, // Legacy support
+      group_months_included: bundle.group_months_included !== undefined && bundle.group_months_included !== null 
+        ? bundle.group_months_included 
+        : (bundle.months_included || 3),
+      private_months_included: bundle.private_months_included !== undefined && bundle.private_months_included !== null 
+        ? bundle.private_months_included 
+        : (bundle.months_included || 3),
       price: bundle.price,
-      is_live: bundle.is_live !== false,
       live_from: bundle.live_from || '',
       live_until: bundle.live_until || '',
       is_active: bundle.is_active !== false,
@@ -354,10 +366,24 @@ export default function PackagesPage() {
     if (isSavingBundle) return
     // Need at least one package selected (group or private or both)
     const hasPackage = bundleForm.group_package_id || bundleForm.private_package_id || bundleForm.package_id
-    if (!bundleForm.name || !hasPackage || !bundleForm.months_included || bundleForm.price === undefined) {
-      alert('Por favor completa todos los campos requeridos (nombre, al menos un paquete, meses y precio)')
+    if (!bundleForm.name || !hasPackage || bundleForm.price === undefined) {
+      alert('Por favor completa todos los campos requeridos (nombre, al menos un paquete y precio)')
         return
       }
+
+    // Validate months based on selected packages
+    if (bundleForm.group_package_id && (!bundleForm.group_months_included || bundleForm.group_months_included < 1)) {
+      alert('Por favor especifica cuántos meses del paquete grupal están incluidos')
+      return
+    }
+    if (bundleForm.private_package_id && (!bundleForm.private_months_included || bundleForm.private_months_included < 1)) {
+      alert('Por favor especifica cuántos meses del paquete privado están incluidos')
+      return
+    }
+    if (bundleForm.package_id && !bundleForm.group_package_id && !bundleForm.private_package_id && (!bundleForm.months_included || bundleForm.months_included < 1)) {
+      alert('Por favor especifica cuántos meses están incluidos')
+      return
+    }
 
     setIsSavingBundle(true)
     try {
@@ -426,12 +452,23 @@ export default function PackagesPage() {
     // If no packages selected, return null
     if (!groupPkg && !privatePkg && !legacyPkg) return null
     
-    // Calculate combined monthly price and regular total
+    // Calculate regular total using separate months for each package type
     const groupMonthly = groupPkg?.price || 0
     const privateMonthly = privatePkg?.price || 0
     const legacyMonthly = legacyPkg?.price || 0
+    
+    // Use separate months if available, otherwise fall back to months_included
+    const groupMonths = bundleForm.group_months_included || bundleForm.months_included || 0
+    const privateMonths = bundleForm.private_months_included || bundleForm.months_included || 0
+    const legacyMonths = bundleForm.months_included || 0
+    
+    // Calculate: (group price * group months) + (private price * private months) + (legacy price * legacy months)
+    const groupTotal = groupMonthly * groupMonths
+    const privateTotal = privateMonthly * privateMonths
+    const legacyTotal = legacyMonthly * legacyMonths
+    const regularTotal = groupTotal + privateTotal + legacyTotal
+    
     const combinedMonthly = groupMonthly + privateMonthly + legacyMonthly
-    const regularTotal = combinedMonthly * bundleForm.months_included
     const savings = regularTotal - bundleForm.price
     const percentOff = regularTotal > 0 ? Math.round((savings / regularTotal) * 100) : 0
     
@@ -449,9 +486,12 @@ export default function PackagesPage() {
       combinedMonthly,
       groupPkg,
       privatePkg,
+      groupMonths,
+      privateMonths,
+      legacyMonths,
       isCombo: !!(groupPkg && privatePkg)
     }
-  }, [bundleForm.group_package_id, bundleForm.private_package_id, bundleForm.package_id, bundleForm.months_included, bundleForm.price, adminPackages])
+  }, [bundleForm.group_package_id, bundleForm.private_package_id, bundleForm.package_id, bundleForm.months_included, bundleForm.group_months_included, bundleForm.private_months_included, bundleForm.price, adminPackages])
 
   // Compute package data for client cards
   const groupPackageData = useMemo(() => {
@@ -504,9 +544,47 @@ export default function PackagesPage() {
 
   const groupPackages = adminPackages.filter(p => p.category === 'Grupal').sort((a, b) => a.price - b.price)
   const privatePackages = adminPackages.filter(p => p.category === 'Privada').sort((a, b) => a.price - b.price)
-  const groupBundles = bundles.filter(b => b.category === 'Grupal')
-  const privateBundles = bundles.filter(b => b.category === 'Privada')
-  const comboBundles = bundles.filter(b => b.category === 'Combo' || b.is_combo)
+  
+  // Filter bundles - for clients, show active bundles and check date ranges
+  const filteredBundles = user?.role === 'admin' 
+    ? bundles 
+    : bundles.filter(b => {
+        // Must be active
+        if (b.is_active === false || b.is_active === 0) return false
+        
+        // Check live date range if set
+        const now = new Date()
+        now.setHours(0, 0, 0, 0)
+        
+        if (b.live_from) {
+          const liveFrom = new Date(b.live_from)
+          liveFrom.setHours(0, 0, 0, 0)
+          if (now < liveFrom) return false
+        }
+        if (b.live_until) {
+          const liveUntil = new Date(b.live_until)
+          liveUntil.setHours(23, 59, 59, 999)
+          if (now > liveUntil) return false
+        }
+        
+        return true
+      })
+  
+  const groupBundles = filteredBundles.filter(b => b.category === 'Grupal')
+  const privateBundles = filteredBundles.filter(b => b.category === 'Privada')
+  const comboBundles = filteredBundles.filter(b => b.category === 'Combo' || b.is_combo)
+  
+  // Debug logging
+  if (user?.role === 'cliente') {
+    console.log('[Packages] Client bundles:', {
+      total: bundles.length,
+      filtered: filteredBundles.length,
+      group: groupBundles.length,
+      private: privateBundles.length,
+      combo: comboBundles.length,
+      bundles: filteredBundles.map(b => ({ id: b.id, name: b.name, category: b.category, is_active: b.is_active }))
+    })
+  }
 
   // Helper to render notification for a package card
   const renderPackageNotifications = (data: any, classCount: number, type: 'group' | 'private') => {
@@ -788,6 +866,9 @@ export default function PackagesPage() {
                   {bundle.group_classes_included && (
                     <span className="text-gray-500">({bundle.group_classes_included} clases)</span>
                   )}
+                  {bundle.group_months_included && (
+                    <span className="text-blue-600 font-medium">· {bundle.group_months_included} {bundle.group_months_included === 1 ? 'mes' : 'meses'}</span>
+                  )}
                 </div>
               )}
               {bundle.private_package_name && (
@@ -796,6 +877,9 @@ export default function PackagesPage() {
                   <span className="text-purple-700">{bundle.private_package_name}</span>
                   {bundle.private_classes_included && (
                     <span className="text-gray-500">({bundle.private_classes_included} clases)</span>
+                  )}
+                  {bundle.private_months_included && (
+                    <span className="text-purple-600 font-medium">· {bundle.private_months_included} {bundle.private_months_included === 1 ? 'mes' : 'meses'}</span>
                   )}
                 </div>
               )}
@@ -810,10 +894,26 @@ export default function PackagesPage() {
         )}
         
         <div className="space-y-2 mb-4 p-3 bg-white/50 rounded-lg">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-600">Duración:</span>
-            <span className="font-semibold">{bundle.months_included} meses</span>
-          </div>
+          {/* Duration - show separate months if available */}
+          {bundle.group_months_included !== undefined && bundle.group_months_included !== null && bundle.group_package_id && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">Duración (Grupal):</span>
+              <span className="font-semibold text-blue-700">{bundle.group_months_included} {bundle.group_months_included === 1 ? 'mes' : 'meses'}</span>
+            </div>
+          )}
+          {bundle.private_months_included !== undefined && bundle.private_months_included !== null && bundle.private_package_id && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">Duración (Privado):</span>
+              <span className="font-semibold text-purple-700">{bundle.private_months_included} {bundle.private_months_included === 1 ? 'mes' : 'meses'}</span>
+            </div>
+          )}
+          {/* Fallback to months_included if separate months not set */}
+          {(!bundle.group_months_included || !bundle.private_months_included) && (!bundle.group_package_id || !bundle.private_package_id) && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">Duración:</span>
+              <span className="font-semibold">{bundle.months_included || bundle.group_months_included || bundle.private_months_included || 0} {((bundle.months_included || bundle.group_months_included || bundle.private_months_included || 0) === 1) ? 'mes' : 'meses'}</span>
+            </div>
+          )}
           {isCombo && bundle.combined_monthly_price && (
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-600">Precio mensual (combinado):</span>
@@ -840,7 +940,17 @@ export default function PackagesPage() {
           <WhatsAppButton
             message={WhatsAppTemplates.packagePurchase(
               user?.nombre || 'Cliente',
-              `Bundle ${bundle.months_included} meses${isCombo ? ' (Combo)' : ''}`,
+              (() => {
+                if (isCombo && bundle.group_months_included && bundle.private_months_included) {
+                  return `Bundle Combo (${bundle.group_months_included} meses grupal + ${bundle.private_months_included} meses privado)`
+                } else if (bundle.group_months_included && bundle.group_package_id) {
+                  return `Bundle ${bundle.group_months_included} meses (Grupal)`
+                } else if (bundle.private_months_included && bundle.private_package_id) {
+                  return `Bundle ${bundle.private_months_included} meses (Privado)`
+                } else {
+                  return `Bundle ${bundle.months_included || 0} meses${isCombo ? ' (Combo)' : ''}`
+                }
+              })(),
               bundle.name,
               bundle.price
             )}
@@ -887,14 +997,20 @@ export default function PackagesPage() {
                   <div className="flex items-center gap-2 text-sm">
                     <Users className="h-3 w-3 text-blue-500" />
                     <span className="text-blue-700">{bundle.group_package_name}</span>
-                    <span className="text-gray-400">${bundle.group_package_price?.toLocaleString()}/mes</span>
+                    <span className="text-gray-400">
+                      ${bundle.group_package_price?.toLocaleString()}/mes
+                      {bundle.group_months_included && ` × ${bundle.group_months_included} meses`}
+                    </span>
                   </div>
                 )}
                 {bundle.private_package_name && (
                   <div className="flex items-center gap-2 text-sm">
                     <User className="h-3 w-3 text-purple-500" />
                     <span className="text-purple-700">{bundle.private_package_name}</span>
-                    <span className="text-gray-400">${bundle.private_package_price?.toLocaleString()}/mes</span>
+                    <span className="text-gray-400">
+                      ${bundle.private_package_price?.toLocaleString()}/mes
+                      {bundle.private_months_included && ` × ${bundle.private_months_included} meses`}
+                    </span>
                   </div>
                 )}
               </div>
@@ -922,8 +1038,28 @@ export default function PackagesPage() {
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="text-center p-3 bg-white/60 rounded-lg">
             <Calendar className={`h-5 w-5 mx-auto mb-1 ${isCombo ? 'text-purple-500' : 'text-amber-500'}`} />
-            <div className="text-lg font-bold text-gray-900">{bundle.months_included}</div>
-            <div className="text-xs text-gray-500">meses</div>
+            {isCombo && bundle.group_months_included && bundle.private_months_included ? (
+              <div className="space-y-1">
+                <div className="text-sm font-bold text-blue-700">{bundle.group_months_included}G</div>
+                <div className="text-sm font-bold text-purple-700">{bundle.private_months_included}P</div>
+                <div className="text-xs text-gray-500">meses</div>
+              </div>
+            ) : bundle.group_months_included !== undefined && bundle.group_months_included !== null && bundle.group_package_id ? (
+              <>
+                <div className="text-lg font-bold text-gray-900">{bundle.group_months_included}</div>
+                <div className="text-xs text-gray-500">meses (Grupal)</div>
+              </>
+            ) : bundle.private_months_included !== undefined && bundle.private_months_included !== null && bundle.private_package_id ? (
+              <>
+                <div className="text-lg font-bold text-gray-900">{bundle.private_months_included}</div>
+                <div className="text-xs text-gray-500">meses (Privado)</div>
+              </>
+            ) : (
+              <>
+                <div className="text-lg font-bold text-gray-900">{bundle.months_included || 0}</div>
+                <div className="text-xs text-gray-500">meses</div>
+              </>
+            )}
           </div>
           <div className="text-center p-3 bg-white/60 rounded-lg">
             <DollarSign className={`h-5 w-5 mx-auto mb-1 ${isCombo ? 'text-purple-500' : 'text-amber-500'}`} />
@@ -1221,6 +1357,91 @@ export default function PackagesPage() {
         {/* Available Packages for Purchase - shown to clients */}
         {user?.role === 'cliente' && (
           <>
+            {/* Bundles Section - Client */}
+            {filteredBundles.length > 0 && (
+              <section>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-gradient-to-br from-amber-100 to-orange-100 rounded-lg">
+                    <Gift className="h-6 w-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Bundles de Renovación</h2>
+                    <p className="text-sm text-gray-500">
+                      Paquetes multi-mes con descuentos especiales
+                    </p>
+                  </div>
+              </div>
+
+                {/* Combo Bundles */}
+                {comboBundles.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-purple-500" />
+                      Bundles Combo (Grupal + Privado)
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {comboBundles.map((bundle, index) => (
+                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Group Bundles */}
+                {groupBundles.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                      <Users className="h-5 w-5 text-blue-500" />
+                      Bundles Grupales
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {groupBundles.map((bundle, index) => (
+                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Private Bundles */}
+                {privateBundles.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                      <User className="h-5 w-5 text-purple-500" />
+                      Bundles Privados
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {privateBundles.map((bundle, index) => (
+                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fallback: Show bundles without category or with unknown category */}
+                {filteredBundles.filter(b => {
+                  const cat = b.category || b.is_combo ? 'Combo' : null
+                  return !cat || (cat !== 'Combo' && cat !== 'Grupal' && cat !== 'Privada')
+                }).length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                      <Gift className="h-5 w-5 text-amber-500" />
+                      Otros Bundles
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredBundles
+                        .filter(b => {
+                          const cat = b.category || (b.is_combo ? 'Combo' : null)
+                          return !cat || (cat !== 'Combo' && cat !== 'Grupal' && cat !== 'Privada')
+                        })
+                        .map((bundle, index) => (
+                          <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* Group Packages Section */}
             <section>
               <div className="flex items-center gap-3 mb-4">
@@ -1241,13 +1462,13 @@ export default function PackagesPage() {
                     .sort((a, b) => a.price - b.price)
                     .map((pkg, index) => (
                       <ClientPackageCard key={pkg.id} pkg={pkg} index={index} />
-                    ))}
-                </div>
+          ))}
+          </div>
               ) : (
                 <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
                   <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-500">No hay paquetes grupales disponibles en este momento</p>
-                </div>
+        </div>
               )}
             </section>
 
@@ -1678,7 +1899,14 @@ export default function PackagesPage() {
                           const newGroupId = e.target.value
                           const groupPkg = adminPackages.find(p => p.id === newGroupId)
                           const privatePkg = adminPackages.find(p => p.id === bundleForm.private_package_id)
-                          const combinedPrice = ((groupPkg?.price || 0) + (privatePkg?.price || 0)) * bundleForm.months_included
+                          
+                          // Calculate price using separate months
+                          const groupMonths = bundleForm.group_months_included || 3
+                          const privateMonths = bundleForm.private_months_included || 3
+                          const groupTotal = (groupPkg?.price || 0) * groupMonths
+                          const privateTotal = (privatePkg?.price || 0) * privateMonths
+                          const combinedPrice = groupTotal + privateTotal
+                          
                           setBundleForm({ 
                             ...bundleForm, 
                             group_package_id: newGroupId,
@@ -1713,7 +1941,14 @@ export default function PackagesPage() {
                           const newPrivateId = e.target.value
                           const groupPkg = adminPackages.find(p => p.id === bundleForm.group_package_id)
                           const privatePkg = adminPackages.find(p => p.id === newPrivateId)
-                          const combinedPrice = ((groupPkg?.price || 0) + (privatePkg?.price || 0)) * bundleForm.months_included
+                          
+                          // Calculate price using separate months
+                          const groupMonths = bundleForm.group_months_included || 3
+                          const privateMonths = bundleForm.private_months_included || 3
+                          const groupTotal = (groupPkg?.price || 0) * groupMonths
+                          const privateTotal = (privatePkg?.price || 0) * privateMonths
+                          const combinedPrice = groupTotal + privateTotal
+                          
                           setBundleForm({ 
                             ...bundleForm, 
                             private_package_id: newPrivateId,
@@ -1753,19 +1988,62 @@ export default function PackagesPage() {
                     )}
                   </div>
 
-                  {/* Months and Price */}
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Months - Show separate inputs for group and private */}
+                  {(bundleForm.group_package_id || bundleForm.private_package_id) ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      {bundleForm.group_package_id && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Meses Paquete Grupal *
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={bundleForm.group_months_included}
+                            onChange={(e) => {
+                              const months = Number(e.target.value) || 1
+                              setBundleForm({ 
+                                ...bundleForm, 
+                                group_months_included: months
+                              })
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                          />
+                        </div>
+                      )}
+                      {bundleForm.private_package_id && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Meses Paquete Privado *
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={bundleForm.private_months_included}
+                            onChange={(e) => {
+                              const months = Number(e.target.value) || 1
+                              setBundleForm({ 
+                                ...bundleForm, 
+                                private_months_included: months
+                              })
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // Legacy: single months input if only using package_id
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Meses Incluidos *
                       </label>
                       <input
                         type="number"
-                        min="2"
+                        min="1"
                         value={bundleForm.months_included}
                         onChange={(e) => {
-                          const months = Number(e.target.value) || 2
-                          // Don't auto-update price - let admin set their discount manually
+                          const months = Number(e.target.value) || 1
                           setBundleForm({ 
                             ...bundleForm, 
                             months_included: months
@@ -1773,7 +2051,11 @@ export default function PackagesPage() {
                         }}
                         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                       />
-          </div>
+                    </div>
+                  )}
+
+                  {/* Price */}
+                  <div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Precio del Bundle (MXN) *
@@ -1813,17 +2095,21 @@ export default function PackagesPage() {
                       
                       {/* Breakdown by package type */}
                       <div className="text-sm space-y-2">
-                        <div className="text-gray-600">Precio normal ({bundleForm.months_included} meses):</div>
+                        <div className="text-gray-600">Precio normal:</div>
                         {bundlePreview.groupPkg && (
                           <div className="flex justify-between items-center pl-2 border-l-2 border-blue-300">
                             <span className="text-blue-700">{bundlePreview.groupPkg.name}</span>
-                            <span className="text-gray-700">${bundlePreview.groupPkg.price.toLocaleString()} × {bundleForm.months_included} = ${(bundlePreview.groupPkg.price * bundleForm.months_included).toLocaleString()}</span>
+                            <span className="text-gray-700">
+                              ${bundlePreview.groupPkg.price.toLocaleString()} × {bundlePreview.groupMonths} {bundlePreview.groupMonths === 1 ? 'mes' : 'meses'} = ${(bundlePreview.groupPkg.price * bundlePreview.groupMonths).toLocaleString()}
+                            </span>
                           </div>
                         )}
                         {bundlePreview.privatePkg && (
                           <div className="flex justify-between items-center pl-2 border-l-2 border-purple-300">
                             <span className="text-purple-700">{bundlePreview.privatePkg.name}</span>
-                            <span className="text-gray-700">${bundlePreview.privatePkg.price.toLocaleString()} × {bundleForm.months_included} = ${(bundlePreview.privatePkg.price * bundleForm.months_included).toLocaleString()}</span>
+                            <span className="text-gray-700">
+                              ${bundlePreview.privatePkg.price.toLocaleString()} × {bundlePreview.privateMonths} {bundlePreview.privateMonths === 1 ? 'mes' : 'meses'} = ${(bundlePreview.privatePkg.price * bundlePreview.privateMonths).toLocaleString()}
+                            </span>
                           </div>
                         )}
                         <div className="flex justify-between items-center font-semibold text-gray-900 pt-1 border-t border-amber-200">
@@ -1896,8 +2182,8 @@ export default function PackagesPage() {
                     </div>
                   </div>
 
-                  {/* Status toggles */}
-                  <div className="flex gap-6">
+                  {/* Status toggle */}
+                  <div>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1905,16 +2191,7 @@ export default function PackagesPage() {
                         onChange={(e) => setBundleForm({ ...bundleForm, is_active: e.target.checked })}
                         className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
                       />
-                      <span className="text-sm text-gray-700">Bundle activo</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={bundleForm.is_live}
-                        onChange={(e) => setBundleForm({ ...bundleForm, is_live: e.target.checked })}
-                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
-                      />
-                      <span className="text-sm text-gray-700">Visible para clientes</span>
+                      <span className="text-sm text-gray-700">Bundle activo (visible para clientes)</span>
                     </label>
                   </div>
                 </div>

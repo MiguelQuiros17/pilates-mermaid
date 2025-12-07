@@ -56,6 +56,7 @@ interface ClassItem {
     description?: string
     date: string
     time: string
+    end_time?: string
     duration: number
     max_capacity: number
     current_bookings: number
@@ -424,6 +425,42 @@ export default function ClientDashboardPage() {
         return getClassDateTime(classItem).getTime() < Date.now()
     }
 
+    const formatTime12Hour = (time24: string) => {
+        if (!time24) return ''
+        const [hour, minute] = time24.split(':').map(Number)
+        if (isNaN(hour)) return time24
+        const period = hour >= 12 ? 'PM' : 'AM'
+        const hour12 = hour % 12 || 12
+        return `${hour12}:${String(minute || 0).padStart(2, '0')} ${period}`
+    }
+
+    const replaceTemplateVariables = (text: string, occurrenceDate: Date, cls: ClassItem): string => {
+        if (!text) return text
+        
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+        const dayName = dayNames[occurrenceDate.getDay()]
+        
+        const month = String(occurrenceDate.getMonth() + 1).padStart(2, '0')
+        const day = String(occurrenceDate.getDate()).padStart(2, '0')
+        const year = String(occurrenceDate.getFullYear()).slice(-2)
+        const fullDate = `${month}/${day}/${year}`
+        const shortDate = `${month}/${day}`
+        
+        const startTime24 = cls.time || ''
+        const endTime24 = cls.end_time || ''
+        const startTime12 = formatTime12Hour(startTime24)
+        const endTime12 = formatTime12Hour(endTime24)
+        const duration = cls.duration || 0
+        
+        return text
+            .replace(/{day}/g, dayName)
+            .replace(/{start_time}/g, startTime12)
+            .replace(/{end_time}/g, endTime12)
+            .replace(/{duration}/g, String(duration))
+            .replace(/{date}/g, fullDate)
+            .replace(/{short_date}/g, shortDate)
+    }
+
     const getClassesForDate = (date: Date) => {
         const year = date.getFullYear()
         const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -435,6 +472,19 @@ export default function ClientDashboardPage() {
                 if (!cls.date) return false
                 const classDate = cls.date.split('T')[0]
                 return classDate === dateKey
+            })
+            .map((cls) => {
+                // Apply template replacement
+                const clsDateStr = cls.date.split('T')[0]
+                const [clsYear, clsMonth, clsDay] = clsDateStr.split('-').map(Number)
+                const clsDate = new Date(clsYear, clsMonth - 1, clsDay)
+                clsDate.setHours(0, 0, 0, 0)
+                
+                return {
+                    ...cls,
+                    title: replaceTemplateVariables(cls.title || '', clsDate, cls),
+                    description: replaceTemplateVariables(cls.description || '', clsDate, cls)
+                }
             })
             .sort((a, b) => getClassDateTime(a).getTime() - getClassDateTime(b).getTime())
     }

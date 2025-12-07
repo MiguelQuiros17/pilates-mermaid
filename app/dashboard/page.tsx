@@ -178,6 +178,42 @@ export default function DashboardPage() {
     }
   }
 
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return ''
+    const [hour, minute] = time24.split(':').map(Number)
+    if (isNaN(hour)) return time24
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const hour12 = hour % 12 || 12
+    return `${hour12}:${String(minute || 0).padStart(2, '0')} ${period}`
+  }
+
+  const replaceTemplateVariables = (text: string, occurrenceDate: Date, classData: any): string => {
+    if (!text) return text
+    
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const dayName = dayNames[occurrenceDate.getDay()]
+    
+    const month = String(occurrenceDate.getMonth() + 1).padStart(2, '0')
+    const day = String(occurrenceDate.getDate()).padStart(2, '0')
+    const year = String(occurrenceDate.getFullYear()).slice(-2)
+    const fullDate = `${month}/${day}/${year}`
+    const shortDate = `${month}/${day}`
+    
+    const startTime24 = classData.class_time || classData.time || ''
+    const endTime24 = classData.end_time || ''
+    const startTime12 = formatTime12Hour(startTime24)
+    const endTime12 = formatTime12Hour(endTime24)
+    const duration = classData.duration || 0
+    
+    return text
+      .replace(/{day}/g, dayName)
+      .replace(/{start_time}/g, startTime12)
+      .replace(/{end_time}/g, endTime12)
+      .replace(/{duration}/g, String(duration))
+      .replace(/{date}/g, fullDate)
+      .replace(/{short_date}/g, shortDate)
+  }
+
   // Get next upcoming class for client
   const nextClass = useMemo(() => {
     if (!userBookings || userBookings.length === 0) return null
@@ -384,7 +420,14 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 text-lg">{nextClass.class_title || nextClass.title || 'Clase'}</h3>
+                      <h3 className="font-semibold text-gray-900 text-lg">
+                        {(() => {
+                          const classDate = new Date(nextClass.occurrence_date || nextClass.class_date || nextClass.date)
+                          classDate.setHours(0, 0, 0, 0)
+                          const title = nextClass.class_title || nextClass.title || 'Clase'
+                          return replaceTemplateVariables(title, classDate, nextClass)
+                        })()}
+                      </h3>
                       <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
                         <span className="flex items-center gap-1">
                           <Clock className="h-4 w-4" />
@@ -495,7 +538,12 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 truncate">
-                            {booking.class_title || booking.title || 'Clase'}
+                            {(() => {
+                              const bookingDate = new Date(booking.occurrence_date || booking.class_date || booking.date)
+                              bookingDate.setHours(0, 0, 0, 0)
+                              const title = booking.class_title || booking.title || 'Clase'
+                              return replaceTemplateVariables(title, bookingDate, booking)
+                            })()}
                           </p>
                           <p className="text-xs text-gray-500">
                             {booking.class_time || booking.time}

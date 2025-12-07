@@ -1,0 +1,659 @@
+@page "/applications/summary"
+
+@using Aloha.Customer.Web.Utilities
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.Applications
+@using Aloha.Domain.CoreApplications
+@using Aloha.Domain.Features
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Services.Application
+@using Aloha.Domain.Services.Core.Services
+@using Aloha.Domain.Services.Core.Services.CoreService.Models
+@using Aloha.Domain.Services.Messaging.Services
+@using Aloha.Domain.Disclosures
+@inject IApplicantNotifierService applicantNotifierService
+@inject IApplicationAutoApprovalService autoApprovalService
+@inject IApplicationStateProvider appState
+@inject IApplicationStepCompletionManager stepManager
+@inject ICoreService coreService
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IJSRuntime js
+@inject IQuestionnaireService questionnaireService
+@inject IStringLocalizer<Index> l
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+
+@if (userApp is not null)
+{
+    <h1>@l["page-heading"]</h1>
+    <div class="gap-3 vstack">
+        <p>@l["page-description"]</p>
+        @if (isSubmitAlertShown)
+        {
+            <Alert Color="AlertColor.Success">
+                <Icon class="mx-2" Name="IconName.CheckCircleFill"/>
+                @(" ")@l["submit-application-success-alert"]
+            </Alert>
+        }
+        <ApplicationStatusSummary
+            IsFundingEnabled="isFundingEnabled"
+            PreventFundingIfPendingSignatures="preventFundingIfPendingSignatures"
+            UserApp="userApp"
+        />
+        <hr/>
+        @if (applicationFieldFeature.IsEligibilityEnabled)
+        {
+            <ApplicationEligibilitySummary UserApp="userApp"/>
+        }
+        <ApplicationPeopleSummary UserApp="userApp"/>
+        @if (userApp.ProductApplicationType?.ApplicationType == ApplicationType.Member)
+        {
+            @if (isAnyShareProductEnabled)
+            {
+                <ApplicationShareProductsSummary UserApp="userApp"/>
+            }
+
+            @if (isCardOrderingEnabled)
+            {
+                <ApplicationCardProductsSummary UserApp="userApp"/>
+            }
+        }
+        @if (userApp.ProductApplicationType?.ApplicationType == ApplicationType.Loan)
+        {
+            <ApplicationLoanProductsSummary UserApp="userApp"/>
+        }
+        @if (isQuestionnaireFeatureEnabled)
+        {
+            <QuestionnairesSummary UserApp="userApp"/>
+        }
+        @if (isApplicationCommentFeatureEnabled)
+        {
+            <ApplicationCommentSummary/>
+        }
+    </div>
+
+    <div class="mt-3">
+        <ul>
+            @foreach (var error in validationErrors)
+            {
+                <li class="text-danger">@error</li>
+            }
+        </ul>
+    </div>
+
+    if (isUserApplicationInProgress)
+    {
+        <div class="mt-3 d-flex justify-content-end">
+            <Button
+                Color="ButtonColor.Primary"
+                Loading="@isLoading"
+                Disabled="@isLoading"
+                @onclick="SubmitApplication"
+            >
+                @l["submit-application-button"]
+            </Button>
+        </div>
+    }
+}
+
+
+@code {
+
+    private UserApplication? userApp { get; set; }
+    private VendorFeature? vendorFeatures;
+    private ApplicationFieldFeature applicationFieldFeature = ApplicationFieldFeature.Create();
+    private ApplicantFieldFeature applicantFieldFeature = ApplicantFieldFeature.Create();
+    private HousingFieldFeature housingFieldFeature = HousingFieldFeature.Create();
+    private Guid? appKey;
+    private bool isUserApplicationInProgress;
+    private bool isSubmitAlertShown;
+    private bool isLoading;
+    private bool isCardOrderingEnabled;
+    private bool isAnyShareProductEnabled;
+    private bool isQuestionnaireFeatureEnabled;
+    private bool isFundingEnabled;
+    private bool isApplicationCommentFeatureEnabled;
+    private bool preventFundingIfPendingSignatures;
+    private readonly IList<string> validationErrors = [];
+    bool isCoreOfflineMode = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        appKey = await appState.GetCurrentApplicationKeyAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        userApp = await FetchUserApplicationAsync(db, appKey);
+        vendorFeatures = await db.VendorFeatures.GetActiveFeatureAsync(userApp.ProductApplicationTypeId);
+        var fieldFeature = await db.FieldFeatures.GetActiveFeatureAsync(userApp.ProductApplicationTypeId);
+        applicantFieldFeature = fieldFeature?.ApplicantFieldFeature ?? applicantFieldFeature;
+        applicationFieldFeature = fieldFeature?.ApplicationFieldFeature ?? applicationFieldFeature;
+        housingFieldFeature = fieldFeature?.HousingFieldFeature ?? housingFieldFeature;
+
+        isApplicationCommentFeatureEnabled = vendorFeatures?.CoreVendor.ApplicationNoteForApplicationCommentEnabled == true;
+
+        isCardOrderingEnabled = await FeatureFlagUtils
+            .IsCardOrderingEnabledForAppTypeAsync(db, userApp.ProductApplicationTypeId);
+
+        isFundingEnabled = await FeatureFlagUtils.IsFundingEnabledForAppTypeAsync(db, userApp.ProductApplicationTypeId);
+
+        isAnyShareProductEnabled = await db.ShareProducts.GetEnabledProducts().AnyAsync();
+        isUserApplicationInProgress = userApp?.UserApplicationStatus == UserApplicationStatusType.InProgressMember;
+        var isApplicationQuestionnairesEnabled = await FeatureFlagUtils.IsAnyApplicationQuestionnaireEnabledForAppType(db, userApp!.ProductApplicationTypeId);
+        var isPersonQuestionnairesEnabled = await FeatureFlagUtils.IsAnyApplicantQuestionnaireEnabledForAppType(db, userApp!.ProductApplicationTypeId);
+        var isProductQuestionnairesEnabled = await UserApplicationAnalysisUtils.HasSelectedAnyProductsWithQuestionnaires(db, appKey!.Value);
+        isQuestionnaireFeatureEnabled = isApplicationQuestionnairesEnabled || isPersonQuestionnairesEnabled || isProductQuestionnairesEnabled;
+
+        preventFundingIfPendingSignatures =
+            vendorFeatures?.DocumentSigning?.PreventFundingIfPendingSignatures == true
+            && (
+                vendorFeatures.DocumentSigning.DocusignEnabled
+                || vendorFeatures.DocumentSigning.KinectiveSignEnabled
+            );
+    }
+
+    private static async Task<UserApplication> FetchUserApplicationAsync(AlohaDb db, Guid? appKey) =>
+        await db.UserApplications
+            .AsSplitQuery()
+            // App Type
+            .Include(x => x.ProductApplicationType)
+            // Eligibility
+            .Include(x => x.ApplicationEligibility!)
+            .ThenInclude(e => e.EligibilityOption)
+            // People
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Addresses)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Phones)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Emails)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Identification!)
+            .ThenInclude(i => i.FrontApplicationImage)
+            // Share Products
+            .Include(x => x.ApplicationShareProducts!)
+            .ThenInclude(p => p.ShareProduct!)
+            .ThenInclude(p => p.ShareProductCategory)
+            .Include(x => x.ApplicationShareProducts!)
+            .ThenInclude(p => p.OverdraftProductOption!)
+            .ThenInclude(p => p.ShareProduct!)
+            // Loan Products
+            .Include(x => x.ApplicationLoanProducts!)
+            .ThenInclude(p => p.LoanProduct!)
+            .ThenInclude(p => p.LoanProductCategory)
+            .Include(x => x.ApplicationLoanProducts!)
+            .ThenInclude(p => p.OverdraftProductOption!)
+            .ThenInclude(p => p.ShareProduct!)
+            .Include(x => x.ApplicationLoanProducts!)
+            .ThenInclude(p => p.LoanProductMortgage!)
+            .Include(x => x.ApplicationLoanProducts!)
+            .ThenInclude(p => p.LoanProductVehicle!)
+            // Cards
+            .Include(x => x.ApplicationCardProducts!)
+            .ThenInclude(x => x.ApplicationPerson)
+            .Include(x => x.ApplicationCardProducts!)
+            .ThenInclude(x => x.CardProduct!)
+            .ThenInclude(x => x.CardProductCategory)
+            .Include(x => x.ApplicationCardProducts!)
+            .ThenInclude(x => x.CheckingAccountProduct)
+            .Include(x => x.ApplicationCardProducts!)
+            .ThenInclude(x => x.SavingsAccountProduct)
+            .Include(x => x.ApplicationCardProducts!)
+            .ThenInclude(x => x.CardProduct)
+            .ThenInclude(x => x!.CardProductImage)
+            // Funding
+            .Include(x => x.ApplicationFundingOption)
+            // Get app by appKey
+            .FirstAsync(a => a.ApplicationKey == appKey);
+
+    private async Task ValidateUserApplication(UserApplication app, FieldFeature fieldFeatureForSteps)
+    {
+        validationErrors.Clear();
+
+        var primaryPerson = (app.ApplicationPeople ?? []).FirstOrDefault(x => x.PersonType is PersonType.Primary);
+        var primaryAddress = primaryPerson?.Addresses?.FirstOrDefault(a => a.AddressType is AddressType.Primary);
+
+        if (primaryPerson == null)
+        {
+            validationErrors.Add(l["validation-no-primary-applicant"]);
+        }
+        else
+        {
+            var plaidIdentityEnabled = vendorFeatures?.Identity.IdentityVerification == IdentityVerificationType.Plaid;
+            var isIdentificationRequired = plaidIdentityEnabled || applicantFieldFeature.IsIdentificationUploadEnabled;
+            var hasAdultJoint = (app.ApplicationPeople ?? []).Any(x => x.PersonType == PersonType.Joint && !x.IsMinor());
+
+            if (applicantFieldFeature.IsAdultJointRequiredForMinorPrimaryApplicant &&
+                primaryPerson.IsMinor() &&
+                !hasAdultJoint)
+            {
+                validationErrors.Add(l["validation-adult-joint-required"]);
+            }
+
+            if (applicantFieldFeature.IsBeneficiaryApplicantsEnabled)
+            {
+                var beneficiaries = app.ApplicationPeople!.Where(x => x.PersonType == PersonType.Beneficiary).ToList();
+                var providedPercentages = beneficiaries.Where(b => b.BeneficiaryPercentage.HasValue).ToList();
+                var totalPercentage = providedPercentages.Sum(b => b.BeneficiaryPercentage ?? 0);
+
+                if (providedPercentages.Any() && totalPercentage != 100)
+                {
+                    validationErrors.Add(l["validation-beneficiary-percentage-total"]);
+                }
+            }
+
+            foreach (var person in app.ApplicationPeople!)
+            {
+                if (string.IsNullOrWhiteSpace(person.TaxIdentifier))
+                {
+                    validationErrors.Add(l["validation-tax-id-required", person.GetFullName()]);
+                }
+
+                if (string.IsNullOrWhiteSpace(person.DateOfBirth))
+                {
+                    validationErrors.Add(l["validation-date-of-birth-required", person.GetFullName()]);
+                }
+
+                if (person.Addresses?.Any(x => x.AddressType == AddressType.Primary) == false)
+                {
+                    validationErrors.Add(l["validation-address-required", person.GetFullName()]);
+                }
+
+                if (isIdentificationRequired &&
+                    !person.IsMinor() &&
+                    person.PersonType != PersonType.Beneficiary &&
+                    person.Identification is null)
+                {
+                    validationErrors.Add(l["validation-identification-required", person.GetFullName()]);
+                }
+
+                if (applicantFieldFeature.IsEmploymentInformationEnabled &&
+                    applicantFieldFeature.IsEmploymentInformationRequired &&
+                    person.PersonType != PersonType.Beneficiary &&
+                    !person.Employments?.Any() == true)
+                {
+                    validationErrors.Add(l["validation-employment-required", person.GetFullName()]);
+                }
+
+                if (housingFieldFeature.IsHousingStatusRequired &&
+                    person.PersonType != PersonType.Beneficiary &&
+                    person.Housing is null)
+                {
+                    validationErrors.Add(l["validation-housing-required", person.GetFullName()]);
+                }
+
+                var personPrimaryAddress = (person.Addresses ?? []).FirstOrDefault(x => x.AddressType == AddressType.Primary);
+
+                if (housingFieldFeature.IsMoveDatesEnabled
+                    && primaryAddress is not null
+                    && string.IsNullOrWhiteSpace(personPrimaryAddress?.MoveInDate))
+                {
+                    validationErrors.Add(l["validation-move-in-date-required", person.GetFullName()]);
+                }
+
+                if (housingFieldFeature.IsPreviousAddressEnabled &&
+                    !string.IsNullOrWhiteSpace(personPrimaryAddress?.MoveInDate) &&
+                    DateTime.Today.AddDays(1) <= DateTime.Parse(personPrimaryAddress.MoveInDate).AddMonths(housingFieldFeature.RequirePreviousAddressIfPrimaryUnderMonths) &&
+                    (person.Addresses ?? []).All(x => x.AddressType != AddressType.Previous))
+                {
+                    validationErrors.Add(l["validation-previous-address-required", person.GetFullName()]);
+                }
+            }
+        }
+
+        foreach (var person in app.ApplicationPeople!)
+        {
+            if (housingFieldFeature.IsPreviousAddressEnabled
+                && (person?.PersonType == PersonType.Primary || person?.PersonType == PersonType.Joint)
+                && !string.IsNullOrWhiteSpace(primaryAddress?.MoveInDate)
+                && DateTime.Today.AddDays(1) <= DateTime.Parse(primaryAddress?.MoveInDate!).AddMonths(housingFieldFeature.RequirePreviousAddressIfPrimaryUnderMonths)
+                && (person.Addresses ?? []).All(x => x.AddressType != AddressType.Previous))
+            {
+                validationErrors.Add(l["validation-previous-address-required", $"{person.FirstName} {person.LastName}"]);
+            }
+        }
+
+        var isEveryRequiredApplicationQuestionnaireComplete = await questionnaireService
+            .IsEveryRequiredApplicationQuestionnaireCompleteAsync();
+
+        if (!isEveryRequiredApplicationQuestionnaireComplete)
+        {
+            validationErrors.Add(l["validation-application-questionnaires-incomplete"]);
+        }
+
+        var isEveryRequiredApplicantQuestionnaireComplete = await questionnaireService
+            .IsEveryRequiredApplicantQuestionnaireCompleteAsync();
+
+        if (!isEveryRequiredApplicantQuestionnaireComplete)
+        {
+            validationErrors.Add(l["validation-applicant-questionnaires-incomplete"]);
+        }
+
+        var isEveryRequiredProductQuestionnaireComplete = await questionnaireService
+            .IsEveryRequiredProductQuestionnaireCompleteAsync();
+
+        if (!isEveryRequiredProductQuestionnaireComplete)
+        {
+            validationErrors.Add(l["validation-product-questionnaires-incomplete"]);
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var isApplicationComplete = await ApplicationStepCompletionEvaluator
+            .IsCompleteAsync(db, app, fieldFeatureForSteps, appKey!.Value);
+
+        if (!isApplicationComplete)
+        {
+            validationErrors.Add(l["validation-application-incomplete"]);
+        }
+
+        var disclosures = await db.Disclosures
+            .GetEnabledDisclosures()
+            .Where(d => d.DisclosureApplicationTypeLinks!.Any(x => x.ProductApplicationTypeId == app.ProductApplicationTypeId))
+            .Where(d => d.DisclosureType == DisclosureType.Applicant)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync();
+
+        if (disclosures.Any())
+        {
+            foreach (var disclosure in disclosures)
+            {
+                if (disclosure.RequireAcknowledgment)
+                {
+                    var appDisclosure = await db.ApplicationDisclosures
+                        .Include(x => x.Disclosure)
+                        .Where(x => x.UserApplication!.ApplicationKey == appKey)
+                        .Where(x => x.Disclosure!.DisclosureType == DisclosureType.Applicant)
+                        .Where(x => x.Disclosure!.Id == disclosure.Id)
+                        .FirstOrDefaultAsync();
+
+                    if (appDisclosure is null)
+                    {
+                        validationErrors.Add(l["validation-must-agree-disclosure", disclosure.DisplayName]);
+                        continue;
+                    }
+                    else if (!appDisclosure.Acknowledged)
+                    {
+                        validationErrors.Add(l["validation-must-agree-disclosure", disclosure.DisplayName]);
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    private async Task SubmitApplication()
+    {
+        isLoading = true;
+        StateHasChanged();
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var application = await db.UserApplications
+            .Include(x => x.ApplicantUser)
+            .Include(x => x.ProductApplicationType)
+            .Include(x => x.ApplicationPeople)!
+            .ThenInclude(p => p.Addresses)
+            .Include(x => x.ApplicationPeople)!
+            .ThenInclude(p => p.Employments)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Phones)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Emails)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Identification!)
+            .ThenInclude(i => i.FrontApplicationImage)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(x => x.CorePersonStatus)
+            .Include(x => x.ApplicationPeople)!
+            .ThenInclude(p => p.Addresses)
+            .Include(x => x.ApplicationPeople!)
+            .ThenInclude(p => p.Housing)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+        var fieldFeature = await db.FieldFeatures.GetActiveFeatureAsync(application.ProductApplicationTypeId) ?? FieldFeature.Create();
+
+        await ValidateUserApplication(application, fieldFeature);
+
+        if (validationErrors.Any())
+        {
+            isLoading = false;
+            return;
+        }
+
+        application.SetStep(UserApplicationStepType.Confirmation);
+        application.SetStatus(UserApplicationStatusType.Submitted);
+
+        var vendorFeature = await db.VendorFeatures
+            .GetActiveFeature(application.ProductApplicationTypeId)
+            .AsNoTracking()
+            .FirstOrDefaultAsync();
+
+        var systemFeature = await db.SystemFeatures.GetActiveFeatureAsync();
+        isCoreOfflineMode = systemFeature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+        await db.SaveChangesAsync();
+
+        var coreFeature = vendorFeature?.CoreVendor;
+
+        if (coreFeature?.CoreRegistrationEnabled == false)
+        {
+            await stepManager.MarkStepAsCompletedAsync(UserApplicationStepType.Confirmation);
+        }
+
+        if (!isCoreOfflineMode)
+        {
+            // If personSerial already exists in Core, we attach the result immediately.
+            // Otherwise, we fall back to name/DOB and add the request to ofacResubmitRequests
+            // for a second pass after InsertCoreApplicationAsync creates those PERSON records.
+            var ofacResubmitRequests = new List<OFACCheckRequest>();
+
+            if (coreFeature is { OfacComplianceCheckEnabled: true, OfacUseCorelationCore: true })
+            {
+                var people = coreFeature.OfacComplianceCheckAllMemberEnabled
+                    ? application.ApplicationPeople!.Where(x => x.PersonType != PersonType.Beneficiary)
+                    : application.ApplicationPeople!.Where(x => x.PersonType == PersonType.Primary);
+
+                foreach (var person in people)
+                {
+                    if (person.IsMinor() && !applicantFieldFeature.IsMinorApplicantsOfacEnabled)
+                    {
+                        continue;
+                    }
+
+                    var request = new OFACCheckRequest
+                    {
+                        ApplicationId = application.Id,
+                        PersonId = person.Id,
+                        FullName = $"{person.FirstName} {person.LastName}",
+                        DateOfBirth = person.DateOfBirth,
+                        TaxIdentifier = person.TaxIdentifier!
+                    };
+
+                    var ofacStatus = await coreService.PerformOfacComplianceCheckAsync(request, CancellationToken.None);
+
+                    if (person.CorePersonStatus != null)
+                    {
+                        person.CorePersonStatus.Update(ofacStatus.OfacRestriction);
+                    }
+                    else
+                    {
+                        var newStatus = CorePersonStatus.Create(person.Id);
+                        newStatus.Update(ofacStatus.OfacRestriction);
+                        person.UpdateCorePersonStatus(newStatus);
+                        db.Add(newStatus);
+                    }
+
+                    if (!ofacStatus.UsedPersonSerial)
+                        ofacResubmitRequests.Add(request);
+                }
+
+                await db.SaveChangesAsync();
+            }
+
+            if (coreFeature?.ChargeOffCheckEnabled == true)
+            {
+                var people = coreFeature.ChargeOffCheckAllMemberEnabled
+                    ? application.ApplicationPeople!.Where(x => x.PersonType != PersonType.Beneficiary)
+                    : application.ApplicationPeople!.Where(x => x.PersonType == PersonType.Primary);
+
+                foreach (var person in people)
+                {
+                    var chargeOffStatus = await coreService.GetPersonChargeOffStatusAsync(person.Id, application.Id, CancellationToken.None);
+
+                    if (person.CorePersonStatus != null)
+                    {
+                        person.CorePersonStatus.Update(chargeOffStatus.ChargedOffAccounts.Count > 0);
+
+                        foreach (var account in chargeOffStatus.ChargedOffAccounts)
+                        {
+                            if (!person.CorePersonStatus.ChargedOffAccounts.Contains(account))
+                            {
+                                person.CorePersonStatus.ChargedOffAccounts.Add(account);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var newStatus = CorePersonStatus.Create(person.Id);
+                        newStatus.Update(chargeOffStatus.ChargedOffAccounts.Count > 0);
+
+                        foreach (var account in chargeOffStatus.ChargedOffAccounts)
+                        {
+                            newStatus.ChargedOffAccounts.Add(account);
+                        }
+
+                        person.UpdateCorePersonStatus(newStatus);
+                        db.Add(newStatus);
+                    }
+                }
+
+                await db.SaveChangesAsync();
+            }
+
+            await applicantNotifierService.SendApplicationSubmittedEmailAsync(
+                application.ApplicantUser!.EmailAddress,
+                application.Id);
+
+            if (application.ProductApplicationType?.AutoSubmitApplication == true)
+            {
+                var coreApplicationInsert = await coreService.InsertCoreApplicationAsync(application.Id, CancellationToken.None);
+
+                if (coreApplicationInsert.Successful)
+                {
+                    foreach (var request in ofacResubmitRequests)
+                    {
+                        await coreService.PerformOfacComplianceCheckAsync(request, CancellationToken.None);
+                    }
+
+                    var isChexSystemsEnabledForMinors = applicantFieldFeature.IsMinorApplicantsChexSystemsEnabled;
+                    var isCreditPullEnabledForMinors = applicantFieldFeature.IsMinorApplicantsCreditPullEnabled;
+
+                    foreach (var person in application.ApplicationPeople!.Where(x => x.PersonType != PersonType.Beneficiary))
+                    {
+                        if (coreFeature?.CoreChexSystemPullEnabled == true && (!person.IsMinor() || isChexSystemsEnabledForMinors))
+                        {
+                            await coreService.InsertCreditPullAsync(person.Id, CreditReportType.ChexSystem, CancellationToken.None);
+                        }
+
+                        if (coreFeature?.CoreCreditPullEnabled == true && (!person.IsMinor() || isCreditPullEnabledForMinors))
+                        {
+                            await coreService.InsertCreditPullAsync(person.Id, CreditReportType.CreditReport, CancellationToken.None);
+                        }
+                    }
+
+                    if (application.ProductApplicationType!.ApplicationType == ApplicationType.Member &&
+                        vendorFeature is { CoreVendor: { AccountCreationRepGenEnabled: true, LaunchRepGenUponSubmit: true } })
+                    {
+                        var repGenResponse = await coreService.LaunchRepGenAsync(application.Id, CancellationToken.None);
+                        if (vendorFeature.CoreVendor.ReadDecisionFromRepGen)
+                        {
+                            if (repGenResponse is { Successful: true, Result: "Approved" })
+                            {
+                                await autoApprovalService.HandleApprovedApplicationFromCoreAsync(application);
+                            }
+                            else if (repGenResponse.Result is "Denied" or "Declined")
+                            {
+                                application.SetStatus(UserApplicationStatusType.Complete);
+                                application.SetDecision(UserApplicationDecisionType.Declined, false, "System");
+                                await applicantNotifierService.SendApplicationDeclinedEmailAsync(application.ApplicantUser!.EmailAddress, application.Id);
+                            }
+                        }
+                    }
+
+                    if (application.ProductApplicationType!.ApplicationType == ApplicationType.Loan &&
+                        vendorFeature is { CoreVendor: { LoanCreationRepGenEnabled: true, LaunchLoanRepGenUponSubmit: true } })
+                    {
+                        var repGenResponse = await coreService.LaunchLoanRepGenAsync(application.Id, CancellationToken.None);
+                        if (vendorFeature.CoreVendor.ReadDecisionFromLoanRepGen)
+                        {
+                            if (repGenResponse is { Successful: true, Result: "Approved" })
+                            {
+                                await autoApprovalService.HandleApprovedApplicationFromCoreAsync(application);
+                            }
+                            else if (repGenResponse.Result is "Denied" or "Declined")
+                            {
+                                application.SetStatus(UserApplicationStatusType.Complete);
+                                application.SetDecision(UserApplicationDecisionType.Declined, false, "System");
+                                await applicantNotifierService.SendApplicationDeclinedEmailAsync(application.ApplicantUser!.EmailAddress, application.Id);
+                            }
+                        }
+                    }
+
+                    if (application.ProductApplicationType?.AutoApproveApplication == true)
+                    {
+                        await autoApprovalService.CheckForAutoApprovalAsync(
+                            application,
+                            vendorFeature,
+                            systemFeature,
+                            fieldFeature,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        if (application.ProductApplicationType!.ApplicationType == ApplicationType.Member)
+                        {
+                            await applicantNotifierService.SendNewMembershipApplicationForReviewEmailAsync(application.Id);
+                        }
+
+                        if (application.ProductApplicationType!.ApplicationType == ApplicationType.Loan)
+                        {
+                            await applicantNotifierService.SendNewLoanApplicationForReviewEmailAsync(application.Id);
+                        }
+                    }
+                }
+
+                await db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            await applicantNotifierService.SendApplicationSubmittedEmailAsync(
+                application.ApplicantUser!.EmailAddress,
+                application.Id);
+
+            if (application.ProductApplicationType!.ApplicationType == ApplicationType.Member)
+            {
+                await applicantNotifierService.SendNewMembershipApplicationForReviewEmailAsync(application.Id);
+            }
+
+            if (application.ProductApplicationType!.ApplicationType == ApplicationType.Loan)
+            {
+                await applicantNotifierService.SendNewLoanApplicationForReviewEmailAsync(application.Id);
+            }
+        }
+
+        // The "application" entity needs to be reloaded fresh from DB (instead of reusing old value from context) here
+        // because the application is modified in the database outside the context above (in the ApplicationController,
+        // which has its own separate DB context).
+        await db.Entry(application).ReloadAsync();
+        userApp = await FetchUserApplicationAsync(db, appKey);
+
+        isUserApplicationInProgress = userApp?.UserApplicationStatus == UserApplicationStatusType.InProgressMember;
+        isSubmitAlertShown = true;
+        isLoading = false;
+
+        // Calling nav.Refresh() here, in-place of StateHasChanged(), as we need to re-render the layout to lock the
+        // application step panel after submission. "Refresh" without forceLoad looks visually the same as
+        // StateHasChanged and does not trigger a complete page refresh if unnecessary.
+        nav.Refresh();
+        await js.InvokeVoidAsync("window.AlohaLayoutManager.scrollToH1");
+    }
+}
+
