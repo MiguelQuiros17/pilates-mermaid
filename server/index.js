@@ -2379,19 +2379,31 @@ app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (r
     const safeDescription = decodeHtmlEntities(description)
     const safeCategory = decodeHtmlEntities(category)
     const safeType = decodeHtmlEntities(type)
+
+    // Sensible fallbacks to avoid empty required fields causing 400s in production
+    const finalCategory = safeCategory || 'Grupal'
+    const finalType = safeType || (finalCategory === 'Privada' ? 'private' : 'group')
     
-    if (!name || !type || !classes_included || !price || !validity_months || !category) {
+    if (!safeName || !finalType || !classes_included || !price || !validity_months || !finalCategory) {
+      console.error('[POST /api/packages] Missing required fields:', {
+        name: !!safeName,
+        type: !!finalType,
+        classes_included,
+        price,
+        validity_months,
+        category: !!finalCategory
+      })
       return res.status(400).json({ success: false, message: 'Faltan datos del paquete' })
     }
     
     const pkg = await database.createPackage({
       name: safeName,
-      type: safeType,
+      type: finalType,
       classes_included,
       price,
       validity_months,
       validity_days: validity_months * 30, // backwards compatibility
-      category: safeCategory,
+      category: finalCategory,
       description: safeDescription,
       is_live,
       live_from: live_from || null,

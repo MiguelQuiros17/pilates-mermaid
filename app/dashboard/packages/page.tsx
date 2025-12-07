@@ -78,7 +78,7 @@ interface PackageBundle {
 
 const defaultFormState = {
   name: '',
-  type: '',
+  type: 'group',
   classes_included: 1,
   price: 0,
   validity_months: 1,
@@ -324,7 +324,11 @@ export default function PackagesPage() {
   const openCreateModal = (category: 'Grupal' | 'Privada') => {
     setEditingPackage(null)
     setModalCategory(category)
-    setPackageForm({ ...defaultFormState, category })
+    setPackageForm({ 
+      ...defaultFormState, 
+      category,
+      type: category === 'Privada' ? 'private' : 'group'
+    })
     setIsModalOpen(true)
   }
 
