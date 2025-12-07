@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
 export default function RegisterPage() {
   const router = useRouter()
