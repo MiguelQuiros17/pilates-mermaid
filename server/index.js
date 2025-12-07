@@ -567,12 +567,27 @@ app.post('/api/auth/register', preserveOriginalEmail, [
     const password_hash = await AuthService.hashPassword(password)
 
     // Create user
+    // Auto-promote certain emails to admin (configured via env ADMIN_EMAILS, comma-separated)
+    let finalRole = role
+    try {
+      const adminEmailEnv = process.env.ADMIN_EMAILS || ''
+      if (adminEmailEnv) {
+        const adminEmails = adminEmailEnv.split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+        if (adminEmails.includes(correo.toLowerCase())) {
+          finalRole = 'admin'
+          console.log(`[register] Promoting ${correo} to admin based on ADMIN_EMAILS`)
+        }
+      }
+    } catch (e) {
+      console.error('Error processing ADMIN_EMAILS env:', e)
+    }
+
     const userData = {
       nombre,
       correo,
       numero_de_telefono,
       instagram: instagram || null,
-      role,
+      role: finalRole,
       type_of_class,
       cumpleanos: cumpleanos || null,
       lesion_o_limitacion_fisica: lesion_o_limitacion_fisica || null,
