@@ -368,24 +368,26 @@ app.get('/api/health', (req, res) => {
   })
 })
 
-// Root endpoint - API information
-app.get('/', (req, res) => {
-  res.json({
-    service: 'PilatesMermaid API Server',
-    status: 'running',
-    version: '1.0.0',
-    endpoints: {
-      health: '/api/health',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        verify: 'GET /api/auth/verify'
+// Root endpoint - API information (only in development). In production, let Next.js handle '/' so users see the frontend.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/', (req, res) => {
+    res.json({
+      service: 'PilatesMermaid API Server',
+      status: 'running',
+      version: '1.0.0',
+      endpoints: {
+        health: '/api/health',
+        auth: {
+          register: 'POST /api/auth/register',
+          login: 'POST /api/auth/login',
+          verify: 'GET /api/auth/verify'
+        },
+        info: 'This is the API server. The frontend runs on port 3000 in development mode.'
       },
-      info: 'This is the API server. The frontend runs on port 3000 in development mode.'
-    },
-    timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString()
+    })
   })
-})
+}
 
 // Auth endpoints
 // Middleware to preserve original email before validation
