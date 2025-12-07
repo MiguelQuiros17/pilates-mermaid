@@ -2354,12 +2354,49 @@ app.get('/api/packages', requireAuth, async (req, res) => {
     const isAdmin = user.role === 'admin'
     
     // Return all packages - let the frontend filter based on is_active for clients
-    const packages = await database.getPackages({
+    let packages = await database.getPackages({
       includeInactive: true,   // Include all packages
       includeScheduled: true,  // Include scheduled packages
       onlyLive: false,         // Don't filter by is_live
     })
     
+    // Process scheduled/expired packages: activate those past live_from, deactivate and clear dates for expired live_until
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    for (const pkg of packages) {
+      const updates = {}
+      // Expiration: if live_until has passed, deactivate and clear dates
+      if (pkg.live_until) {
+        const [y, m, d] = pkg.live_until.split('-').map(Number)
+        const liveUntilDate = new Date(y, m - 1, d, 23, 59, 59, 999)
+        if (todayStart > liveUntilDate) {
+          updates.is_active = 0
+          updates.is_live = 0
+          updates.live_from = null
+          updates.live_until = null
+        }
+      }
+
+      // Activation: if live_from is set and now is past it, activate and clear start date
+      if (!updates.is_active && pkg.live_from) {
+        const [y, m, d] = pkg.live_from.split('-').map(Number)
+        const liveFromDate = new Date(y, m - 1, d, 0, 0, 0, 0)
+        if (todayEnd >= liveFromDate) {
+          updates.is_active = 1
+          updates.is_live = 1
+          updates.live_from = null
+        }
+      }
+
+      // Apply updates if needed
+      if (Object.keys(updates).length > 0) {
+        await database.updatePackage(pkg.id, updates)
+        Object.assign(pkg, updates)
+      }
+    }
+
     console.log(`[GET /api/packages] User ${user.correo} (${user.role}) - returning ${packages.length} packages`)
     
     res.json({ success: true, packages })
@@ -2487,11 +2524,47 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
     
     // Get ALL bundles from database (no filtering at DB level)
     // We'll do all filtering in JavaScript so we can see what exists
-    const bundles = await database.getAllPackageBundles({
+    let bundles = await database.getAllPackageBundles({
       includeInactive: true, // Get all bundles
       onlyLive: false // Don't filter by is_live
     })
     
+    // Process scheduled/expired bundles: activate those past live_from, deactivate and clear dates for expired live_until
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+    for (const b of bundles) {
+      const updates = {}
+      // Expiration
+      if (b.live_until) {
+        const [y, m, d] = b.live_until.split('-').map(Number)
+        const liveUntilDate = new Date(y, m - 1, d, 23, 59, 59, 999)
+        if (todayStart > liveUntilDate) {
+          updates.is_active = 0
+          updates.is_live = 0
+          updates.live_from = null
+          updates.live_until = null
+        }
+      }
+
+      // Activation
+      if (!updates.is_active && b.live_from) {
+        const [y, m, d] = b.live_from.split('-').map(Number)
+        const liveFromDate = new Date(y, m - 1, d, 0, 0, 0, 0)
+        if (todayEnd >= liveFromDate) {
+          updates.is_active = 1
+          updates.is_live = 1
+          updates.live_from = null
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await database.updatePackageBundle(b.id, updates)
+        Object.assign(b, updates)
+      }
+    }
+
     console.log('[Get Bundles] Raw bundles from DB:', bundles.length)
     if (bundles.length > 0) {
       bundles.forEach(b => {
