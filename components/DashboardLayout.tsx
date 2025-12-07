@@ -57,6 +57,22 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [userBookings, setUserBookings] = useState<any[]>([])
 
   const [isLoading, setIsLoading] = useState(true)
+  const [isDesktop, setIsDesktop] = useState(false)
+
+  useEffect(() => {
+    // Track breakpoint to keep sidebar visible on desktop
+    if (typeof window !== 'undefined') {
+      const mq = window.matchMedia('(min-width: 1024px)')
+      const handleResize = (e: MediaQueryListEvent | MediaQueryList) => {
+        setIsDesktop(e.matches)
+        // Ensure sidebar shown on desktop even if closed on mobile
+        if (e.matches) setSidebarOpen(true)
+      }
+      handleResize(mq)
+      mq.addEventListener('change', handleResize as any)
+      return () => mq.removeEventListener('change', handleResize as any)
+    }
+  }, [])
 
   useEffect(() => {
     const verifyAuth = async () => {
@@ -385,7 +401,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         className={`fixed inset-y-0 left-0 z-[9999] w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out dashboard-sidebar ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          transform: isDesktop || sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+        }}
       >
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200" style={{ pointerEvents: 'auto' }}>
           <div className="flex items-center">
@@ -602,12 +621,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </header>
 
         {/* Page content */}
-        <main className="p-2 sm:p-4 md:p-6 lg:p-8 -mx-2 sm:mx-0">
+        <main className="px-4 sm:px-6 lg:px-8 pb-10">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
-            className="w-full"
+            className="w-full max-w-6xl mx-auto pt-4"
           >
             {children}
           </motion.div>

@@ -30,6 +30,15 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  // If already logged in, redirect to dashboard
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    const userData = localStorage.getItem('user')
+    if (token && userData) {
+      router.replace('/dashboard')
+    }
+  }, [router])
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
@@ -109,20 +118,33 @@ export default function RegisterPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => {
+        // If JSON parsing fails, return empty object
+        return {}
+      })
 
-      if (response.ok && data.success) {
+      if (response.ok && data.success && data.token) {
+        // Store token and user data immediately - ensure synchronous write
+        try {
+          localStorage.setItem('token', data.token)
+          if (data.user) {
+            localStorage.setItem('user', JSON.stringify(data.user))
+          }
+        } catch (storageError) {
+          console.error('Error storing auth data:', storageError)
+          setError('Error al guardar los datos de sesión. Intenta iniciar sesión manualmente.')
+          setIsLoading(false)
+          return
+        }
+        
         setSuccess('¡Cuenta creada exitosamente!')
-        
-        // Store token and user data
-        localStorage.setItem('token', data.token)
-        localStorage.setItem('user', JSON.stringify(data.user))
-        
-        // Redirect to dashboard; use hard navigation to avoid any stale routing state
         setIsLoading(false)
+        
+        // Redirect to dashboard - use router.push for Next.js navigation
+        // Small delay ensures localStorage write completes and UI updates
         setTimeout(() => {
-          window.location.replace('/dashboard')
-        }, 100)
+          router.push('/dashboard')
+        }, 200)
       } else {
         setIsLoading(false)
         // Show specific error messages
@@ -135,6 +157,8 @@ export default function RegisterPage() {
           setError(errorMessages)
         } else if (data.message) {
           setError(data.message)
+        } else if (!response.ok) {
+          setError(`Error del servidor (${response.status}). Intenta de nuevo.`)
         } else {
           setError('Error al crear la cuenta. Por favor, verifica los datos ingresados.')
         }

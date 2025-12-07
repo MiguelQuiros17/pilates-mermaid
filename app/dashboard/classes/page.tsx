@@ -2046,45 +2046,40 @@ export default function ClassesPage(): JSX.Element {
         {activeView === 'calendar' && (
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             {/* Calendar Header */}
-            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  {/* Navigation Arrows + Date */}
-                  <div className="flex items-center gap-2">
+            <div className="p-4 sm:p-5 md:p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+              <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-nowrap">
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                   <button
-                      onClick={() => calendarMode === 'month' ? navigateMonth('prev') : navigateWeek('prev')}
-                      className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                    onClick={() => calendarMode === 'month' ? navigateMonth('prev') : navigateWeek('prev')}
+                    className="p-2 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
-                    <h2 className="text-2xl font-bold text-gray-900 min-w-[280px] text-center">
-                      {calendarMode === 'month' 
-                        ? currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
-                        : getWeekRange(currentDate)
-                      }
-                    </h2>
-                    <button
-                      onClick={() => calendarMode === 'month' ? navigateMonth('next') : navigateWeek('next')}
-                      className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                    </button>
-                  </div>
-                  
-                  {/* Today Button */}
+                  <h2 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 text-center truncate max-w-[140px] sm:max-w-[220px] md:max-w-[260px]">
+                    {calendarMode === 'month' 
+                      ? currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+                      : getWeekRange(currentDate)
+                    }
+                  </h2>
+                  <button
+                    onClick={() => calendarMode === 'month' ? navigateMonth('next') : navigateWeek('next')}
+                    className="p-2 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
                   <button
                     onClick={() => setCurrentDate(new Date())}
-                    className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                    className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
                   >
                     Hoy
                   </button>
                 </div>
                 
                 {/* Month/Week Toggle */}
-                <div className="flex bg-gray-200 rounded-lg p-1">
+                <div className="flex bg-gray-200 rounded-lg p-0.5 flex-shrink-0 text-[11px] sm:text-sm">
                   <button
                     onClick={() => setCalendarMode('month')}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`px-2.5 sm:px-3 py-1.5 font-medium rounded-md transition-all ${
                       calendarMode === 'month' 
                         ? 'bg-white text-gray-900 shadow-sm' 
                         : 'text-gray-600 hover:text-gray-900'
@@ -2094,7 +2089,7 @@ export default function ClassesPage(): JSX.Element {
                   </button>
                   <button
                     onClick={() => setCalendarMode('week')}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    className={`px-2.5 sm:px-3 py-1.5 font-medium rounded-md transition-all ${
                       calendarMode === 'week' 
                         ? 'bg-white text-gray-900 shadow-sm' 
                         : 'text-gray-600 hover:text-gray-900'
@@ -2108,8 +2103,8 @@ export default function ClassesPage(): JSX.Element {
 
             {/* Calendar Grid - Month View */}
             {calendarMode === 'month' && (
-            <div className="p-6">
-              <div className="grid grid-cols-7 gap-2 mb-6">
+            <div className="p-2 sm:p-5 md:p-6">
+              <div className="grid grid-cols-7 gap-0 mb-2 sm:mb-5">
                 {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
                   <div key={day} className="p-3 text-center text-sm font-semibold text-gray-600 bg-gray-50 rounded-lg">
                     {day}
@@ -2117,7 +2112,7 @@ export default function ClassesPage(): JSX.Element {
                 ))}
               </div>
               
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-0">
                 {days.map((day, index) => {
                   if (!day) {
                     return <div key={index} className="h-32"></div>
@@ -2130,7 +2125,7 @@ export default function ClassesPage(): JSX.Element {
                   return (
                     <div
                       key={day.getTime()}
-                      className={`min-h-32 p-2 border-2 rounded-xl cursor-pointer transition-all duration-200 hover:shadow-md ${
+                      className={`min-h-32 p-1.5 sm:p-2 border-2 rounded-xl cursor-pointer transition-all duration-200 hover:shadow-md ${
                         isToday 
                           ? 'border-blue-500 bg-blue-50' 
                           : isSelected 
@@ -2144,7 +2139,7 @@ export default function ClassesPage(): JSX.Element {
                       <div className="text-sm font-semibold text-gray-900 mb-2">
                         {day.getDate()}
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-1 px-0">
                         {dayClasses.slice(0, user.role === 'cliente' ? 2 : 3).map(cls => {
                           const isCancelled = cls.status === 'cancelled'
                           const isFull = cls.current_bookings >= cls.max_capacity
@@ -2152,49 +2147,69 @@ export default function ClassesPage(): JSX.Element {
                           return (
                           <div
                             key={cls.id}
-                            className={`space-y-1 rounded-lg p-1`}
+                          className="space-y-1 rounded-lg p-0"
                           >
                             {user.role === 'cliente' ? (
                               <>
                                 {!userIsBooked && isFull ? (
-                                    <div className="text-xs px-2 py-1 rounded bg-gray-500 text-white truncate">
-                                    {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} <span className="italic">(full)</span>
+                              <div className="text-xs px-1.5 sm:px-2 py-1 rounded-md bg-gray-500 text-white truncate w-full">
+                                    <span className="truncate">
+                                      {cls.time}
+                                      {cls.end_time && <span className="hidden sm:inline"> - {cls.end_time}</span>}
+                                      <span className="italic sm:inline hidden"> (full)</span>
+                                      <span className="italic inline sm:hidden"> (full)</span>
+                                    </span>
                                   </div>
                                 ) : (
                                   <>
                                     <div
-                                        className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
+                                  className={`text-xs px-1 sm:px-2 py-1 rounded-md ${getAvailabilityColor(cls)} text-white cursor-pointer hover:opacity-80 transition-opacity w-full`}
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                          openViewClassModal(cls)
+                                        openViewClassModal(cls)
                                       }}
-                                        title="Click para ver detalles"
-                                      >
-                                        {isCancelled ? (
-                                          <span className="line-through">{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}</span>
-                                        ) : (
-                                          <span>{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}</span>
-                                        )}
-                                    </div>
-                                    </>
-                                  )}
-                                </>
-                              ) : (
-                                <div 
-                                  className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
-                                  title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''}${cls.type === 'group' ? ` - ${cls.current_bookings}/${cls.max_capacity} reservas` : ''} - ${cls.coach_name}`}
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                    openViewClassModal(cls)
-                                          }}
-                                >
+                                      title="Click para ver detalles"
+                                    >
                                   {isCancelled ? (
-                                    <span className="line-through">{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}</span>
+                                    <span className="line-through truncate">
+                                      {cls.time}
+                                      {cls.end_time && <span className="hidden sm:inline"> - {cls.end_time}</span>}
+                                    </span>
                                   ) : (
-                                    <span>{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}{cls.type === 'group' ? ` (${cls.current_bookings}/${cls.max_capacity})` : ''}</span>
+                                    <span className="truncate">
+                                      {cls.time}
+                                      {cls.end_time && <span className="hidden sm:inline"> - {cls.end_time}</span>}
+                                    </span>
                                   )}
-                                </div>
-                              )}
+                                    </div>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <div 
+                                className={`text-xs px-1 sm:px-2 py-1 rounded-md ${getAvailabilityColor(cls)} text-white cursor-pointer hover:opacity-80 transition-opacity w-full`}
+                                title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''}${cls.type === 'group' ? ` - ${cls.current_bookings}/${cls.max_capacity} reservas` : ''} - ${cls.coach_name}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openViewClassModal(cls)
+                                }}
+                              >
+                                {isCancelled ? (
+                                  <span className="line-through truncate">
+                                    {cls.time}
+                                    {cls.end_time && <span className="hidden sm:inline"> - {cls.end_time}</span>}
+                                  </span>
+                                ) : (
+                                  <span className="truncate">
+                                    {cls.time}
+                                    {cls.end_time && <span className="hidden sm:inline"> - {cls.end_time}</span>}
+                                    {cls.type === 'group' && (
+                                      <span className="hidden sm:inline"> ({cls.current_bookings}/{cls.max_capacity})</span>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             </div>
                             )})}
                           {dayClasses.length > (user.role === 'cliente' ? 2 : 3) && (
@@ -2222,9 +2237,9 @@ export default function ClassesPage(): JSX.Element {
             )}
 
             {/* Calendar Grid - Week View */}
-            {calendarMode === 'week' && (
-              <div className="p-6">
-                <div className="grid grid-cols-7 gap-3">
+              {calendarMode === 'week' && (
+              <div className="p-2 sm:p-5 md:p-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-0 sm:gap-2 md:gap-3">
                   {getDaysInWeek(currentDate).map((day) => {
                     const dayClasses = getClassesForDate(day)
                     const isToday = day.toDateString() === new Date().toDateString()
@@ -2247,7 +2262,7 @@ export default function ClassesPage(): JSX.Element {
                         
                         {/* Day Content */}
                         <div 
-                          className={`flex-1 min-h-[400px] p-2 border-2 border-t-0 rounded-b-xl cursor-pointer transition-all hover:shadow-md ${
+                          className={`flex-1 min-h-[280px] sm:min-h-[320px] md:min-h-[360px] p-2 border-2 border-t-0 rounded-b-xl cursor-pointer transition-all hover:shadow-md ${
                             isToday 
                               ? 'border-blue-500 bg-blue-50/30' 
                               : isSelected
@@ -2281,7 +2296,7 @@ export default function ClassesPage(): JSX.Element {
                                 >
                                   <div className={`text-xs font-semibold ${isCancelled ? 'line-through text-red-600' : 'text-gray-900'}`}>
                                     {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
-                          </div>
+                                  </div>
                                   <div className="text-xs text-gray-600 truncate mt-0.5">
                                     {cls.title || (cls.type === 'private' ? 'Clase Privada' : 'Clase Grupal')}
                                   </div>
@@ -2396,24 +2411,24 @@ export default function ClassesPage(): JSX.Element {
                         </div>
                           
                           {/* Booking info and actions */}
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-4 flex-wrap md:flex-nowrap">
                             {/* Capacity indicator (only for group classes) */}
                             {cls.type === 'group' && (
-                              <div className="text-right">
-                          <div className="text-sm font-semibold text-gray-900 mb-1">
+                              <div className="text-left md:text-right flex-shrink-0 w-full md:w-auto">
+                                <div className="text-sm font-semibold text-gray-900 mb-1">
                                   {cls.current_bookings}/{cls.max_capacity}
-                          </div>
-                                <div className="w-20 bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
+                                </div>
+                                <div className="w-full max-w-xs sm:max-w-sm md:w-40 bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full ${
                                       isFull ? 'bg-red-500' :
-                                (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                'bg-green-500'
-                              }`}
-                              style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
-                            ></div>
-                          </div>
-                        </div>
+                                      (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                      'bg-green-500'
+                                    }`}
+                                    style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
+                                  ></div>
+                                </div>
+                              </div>
                             )}
                             
                             {/* Client actions */}
@@ -2575,6 +2590,7 @@ export default function ClassesPage(): JSX.Element {
                 }
 
                 // Helper to create recurring class entries for each day
+                // Finds the next occurrence using getClassesForDate to match calendar behavior
                 const createRecurringClassEntries = (cls: Class) => {
                   const recurrenceDays = (cls as any).recurrence_days_of_week
                     ? (typeof (cls as any).recurrence_days_of_week === 'string'
@@ -2587,28 +2603,73 @@ export default function ClassesPage(): JSX.Element {
                   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
                   const dayNamesShort = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
                   
-                  return recurrenceDays.map((dayOfWeek: number) => {
-                    // Create a date for this day of week (using next occurrence)
-                    const today = new Date()
-                    const daysUntilNext = (dayOfWeek - today.getDay() + 7) % 7 || 7
-                    const nextDate = new Date(today)
-                    nextDate.setDate(today.getDate() + daysUntilNext)
-                    
-                    // Replace template variables for this occurrence
-                    const occurrenceTitle = replaceTemplateVariables(cls.title || '', nextDate, cls)
-                    const occurrenceDescription = replaceTemplateVariables(cls.description || '', nextDate, cls)
-                    
-                    return {
-                      ...cls,
-                      title: occurrenceTitle,
-                      description: occurrenceDescription,
-                      dayOfWeek,
-                      dayName: dayNames[dayOfWeek],
-                      dayNameShort: dayNamesShort[dayOfWeek],
-                      recurrence_end_date: (cls as any).recurrence_end_date,
-                      is_recurring_entry: true
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const endLimit = (cls as any).recurrence_end_date 
+                    ? new Date((cls as any).recurrence_end_date + 'T00:00:00')
+                    : null
+
+                  const entries: any[] = []
+
+                  recurrenceDays.forEach((dayOfWeek: number) => {
+                    // Find the next occurrence by checking dates starting from today
+                    // Look up to 8 weeks ahead to find the next occurrence
+                    let found = false
+                    for (let weeksAhead = 0; weeksAhead < 8; weeksAhead++) {
+                      for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+                        const checkDate = new Date(today)
+                        checkDate.setDate(today.getDate() + (weeksAhead * 7) + dayOffset)
+                        checkDate.setHours(0, 0, 0, 0)
+
+                        // Skip if past end date
+                        if (endLimit && checkDate > endLimit) {
+                          break
+                        }
+
+                        // Check if this date matches the day of week
+                        if (checkDate.getDay() !== dayOfWeek) continue
+
+                        // Use getClassesForDate to see if this class appears on this date
+                        // This ensures we match the calendar's logic exactly
+                        const classesOnDate = getClassesForDate(checkDate)
+                        const matchingClass = classesOnDate.find(c => c.id === cls.id)
+
+                        if (matchingClass) {
+                          // Found the next occurrence!
+                          const occurrenceDateStr = checkDate.toISOString().split('T')[0]
+
+                          // Use the class data from getClassesForDate (already has template vars replaced)
+                          const occurrenceTitle = matchingClass.title || cls.title || ''
+                          const occurrenceDescription = matchingClass.description || cls.description || ''
+
+                          // Use occurrence-specific booking counts
+                          const bookingCounts = recurringBookingCounts[cls.id] || {}
+                          const occurrenceBookings = bookingCounts[occurrenceDateStr] ?? matchingClass.current_bookings ?? cls.current_bookings
+
+                          entries.push({
+                            ...matchingClass,
+                            ...cls, // Keep original class properties
+                            title: occurrenceTitle,
+                            description: occurrenceDescription,
+                            dayOfWeek,
+                            dayName: dayNames[dayOfWeek],
+                            dayNameShort: dayNamesShort[dayOfWeek],
+                            recurrence_end_date: (cls as any).recurrence_end_date,
+                            is_recurring_entry: true,
+                            occurrence_date: occurrenceDateStr,
+                            date: occurrenceDateStr,
+                            current_bookings: occurrenceBookings
+                          })
+
+                          found = true
+                          break
+                        }
+                      }
+                      if (found) break
                     }
                   })
+
+                  return entries
                 }
 
                 return (
@@ -2625,14 +2686,14 @@ export default function ClassesPage(): JSX.Element {
                     return (
                     <motion.div 
                       key={cls.id} 
-                      className={`group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 bg-white border-gray-200 hover:border-gray-300`}
+                      className="group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 bg-white border-gray-200 hover:border-gray-300 overflow-hidden"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-4 mb-3">
+                      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 lg:gap-4 min-w-0">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
                             <h4 className={`text-lg font-semibold text-gray-900 ${user.role === 'cliente' ? 'cursor-pointer hover:text-blue-600' : ''}`}
                               onClick={() => {
                                 if (user.role === 'cliente') {
@@ -2667,8 +2728,7 @@ export default function ClassesPage(): JSX.Element {
                                cls.status === 'completed' ? 'Completada' : 'Cancelada'}
                             </span>
                           </div>
-                          
-                          <div className="flex items-center flex-wrap gap-4 text-sm text-gray-600">
+                          <div className="flex flex-wrap gap-3 text-sm text-gray-600">
                             <span className="flex items-center">
                               <Calendar className="h-4 w-4 mr-1.5 text-gray-500" />
                               {new Date(cls.date + 'T00:00:00').toLocaleDateString('es-ES', { 
@@ -2687,38 +2747,38 @@ export default function ClassesPage(): JSX.Element {
                           </div>
                         </div>
                         
-                        <div className="ml-6 flex items-center space-x-6">
+                        <div className="mt-2 lg:mt-0 ml-0 lg:ml-6 flex items-center flex-wrap gap-3 md:gap-4 w-full lg:w-auto">
                           {cls.type === 'group' && (
-                          <div className="text-right">
-                            <div className="text-sm font-semibold text-gray-900 mb-1">
-                              {cls.current_bookings}/{cls.max_capacity} reservas
+                          <div className="text-left md:text-right w-full sm:w-auto max-w-full">
+                              <div className="text-sm font-semibold text-gray-900 mb-1">
+                                {cls.current_bookings}/{cls.max_capacity} reservas
+                              </div>
+                              <div className="w-full max-w-xs sm:w-48 md:w-56 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
+                                    (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                    (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
+                                    'bg-green-500'
+                                  }`}
+                                  style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
+                                ></div>
+                              </div>
                             </div>
-                            <div className="w-32 bg-gray-200 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
-                                  (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                  (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
-                                  'bg-green-500'
-                                }`}
-                                style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
-                              ></div>
-                            </div>
-                          </div>
                           )}
                           
                           {/* Acciones según el rol */}
                           {user.role === 'cliente' && (
                             <button
                               onClick={() => openViewClassModal(cls)}
-                              className="px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 bg-blue-500 text-white hover:bg-blue-600"
+                              className="px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 bg-blue-500 text-white hover:bg-blue-600 whitespace-nowrap w-full sm:w-auto min-w-[140px]"
                             >
                               Ver Detalles
                             </button>
                           )}
                           
                           {(user.role === 'admin' || user.role === 'coach') && cls.type === 'group' && (
-                            <div className="text-sm text-gray-500 space-y-1">
+                            <div className="text-sm text-gray-500 space-y-1 w-full sm:w-auto max-w-full">
                               <div className="flex items-center space-x-2">
                                 <div className={`w-3 h-3 rounded-full ${
                                   (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
@@ -2726,7 +2786,7 @@ export default function ClassesPage(): JSX.Element {
                                   (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
                                   'bg-green-500'
                                 }`}></div>
-                                <span>
+                                <span className="whitespace-nowrap">
                                   {Math.round((cls.current_bookings / cls.max_capacity) * 100)}% ocupación
                                 </span>
                               </div>
@@ -2766,19 +2826,19 @@ export default function ClassesPage(): JSX.Element {
                               const isCancelled = cls.status === 'cancelled'
                               const recurrenceEndDate = (cls as any).recurrence_end_date
                               const dayName = (cls as any).dayName || 'Día'
-                              const dayNameShort = (cls as any).dayNameShort || ''
+                              const occurrenceDate = (cls as any).occurrence_date || cls.date
                               
                               return (
                                 <motion.div 
-                                  key={`${cls.id}-${(cls as any).dayOfWeek}`}
-                                  className={`group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 bg-white border-blue-200 hover:border-blue-300`}
+                                  key={`${cls.id}-${(cls as any).dayOfWeek}-${occurrenceDate}`}
+                                  className="group relative border-2 rounded-xl p-6 hover:shadow-lg transition-all duration-300 bg-white border-blue-200 hover:border-blue-300 overflow-hidden"
                                   initial={{ opacity: 0, y: 20 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   transition={{ delay: index * 0.03 }}
                                 >
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center space-x-4 mb-3">
+                                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 lg:gap-4 min-w-0">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
                                         <h4 className={`text-lg font-semibold text-gray-900 ${user.role === 'cliente' ? 'cursor-pointer hover:text-blue-600' : ''}`}
                                           onClick={() => {
                                             if (user.role === 'cliente') {
@@ -2788,7 +2848,7 @@ export default function ClassesPage(): JSX.Element {
                                         >
                                           {decodeHtmlEntities(cls.title || 'Clase')}
                                           {isCancelled && <span className="italic text-gray-500 ml-2">(canceled)</span>}
-                                          {user.role === 'cliente' && !isUserBooked(cls.id, (cls as any).occurrence_date) && cls.current_bookings >= cls.max_capacity && !isCancelled && (
+                                          {user.role === 'cliente' && !isUserBooked(cls.id, occurrenceDate) && cls.current_bookings >= cls.max_capacity && !isCancelled && (
                                             <span className="italic text-gray-500 ml-2">(full)</span>
                                           )}
                                         </h4>
@@ -2810,10 +2870,15 @@ export default function ClassesPage(): JSX.Element {
                                         </span>
                                       </div>
                                       
-                                      <div className="flex items-center flex-wrap gap-4 text-sm text-gray-600">
+                                      <div className="flex flex-wrap gap-3 text-sm text-gray-600">
                                         <span className="flex items-center">
                                           <Calendar className="h-4 w-4 mr-1.5 text-gray-500" />
-                                          Todos los {dayName.toLowerCase()}s
+                                          {occurrenceDate ? new Date(occurrenceDate + 'T00:00:00').toLocaleDateString('es-ES', { 
+                                            weekday: 'long', 
+                                            year: 'numeric', 
+                                            month: 'long', 
+                                            day: 'numeric' 
+                                          }) : `Todos los ${dayName.toLowerCase()}s`}
                                         </span>
                                         <span className="flex items-center">
                                           <Clock className="h-4 w-4 mr-1.5 text-gray-500" />
@@ -2838,13 +2903,13 @@ export default function ClassesPage(): JSX.Element {
                                       </div>
                                     </div>
                                     
-                                    <div className="ml-6 flex items-center space-x-6">
+                                    <div className="mt-2 lg:mt-0 ml-0 lg:ml-6 flex items-center flex-wrap gap-3 md:gap-4 w-full lg:w-auto">
                                       {cls.type === 'group' && (
-                                        <div className="text-right">
+                                        <div className="text-left md:text-right w-full sm:w-auto max-w-full">
                                           <div className="text-sm font-semibold text-gray-900 mb-1">
                                             {cls.current_bookings}/{cls.max_capacity} reservas
                                           </div>
-                                          <div className="w-32 bg-gray-200 rounded-full h-2">
+                                          <div className="w-full max-w-xs sm:w-48 md:w-56 bg-gray-200 rounded-full h-2">
                                             <div
                                               className={`h-2 rounded-full ${
                                                 (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
@@ -2860,51 +2925,63 @@ export default function ClassesPage(): JSX.Element {
                                       
                                       {/* Acciones según el rol */}
                                       {user.role === 'cliente' && (
-                                        <div>
-                                          {isUserBooked(cls.id, (cls as any).occurrence_date) ? (
-                                <button
-                                              onClick={() => cancelBooking(cls.id, (cls as any).occurrence_date)}
-                                  className="bg-red-500 text-white px-6 py-2.5 rounded-xl hover:bg-red-600 transition-all duration-200 hover:scale-105 font-medium"
-                                >
-                                  Cancelar
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => bookClass(cls.id)}
-                                  disabled={cls.current_bookings >= cls.max_capacity}
-                                  className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 ${
-                                    cls.current_bookings >= cls.max_capacity
-                                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                                      : 'bg-green-500 text-white hover:bg-green-600'
-                                  }`}
-                                >
-                                  {cls.current_bookings >= cls.max_capacity ? 'Llena' : 'Reservar'}
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          
+                                        <button
+                                          onClick={() => {
+                                            if (isUserBooked(cls.id, occurrenceDate)) {
+                                              cancelBooking(cls.id, occurrenceDate)
+                                            } else {
+                                              // Register for this specific occurrence
+                                              bookClass(cls.id, occurrenceDate)
+                                            }
+                                          }}
+                                          disabled={!isCancelled && cls.current_bookings >= cls.max_capacity && !isUserBooked(cls.id, occurrenceDate)}
+                                          className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 whitespace-nowrap w-full sm:w-auto min-w-[140px] ${
+                                            isUserBooked(cls.id, occurrenceDate)
+                                              ? 'bg-red-500 text-white hover:bg-red-600'
+                                              : !isCancelled && cls.current_bookings >= cls.max_capacity
+                                              ? 'bg-gray-400 text-white cursor-not-allowed'
+                                              : 'bg-blue-500 text-white hover:bg-blue-600'
+                                          }`}
+                                        >
+                                          {isUserBooked(cls.id, occurrenceDate) 
+                                            ? 'Cancelar' 
+                                            : !isCancelled && cls.current_bookings >= cls.max_capacity
+                                            ? 'Llena'
+                                            : 'Reservar'}
+                                        </button>
+                                      )}
+                                      
                                       {(user.role === 'admin' || user.role === 'coach') && cls.type === 'group' && (
-                            <div className="text-sm text-gray-500 space-y-1">
-                              <div className="flex items-center space-x-2">
-                                <div className={`w-3 h-3 rounded-full ${
-                                  (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
-                                  (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                  (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
-                                  'bg-green-500'
-                                }`}></div>
-                                <span>
-                                  {Math.round((cls.current_bookings / cls.max_capacity) * 100)}% ocupación
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                    )
-                  })}
-                </div>
+                                        <div className="text-sm text-gray-500 space-y-1 w-full sm:w-auto max-w-full">
+                                          <div className="flex items-center space-x-2">
+                                            <div className={`w-3 h-3 rounded-full ${
+                                              (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
+                                              (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                              (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
+                                              'bg-green-500'
+                                            }`}></div>
+                                            <span className="whitespace-nowrap">
+                                              {Math.round((cls.current_bookings / cls.max_capacity) * 100)}% ocupación
+                                            </span>
+                                          </div>
+                                          {Array.isArray((cls as any).instructors) && (cls as any).instructors.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 text-xs text-gray-500">
+                                              <span className="font-medium mr-1">Instructores:</span>
+                                              {(cls as any).instructors.map((inst: string, idx: number) => (
+                                                <span key={idx} className="px-2 py-0.5 bg-gray-100 rounded-full">
+                                                  {inst}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              )
+                            })}
+                          </div>
                         </div>
                       )
                     })()}
