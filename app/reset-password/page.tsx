@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Lock, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react'
 import Image from 'next/image'
+import { useTranslation } from '@/hooks/useTranslation'
 
 function ResetPasswordContent() {
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
     const router = useRouter()
     const searchParams = useSearchParams()
+    const { t } = useTranslation()
     const [formData, setFormData] = useState({
         password: '',
         confirmPassword: ''
@@ -32,9 +34,9 @@ function ResetPasswordContent() {
 
     useEffect(() => {
         if (!token || !email) {
-            setError('Token o email no válido. Por favor, solicita un nuevo enlace de recuperación.')
+            setError(t('auth.resetPassword.invalidToken'))
         }
-    }, [token, email])
+    }, [token, email, t])
 
     const validatePassword = (password: string) => {
         const requirements = {
@@ -60,13 +62,13 @@ function ResetPasswordContent() {
         }
 
         if (formData.password !== formData.confirmPassword) {
-            setError('Las contraseñas no coinciden')
+            setError(t('auth.resetPassword.passwordMismatch'))
             setIsLoading(false)
             return
         }
 
         if (!validatePassword(formData.password)) {
-            setError('La contraseña no cumple con los requisitos de seguridad')
+            setError(t('auth.resetPassword.error'))
             setIsLoading(false)
             return
         }
@@ -92,11 +94,11 @@ function ResetPasswordContent() {
                     router.push('/login')
                 }, 3000)
             } else {
-                setError(data.message || 'Error al restablecer la contraseña')
+                setError(data.message || t('auth.resetPassword.error'))
             }
         } catch (error) {
             console.error('Reset password error:', error)
-            setError('Error al restablecer la contraseña. Por favor, intenta de nuevo.')
+            setError(t('auth.resetPassword.error'))
         } finally {
             setIsLoading(false)
         }
@@ -119,16 +121,16 @@ function ResetPasswordContent() {
                         <CheckCircle className="w-10 h-10 text-green-600" />
                     </motion.div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                        ¡Contraseña Restablecida!
+                        {t('auth.resetPassword.success.title')}
                     </h1>
                     <p className="text-gray-600 mb-6">
-                        Tu contraseña ha sido restablecida exitosamente. Serás redirigido al login en unos segundos.
+                        {t('auth.resetPassword.success.message')}
                     </p>
                     <button
                         onClick={() => router.push('/login')}
                         className="w-full bg-gray-900 text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors"
                     >
-                        Ir al Login
+                        {t('auth.resetPassword.success.goToLogin')}
                     </button>
                 </motion.div>
             </div>
@@ -153,10 +155,10 @@ function ResetPasswordContent() {
                         />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                        Restablecer Contraseña
+                        {t('auth.resetPassword.title')}
                     </h1>
                     <p className="text-gray-600">
-                        Ingresa tu nueva contraseña
+                        {t('auth.resetPassword.subtitle')}
                     </p>
                 </div>
 
@@ -174,7 +176,7 @@ function ResetPasswordContent() {
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
                         <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                            Nueva Contraseña
+                            {t('auth.resetPassword.newPassword')}
                         </label>
                         <div className="relative">
                             <input
@@ -202,23 +204,23 @@ function ResetPasswordContent() {
                             <div className="mt-2 space-y-1">
                                 <div className={`flex items-center text-xs ${passwordRequirements.length ? 'text-green-600' : 'text-gray-500'}`}>
                                     {passwordRequirements.length ? <CheckCircle className="w-4 h-4 mr-1" /> : <XCircle className="w-4 h-4 mr-1" />}
-                                    Mínimo 12 caracteres
+                                    {t('auth.resetPassword.requirements.minLength')}
                                 </div>
                                 <div className={`flex items-center text-xs ${passwordRequirements.uppercase ? 'text-green-600' : 'text-gray-500'}`}>
                                     {passwordRequirements.uppercase ? <CheckCircle className="w-4 h-4 mr-1" /> : <XCircle className="w-4 h-4 mr-1" />}
-                                    Al menos una mayúscula
+                                    {t('auth.resetPassword.requirements.uppercase')}
                                 </div>
                                 <div className={`flex items-center text-xs ${passwordRequirements.lowercase ? 'text-green-600' : 'text-gray-500'}`}>
                                     {passwordRequirements.lowercase ? <CheckCircle className="w-4 h-4 mr-1" /> : <XCircle className="w-4 h-4 mr-1" />}
-                                    Al menos una minúscula
+                                    {t('auth.resetPassword.requirements.lowercase')}
                                 </div>
                                 <div className={`flex items-center text-xs ${passwordRequirements.number ? 'text-green-600' : 'text-gray-500'}`}>
                                     {passwordRequirements.number ? <CheckCircle className="w-4 h-4 mr-1" /> : <XCircle className="w-4 h-4 mr-1" />}
-                                    Al menos un número
+                                    {t('auth.resetPassword.requirements.number')}
                                 </div>
                                 <div className={`flex items-center text-xs ${passwordRequirements.special ? 'text-green-600' : 'text-gray-500'}`}>
                                     {passwordRequirements.special ? <CheckCircle className="w-4 h-4 mr-1" /> : <XCircle className="w-4 h-4 mr-1" />}
-                                    Al menos un carácter especial
+                                    {t('auth.resetPassword.requirements.special')}
                                 </div>
                             </div>
                         )}
@@ -226,7 +228,7 @@ function ResetPasswordContent() {
 
                     <div>
                         <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
-                            Confirmar Contraseña
+                            {t('auth.resetPassword.confirmPassword')}
                         </label>
                         <div className="relative">
                             <input
@@ -247,7 +249,7 @@ function ResetPasswordContent() {
                             </button>
                         </div>
                         {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                            <p className="mt-1 text-sm text-red-600">Las contraseñas no coinciden</p>
+                            <p className="mt-1 text-sm text-red-600">{t('auth.resetPassword.passwordMismatch')}</p>
                         )}
                     </div>
 
@@ -262,12 +264,12 @@ function ResetPasswordContent() {
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                Restableciendo...
+                                {t('auth.resetPassword.loading')}
                             </>
                         ) : (
                             <>
                                 <Lock className="w-5 h-5 mr-2" />
-                                Restablecer Contraseña
+                                {t('auth.resetPassword.button')}
                             </>
                         )}
                     </button>
@@ -278,7 +280,7 @@ function ResetPasswordContent() {
                         onClick={() => router.push('/login')}
                         className="text-sm text-gray-600 hover:text-gray-900"
                     >
-                        Volver al Login
+                        {t('auth.resetPassword.back')}
                     </button>
                 </div>
             </motion.div>
@@ -292,7 +294,7 @@ export default function ResetPasswordPage() {
             fallback={
                 <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
                     <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
-                        <p className="text-gray-700">Cargando...</p>
+                        <p className="text-gray-700">{t('common.loading')}</p>
                     </div>
                 </div>
             }

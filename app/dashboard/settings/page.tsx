@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 import { 
   Settings, 
   User, 
@@ -26,6 +27,7 @@ interface User {
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const [user, setUser] = useState<User | null>(null)
   const [activeTab, setActiveTab] = useState('profile')
   const [isLoading, setIsLoading] = useState(true)
@@ -161,8 +163,8 @@ export default function SettingsPage() {
   }
 
   const tabs = [
-    { id: 'profile', name: 'Perfil', icon: User },
-    { id: 'security', name: 'Seguridad', icon: Shield },
+    { id: 'profile', name: t('settings.profile'), icon: User },
+    { id: 'security', name: t('settings.security'), icon: Shield },
     { id: 'notifications', name: 'Notificaciones', icon: Bell },
   ]
 
@@ -183,7 +185,7 @@ export default function SettingsPage() {
         <div className="relative overflow-hidden bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 rounded-3xl p-8 text-white">
           <div className="absolute inset-0 bg-black/20"></div>
           <div className="relative">
-            <h1 className="text-4xl font-bold mb-2">Configuración</h1>
+            <h1 className="text-4xl font-bold mb-2">{t('settings.title')}</h1>
             <p className="text-gray-300 text-lg">
               Personaliza tu experiencia en Pilates Mermaid
             </p>

@@ -9,7 +9,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 
 export default function ClassesPage(): JSX.Element {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
-  const { language } = useTranslation()
+  const { language, t } = useTranslation()
 
   // Function to decode HTML entities
   const decodeHtmlEntities = (text: string): string => {
@@ -508,11 +508,11 @@ export default function ClassesPage(): JSX.Element {
         await loadRecurringBookingCounts()
         await loadClasses()
       } else {
-        setNotification({ type: 'error', message: data.message || 'Error al remover usuario' })
+        setNotification({ type: 'error', message: data.message || t('classes.removeUserError') })
       }
     } catch (error) {
       console.error('Error removing from attendance:', error)
-      setNotification({ type: 'error', message: 'Error al remover usuario' })
+      setNotification({ type: 'error', message: t('classes.removeUserError') })
     }
   }, [API_BASE_URL, attendanceClass, loadAttendanceSheet, loadRecurringBookingCounts])
 
@@ -664,7 +664,7 @@ export default function ClassesPage(): JSX.Element {
       if (client && coach) {
         if (language === 'es') {
           setPrivateClassTitle(`Sesión de ${coach.nombre} con ${client.nombre}`)
-          setPrivateClassDescription(`Clase privada de ${coach.nombre} con ${client.nombre}`)
+          setPrivateClassDescription(`${t('classes.type.private')} ${coach.nombre} ${t('classes.with')} ${client.nombre}`)
         } else {
           setPrivateClassTitle(`${coach.nombre}'s Session with ${client.nombre}`)
           setPrivateClassDescription(`${coach.nombre}'s one-on-one class with ${client.nombre}`)
@@ -702,7 +702,7 @@ export default function ClassesPage(): JSX.Element {
       if (response.ok) {
         setNotification({
           type: 'success',
-          message: '¡Clase reservada exitosamente!'
+          message: t('classes.bookingSuccess')
         })
         // Reload data to reflect the new booking - await to ensure state updates
         await loadUserBookings()
@@ -715,14 +715,14 @@ export default function ClassesPage(): JSX.Element {
       } else {
         setNotification({
           type: 'error',
-          message: data.message || 'Error al reservar la clase.'
+          message: data.message || t('classes.bookingError')
         })
       }
     } catch (error) {
       console.error('Error booking class:', error)
       setNotification({
         type: 'error',
-        message: 'Error al reservar la clase.'
+        message: t('classes.bookingError')
       })
     }
   }
@@ -750,7 +750,7 @@ export default function ClassesPage(): JSX.Element {
         
         setNotification({
           type: data.refunded ? 'success' : 'warning',
-          message: data.message || 'Reserva cancelada exitosamente.'
+          message: data.message || t('classes.cancelBookingSuccess')
         })
         
         // Await all reload functions to ensure UI updates
@@ -765,14 +765,14 @@ export default function ClassesPage(): JSX.Element {
       } else {
         setNotification({
           type: 'error',
-          message: data.message || 'Error al cancelar la reserva.'
+          message: data.message || t('classes.cancelBookingError')
         })
       }
     } catch (error) {
       console.error('Error canceling booking:', error)
       setNotification({
         type: 'error',
-        message: 'Error al cancelar la reserva.'
+        message: t('classes.cancelBookingError')
       })
     }
   }
@@ -856,7 +856,7 @@ export default function ClassesPage(): JSX.Element {
     return {
       title: privateClassTitle || (classType === 'private' 
         ? `${selectedCoach?.nombre || 'Coach'}'s Session with ${client?.nombre || 'Cliente'}`
-        : 'Clase Grupal'),
+        : t('classes.type.group')),
       type: classType,
       coach_id: privateClassCoachId,
       coach_name: selectedCoach?.nombre || '',
@@ -869,7 +869,7 @@ export default function ClassesPage(): JSX.Element {
       duration: duration,
       description: privateClassDescription || (classType === 'private'
         ? `${selectedCoach?.nombre || 'Coach'}'s one-on-one class with ${client?.nombre || 'cliente'}`
-        : 'Clase grupal'),
+        : t('classes.type.group')),
       status: 'scheduled',
       is_recurring: classType === 'group' ? (isRecurring ? 1 : 0) : 0,
       recurrence_end_date: classType === 'group' && isRecurring ? (recurrenceEndDate || null) : null,
@@ -887,12 +887,12 @@ export default function ClassesPage(): JSX.Element {
 
     // Validation based on class type
     if (classType === 'private' && !privateClassClientId) {
-      setPrivateClassModalError('Por favor selecciona un cliente para la clase privada.')
+      setPrivateClassModalError(t('classes.selectClientPrivate'))
       return
     }
 
     if (!privateClassDate || !privateClassTime) {
-      setPrivateClassModalError('Por favor selecciona una fecha y hora para la clase.')
+      setPrivateClassModalError(t('classes.selectDateTime'))
       return
     }
 
@@ -1221,7 +1221,7 @@ export default function ClassesPage(): JSX.Element {
 
     // Validation for recurring group classes (only when not editing a specific occurrence)
     if (isRecurring && !editOccurrenceDate && recurrenceDaysOfWeek.length === 0) {
-      setGroupEditModalError('Por favor selecciona al menos un día de la semana para la clase recurrente.')
+      setGroupEditModalError(t('classes.selectRecurrenceDays'))
       return
     }
 
@@ -1229,7 +1229,7 @@ export default function ClassesPage(): JSX.Element {
       setIsSavingGroupEdit(true)
       const token = localStorage.getItem('token')
       if (!token) {
-        setGroupEditModalError('No hay token de autenticación')
+        setGroupEditModalError(t('classes.noToken'))
         return
       }
 
@@ -1267,7 +1267,7 @@ export default function ClassesPage(): JSX.Element {
         const data = await response.json().catch(() => ({}))
 
         if (!response.ok || !data.success) {
-          setGroupEditModalError(data.message || 'Error al actualizar los asistentes.')
+          setGroupEditModalError(data.message || t('classes.updateAttendeesError'))
           return
         }
 
@@ -1319,7 +1319,7 @@ export default function ClassesPage(): JSX.Element {
 
         setNotification({
           type: 'success',
-          message: `Clase y asistentes actualizados para ${editOccurrenceDate}`
+          message: `${t('classes.classAndAttendeesUpdated')} ${editOccurrenceDate}`
         })
         setShowEditClassModal(false)
         setEditingClass(null)
@@ -1372,13 +1372,13 @@ export default function ClassesPage(): JSX.Element {
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok || !data.success) {
-        setGroupEditModalError(data.message || 'Error al actualizar la clase grupal.')
+        setGroupEditModalError(data.message || t('classes.updateGroupError'))
         return
       }
 
       setNotification({
         type: 'success',
-        message: 'Clase grupal actualizada exitosamente.'
+        message: t('classes.updateGroupSuccess')
       })
       setShowEditClassModal(false)
       setEditingClass(null)
@@ -1388,7 +1388,7 @@ export default function ClassesPage(): JSX.Element {
       loadClasses()
     } catch (error) {
       console.error('Error saving group class edit:', error)
-      setGroupEditModalError('Error de conexión al actualizar la clase grupal.')
+      setGroupEditModalError(t('classes.updateGroupConnectionError'))
     } finally {
       setIsSavingGroupEdit(false)
     }
@@ -1502,7 +1502,7 @@ export default function ClassesPage(): JSX.Element {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('No hay token de autenticación')
+        alert(t('classes.noToken'))
         return
       }
 
@@ -1526,7 +1526,7 @@ export default function ClassesPage(): JSX.Element {
         if (!response.ok || !data.success) {
           setNotification({
             type: 'error',
-            message: data.message || 'Error al cancelar la ocurrencia de la clase.'
+            message: data.message || t('classes.cancelOccurrenceError')
           })
           return
         }
@@ -1537,7 +1537,7 @@ export default function ClassesPage(): JSX.Element {
 
         setNotification({
           type: 'success',
-          message: 'Ocurrencia de la clase cancelada exitosamente.'
+          message: t('classes.cancelOccurrenceSuccess')
         })
         loadClasses()
         loadCanceledOccurrences()
@@ -1557,14 +1557,14 @@ export default function ClassesPage(): JSX.Element {
       if (!response.ok || !data.success) {
         setNotification({
           type: 'error',
-          message: data.message || 'Error al cancelar la clase.'
+          message: data.message || t('classes.cancelError')
         })
         return
       }
 
       setNotification({
         type: 'success',
-        message: 'Clase cancelada exitosamente.'
+        message: t('classes.cancelSuccess')
       })
       loadClasses()
       }
@@ -1572,7 +1572,7 @@ export default function ClassesPage(): JSX.Element {
       console.error('Error cancelling class:', error)
       setNotification({
         type: 'error',
-        message: 'Error de conexión al cancelar la clase.'
+        message: t('classes.cancelConnectionError')
       })
     }
   }
@@ -1581,7 +1581,7 @@ export default function ClassesPage(): JSX.Element {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('No hay token de autenticación')
+        alert(t('classes.noToken'))
         return
       }
 
@@ -1958,7 +1958,7 @@ export default function ClassesPage(): JSX.Element {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando...</p>
+            <p className="text-gray-600">{t('common.loading')}</p>
           </div>
         </div>
       </DashboardLayout>
@@ -1975,12 +1975,12 @@ export default function ClassesPage(): JSX.Element {
           <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-4xl font-bold mb-2">
-                {user?.role === 'cliente' ? 'Agenda tu Clase' : 'Gestión de Clases'}
+                {user?.role === 'cliente' ? t('classes.scheduleClass') : t('classes.title')}
               </h1>
               <p className="text-gray-300 text-lg">
                 {user?.role === 'cliente' 
-                  ? 'Reserva tus clases y mantén el control de tu rutina' 
-                  : 'Administra todas las clases y horarios del estudio'
+                  ? t('classes.subtitleClient') 
+                  : t('classes.subtitle')
                 }
               </p>
             </div>
@@ -1992,7 +1992,7 @@ export default function ClassesPage(): JSX.Element {
                   className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-purple-700 flex items-center space-x-2 transition-all duration-200 hover:scale-105"
                 >
                   <Plus className="h-5 w-5" />
-                  <span>Nueva Clase</span>
+                  <span>{t('classes.newClass')}</span>
                 </button>
               )}
               
@@ -2006,7 +2006,7 @@ export default function ClassesPage(): JSX.Element {
                   }`}
                 >
                   <Calendar className="h-4 w-4 inline mr-2" />
-                  Calendario
+                  {t('classes.calendar')}
                 </button>
                 <button
                   onClick={() => setActiveView('list')}
@@ -2017,7 +2017,7 @@ export default function ClassesPage(): JSX.Element {
                   }`}
                 >
                   <Users className="h-4 w-4 inline mr-2" />
-                  Lista
+                  {t('classes.list')}
                 </button>
               </div>
             </div>
@@ -2071,7 +2071,7 @@ export default function ClassesPage(): JSX.Element {
                     onClick={() => setCurrentDate(new Date())}
                     className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
                   >
-                    Hoy
+                    {t('classes.today')}
                   </button>
                 </div>
                 
@@ -2085,7 +2085,7 @@ export default function ClassesPage(): JSX.Element {
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    Mes
+                    {t('classes.month')}
                   </button>
                   <button
                     onClick={() => setCalendarMode('week')}
@@ -2095,7 +2095,7 @@ export default function ClassesPage(): JSX.Element {
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    Semana
+                    {t('classes.week')}
                   </button>
                 </div>
               </div>

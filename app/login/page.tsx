@@ -6,10 +6,12 @@ import { motion } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useTranslation } from '@/hooks/useTranslation'
 
 export default function LoginPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const router = useRouter()
+  const { t } = useTranslation()
   const [formData, setFormData] = useState({
     correo: '',
     password: ''
@@ -60,10 +62,10 @@ export default function LoginPage() {
         // Redirect based on user role
         router.push('/dashboard')
       } else {
-        setError(data.message || 'Error al iniciar sesión')
+        setError(data.message || t('auth.login.error'))
       }
     } catch (error) {
-      setError('Error de conexión. Intenta de nuevo.')
+      setError(t('auth.login.connectionError'))
     } finally {
       setIsLoading(false)
     }
@@ -89,10 +91,10 @@ export default function LoginPage() {
             />
           </div>
           <h2 className="text-2xl font-semibold text-gray-900">
-            Iniciar Sesión
+            {t('auth.login.title')}
           </h2>
           <p className="mt-2 text-gray-600">
-            Accede al sistema de gestión de Pilates Mermaid
+            {t('auth.login.subtitle')}
           </p>
         </div>
 
@@ -102,7 +104,7 @@ export default function LoginPage() {
             {/* Email Field */}
             <div>
               <label htmlFor="correo" className="block text-sm font-medium text-gray-700 mb-1">
-                Correo electrónico
+                {t('auth.login.email')}
               </label>
               <input
                 id="correo"
@@ -120,7 +122,7 @@ export default function LoginPage() {
             {/* Password Field */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Contraseña
+                {t('auth.login.password')}
               </label>
               <div className="relative">
                 <input
@@ -130,7 +132,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   required
                   className="input-field pr-12"
-                  placeholder="Tu contraseña"
+                  placeholder={t('auth.login.password')}
                   value={formData.password}
                   onChange={handleInputChange}
                 />
@@ -170,10 +172,10 @@ export default function LoginPage() {
             {isLoading ? (
               <div className="flex items-center justify-center space-x-2">
                 <div className="spinner"></div>
-                <span>Iniciando sesión...</span>
+                <span>{t('auth.login.loading')}</span>
               </div>
             ) : (
-              'Iniciar Sesión'
+              t('auth.login.button')
             )}
           </button>
 
@@ -183,15 +185,15 @@ export default function LoginPage() {
               href="/forgot-password"
               className="text-sm text-gray-600 hover:text-black transition-colors"
             >
-              ¿Olvidaste tu contraseña?
+              {t('auth.login.forgotPassword')}
             </Link>
             <div className="text-sm text-gray-600">
-              ¿No tienes cuenta?{' '}
+              {t('auth.login.noAccount')}{' '}
               <Link
                 href="/register"
                 className="text-black hover:underline font-medium"
               >
-                Regístrate aquí
+                {t('auth.login.register')}
               </Link>
             </div>
           </div>

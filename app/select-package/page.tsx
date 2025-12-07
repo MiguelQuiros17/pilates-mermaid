@@ -11,6 +11,7 @@ import {
   CheckCircle,
   MessageCircle
 } from 'lucide-react'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface Package {
   id: string
@@ -24,6 +25,7 @@ interface Package {
 
 export default function SelectPackagePage() {
   const router = useRouter()
+  const { t } = useTranslation()
   const [packages, setPackages] = useState<Package[]>([])
   const [user, setUser] = useState<any>(null)
   const [selectedPackage, setSelectedPackage] = useState<Package | null>(null)
@@ -196,7 +198,7 @@ export default function SelectPackagePage() {
             ¡Bienvenido a Pilates Mermaid, {user?.nombre}!
           </h1>
           <p className="text-lg text-gray-600 mb-6">
-            Elige el paquete de clases que más te convenga
+            {t('selectPackage.subtitle')}
           </p>
         </div>
 
@@ -209,20 +211,20 @@ export default function SelectPackagePage() {
           >
             <div className="flex items-center space-x-3 mb-4">
               <CheckCircle className="h-6 w-6 text-green-600" />
-              <h3 className="text-lg font-semibold text-green-900">Paquete Seleccionado</h3>
+              <h3 className="text-lg font-semibold text-green-900">{t('selectPackage.selected')}</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <p className="text-sm text-green-700">Paquete:</p>
+                <p className="text-sm text-green-700">{t('selectPackage.package')}:</p>
                 <p className="font-semibold text-green-900">{selectedPackage.name}</p>
               </div>
               <div>
-                <p className="text-sm text-green-700">Precio:</p>
+                <p className="text-sm text-green-700">{t('selectPackage.price')}:</p>
                 <p className="font-semibold text-green-900">${selectedPackage.price.toLocaleString()} MXN</p>
               </div>
               <div>
-                <p className="text-sm text-green-700">Clases:</p>
-                <p className="font-semibold text-green-900">{selectedPackage.classes_included} clases</p>
+                <p className="text-sm text-green-700">{t('selectPackage.classes')}:</p>
+                <p className="font-semibold text-green-900">{selectedPackage.classes_included} {t('selectPackage.classes')}</p>
               </div>
             </div>
             <button
@@ -230,7 +232,7 @@ export default function SelectPackagePage() {
               className="mt-4 w-full bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center space-x-2"
             >
               <MessageCircle className="h-5 w-5" />
-              <span>Contactar por WhatsApp para Comprar</span>
+              <span>{t('selectPackage.contact')}</span>
             </button>
           </motion.div>
         )}
@@ -239,23 +241,23 @@ export default function SelectPackagePage() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
           <div className="flex items-center space-x-3 mb-4">
             <Package className="h-6 w-6 text-blue-600" />
-            <h3 className="text-lg font-semibold text-blue-900">¿Ya tienes un paquete?</h3>
+            <h3 className="text-lg font-semibold text-blue-900">{t('selectPackage.alreadyHave')}</h3>
           </div>
           <p className="text-blue-700 mb-4">
-            Si ya compraste un paquete de clases, contáctanos para agregarlo a tu cuenta.
+            {t('selectPackage.alreadyHaveDesc')}
           </p>
           <button
             onClick={handleAlreadyHavePackage}
             className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center space-x-2"
           >
             <MessageCircle className="h-5 w-5" />
-            <span>Ya tengo un paquete - Contactar WhatsApp</span>
+            <span>{t('selectPackage.alreadyHaveContact')}</span>
           </button>
         </div>
 
         {/* Clases Grupales */}
         <div className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Clases Grupales</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">{t('selectPackage.groupClasses')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {groupPackages.map((pkg, index) => (
               <motion.div
@@ -276,7 +278,7 @@ export default function SelectPackagePage() {
                   <div className="space-y-2 text-sm text-gray-600">
                     <div className="flex items-center justify-center space-x-2">
                       <Package className="h-4 w-4" />
-                      <span>{pkg.classes_included} clases</span>
+                      <span>{pkg.classes_included} {t('selectPackage.classes')}</span>
                     </div>
                     <div className="flex items-center justify-center space-x-2">
                       <DollarSign className="h-4 w-4" />
@@ -284,13 +286,13 @@ export default function SelectPackagePage() {
                     </div>
                     <div className="flex items-center justify-center space-x-2">
                       <Calendar className="h-4 w-4" />
-                      <span>Válido {pkg.validity_days} días</span>
+                      <span>{t('selectPackage.validity')} {pkg.validity_days} {t('selectPackage.days')}</span>
                     </div>
                   </div>
                   {selectedPackage?.id === pkg.id && (
                     <div className="mt-4">
                       <CheckCircle className="h-6 w-6 text-green-600 mx-auto" />
-                      <p className="text-sm text-green-600 font-medium">Seleccionado</p>
+                      <p className="text-sm text-green-600 font-medium">{t('selectPackage.selected')}</p>
                     </div>
                   )}
                 </div>
@@ -301,7 +303,7 @@ export default function SelectPackagePage() {
 
         {/* Clases Privadas */}
         <div className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Clases Privadas</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">{t('selectPackage.privateClasses')}</h2>
           <p className="text-center text-gray-600 mb-4 text-sm">
             Válido por 30 días · Solo con cita previa · Disponibilidad limitada
           </p>
@@ -328,7 +330,7 @@ export default function SelectPackagePage() {
                   <div className="space-y-2 text-sm text-gray-600">
                     <div className="flex items-center justify-center space-x-2">
                       <Package className="h-4 w-4" />
-                      <span>{pkg.classes_included} clases</span>
+                      <span>{pkg.classes_included} {t('selectPackage.classes')}</span>
                     </div>
                     <div className="flex items-center justify-center space-x-2">
                       <DollarSign className="h-4 w-4" />
@@ -336,13 +338,13 @@ export default function SelectPackagePage() {
                     </div>
                     <div className="flex items-center justify-center space-x-2">
                       <Calendar className="h-4 w-4" />
-                      <span>Válido {pkg.validity_days} días</span>
+                      <span>{t('selectPackage.validity')} {pkg.validity_days} {t('selectPackage.days')}</span>
                     </div>
                   </div>
                   {selectedPackage?.id === pkg.id && (
                     <div className="mt-4">
                       <CheckCircle className="h-6 w-6 text-green-600 mx-auto" />
-                      <p className="text-sm text-green-600 font-medium">Seleccionado</p>
+                      <p className="text-sm text-green-600 font-medium">{t('selectPackage.selected')}</p>
                     </div>
                   )}
                 </div>

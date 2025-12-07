@@ -15,6 +15,7 @@ import {
   Star
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface Coach {
   id: string
@@ -32,6 +33,7 @@ interface Coach {
 
 export default function CoachesPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [coaches, setCoaches] = useState<Coach[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -46,7 +48,7 @@ export default function CoachesPage() {
       setError('')
       const token = localStorage.getItem('token')
       if (!token) {
-        setError('No hay token de autenticación')
+        setError(t('coaches.noToken'))
         setIsLoading(false)
         return
       }
@@ -62,12 +64,12 @@ export default function CoachesPage() {
         const list = data.coaches || []
         setCoaches(list)
       } else {
-        setError('Error al cargar los coaches')
+        setError(t('coaches.error'))
         console.error('Error loading coaches:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error loading coaches:', error)
-      setError('Error de conexión al cargar los coaches')
+      setError(t('coaches.connectionError'))
     } finally {
       setIsLoading(false)
     }
@@ -93,17 +95,17 @@ export default function CoachesPage() {
   }
 
   const handleDeleteCoach = async (coach: Coach) => {
-    if (!confirm(`¿Estás seguro de que quieres eliminar a ${coach.nombre}?`)) {
+    if (!confirm(`${t('coaches.deleteConfirm')} ${coach.nombre}?`)) {
       return
     }
 
     try {
       // Por ahora eliminamos solo del estado local
       setCoaches(coaches.filter(c => c.id !== coach.id))
-      alert('Coach eliminado exitosamente')
+      alert(t('coaches.deleteSuccess'))
     } catch (error) {
       console.error('Error deleting coach:', error)
-      alert('Error al eliminar el coach')
+      alert(t('coaches.deleteError'))
     }
   }
 
@@ -123,9 +125,9 @@ export default function CoachesPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Coaches</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{t('coaches.title')}</h1>
             <p className="text-gray-600 mt-1">
-              Gestiona los coaches de Pilates Mermaid
+              {t('coaches.subtitle')}
             </p>
           </div>
         </div>
@@ -138,7 +140,7 @@ export default function CoachesPage() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <input
                   type="text"
-                  placeholder="Buscar coaches..."
+                  placeholder={t('coaches.search')}
                   className="input-field pl-10 ls-3"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -153,12 +155,12 @@ export default function CoachesPage() {
           <div className="card text-center">
             <User className="h-8 w-8 text-blue-600 mx-auto mb-2" />
             <p className="text-2xl font-bold text-gray-900">{coaches.length}</p>
-            <p className="text-sm text-gray-600">Total Coaches</p>
+            <p className="text-sm text-gray-600">{t('coaches.total')}</p>
           </div>
           <div className="card text-center">
             <Calendar className="h-8 w-8 text-green-600 mx-auto mb-2" />
             <p className="text-2xl font-bold text-gray-900">18</p>
-            <p className="text-sm text-gray-600">Clases Esta Semana</p>
+            <p className="text-sm text-gray-600">{t('coaches.classesThisWeek')}</p>
           </div>
         </div>
 
@@ -176,16 +178,16 @@ export default function CoachesPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Coach
+                    {t('coaches.name')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contacto
+                    {t('coaches.contact')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cumpleaños
+                    {t('coaches.birthday')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Acciones
+                    {t('coaches.actions')}
                   </th>
                 </tr>
               </thead>
@@ -208,7 +210,7 @@ export default function CoachesPage() {
                             {coach.nombre}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {coach.instagram || 'Sin Instagram'}
+                            {coach.instagram || t('coaches.noInstagram')}
                           </div>
                         </div>
                       </div>
@@ -224,21 +226,21 @@ export default function CoachesPage() {
                       <button 
                         onClick={() => handleViewCoach(coach)}
                         className="text-blue-600 hover:text-blue-900"
-                        title="Ver detalles"
+                        title={t('coaches.viewDetails')}
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button 
                         onClick={() => handleEditCoach(coach)}
                         className="text-gray-600 hover:text-gray-900"
-                        title="Editar coach"
+                        title={t('coaches.editCoach')}
                       >
                         <Edit className="h-4 w-4" />
                       </button>
                       <button 
                         onClick={() => handleDeleteCoach(coach)}
                         className="text-red-600 hover:text-red-900"
-                        title="Eliminar coach"
+                        title={t('coaches.deleteCoach')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -252,7 +254,7 @@ export default function CoachesPage() {
           {filteredCoaches.length === 0 && (
             <div className="text-center py-8">
               <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No se encontraron coaches</p>
+              <p className="text-gray-500">{t('coaches.noResults')}</p>
             </div>
           )}
         </div>
@@ -263,7 +265,7 @@ export default function CoachesPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Detalles del Coach</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{t('coaches.coachDetails')}</h3>
               <button
                 onClick={() => setShowViewModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -275,33 +277,33 @@ export default function CoachesPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Nombre</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.name')}</label>
                   <p className="text-sm text-gray-900">{selectedCoach.nombre}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.email')}</label>
                   <p className="text-sm text-gray-900">{selectedCoach.correo}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Teléfono</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.phone')}</label>
                   <p className="text-sm text-gray-900">{selectedCoach.numero_de_telefono}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Instagram</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.instagram')}</label>
                   <p className="text-sm text-gray-900">{selectedCoach.instagram || '-'}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Cumpleaños</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.birthday')}</label>
                   <p className="text-sm text-gray-900">
                     {selectedCoach.cumpleanos ? new Date(selectedCoach.cumpleanos).toLocaleDateString('es-ES') : '-'}
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Género</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.gender')}</label>
                   <p className="text-sm text-gray-900">{selectedCoach.genero || '-'}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Fecha de Registro</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('coaches.registrationDate')}</label>
                   <p className="text-sm text-gray-900">
                     {selectedCoach.created_at ? new Date(selectedCoach.created_at).toLocaleDateString('es-ES') : '-'}
                   </p>
@@ -309,8 +311,8 @@ export default function CoachesPage() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700">Lesiones o Limitaciones Físicas</label>
-                <p className="text-sm text-gray-900">{selectedCoach.lesion_o_limitacion_fisica || 'Ninguna'}</p>
+                <label className="block text-sm font-medium text-gray-700">{t('coaches.injuries')}</label>
+                <p className="text-sm text-gray-900">{selectedCoach.lesion_o_limitacion_fisica || t('coaches.none')}</p>
               </div>
             </div>
             
@@ -319,7 +321,7 @@ export default function CoachesPage() {
                 onClick={() => setShowViewModal(false)}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
-                Cerrar
+                {t('common.close')}
               </button>
               <button
                 onClick={() => {
@@ -328,7 +330,7 @@ export default function CoachesPage() {
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Editar
+                {t('common.edit')}
               </button>
             </div>
           </div>
@@ -340,7 +342,7 @@ export default function CoachesPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Editar Coach</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{t('coaches.edit')}</h3>
               <button
                 onClick={() => setShowEditModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -370,10 +372,10 @@ export default function CoachesPage() {
                     )
                 )
                 setShowEditModal(false)
-                alert('Coach actualizado exitosamente')
+                alert(t('coaches.updateSuccess'))
               } catch (error) {
                 console.error('Error updating coach:', error)
-                alert('Error al actualizar el coach')
+                alert(t('coaches.updateError'))
               }
             }}>
               <div className="space-y-4">
@@ -454,13 +456,13 @@ export default function CoachesPage() {
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  Cancelar
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  Guardar Cambios
+                  {t('common.save')}
                 </button>
               </div>
             </form>

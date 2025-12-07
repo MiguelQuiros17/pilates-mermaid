@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 import { 
   CreditCard, 
   DollarSign, 
@@ -55,6 +56,7 @@ interface User {
 
 export default function PaymentsPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [user, setUser] = useState<User | null>(null)
   const [payments, setPayments] = useState<Payment[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -217,15 +219,15 @@ export default function PaymentsPage() {
       })
 
       if (response.ok) {
-        alert('Pagos calculados exitosamente')
+        alert(t('payments.calculateSuccess'))
         loadCoachPayments()
       } else {
         const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }))
-        alert(`Error al calcular los pagos: ${errorData.message || 'Error desconocido'}`)
+        alert(`${t('payments.calculateError')}: ${errorData.message || t('common.unknownError')}`)
       }
     } catch (error) {
       console.error('Error calculating coach payments:', error)
-      alert('Error al calcular los pagos')
+      alert(t('payments.calculateError'))
     }
   }
 
@@ -407,11 +409,11 @@ export default function PaymentsPage() {
         })
       } else {
         const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }))
-        alert(`Error al crear el pago: ${errorData.message || 'Error desconocido'}`)
+        alert(`${t('payments.createError')}: ${errorData.message || t('common.unknownError')}`)
       }
     } catch (error) {
       console.error('Error creating payment:', error)
-      alert('Error al conectar con el servidor')
+      alert(t('payments.connectionError'))
     }
   }
 
@@ -474,7 +476,7 @@ export default function PaymentsPage() {
           <div className="absolute inset-0 bg-black/20"></div>
           <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-4xl font-bold mb-2">Gestión de Pagos</h1>
+              <h1 className="text-4xl font-bold mb-2">{t('payments.title')}</h1>
               <p className="text-gray-300 text-lg">
                 Controla ingresos, gastos y pagos a coaches
               </p>
@@ -498,7 +500,7 @@ export default function PaymentsPage() {
                 className="bg-white/10 backdrop-blur-sm text-white px-6 py-3 rounded-xl hover:bg-white/20 transition-all duration-200 flex items-center space-x-2 shadow-lg"
               >
                 <Plus className="h-5 w-5" />
-                <span>Agregar Pago</span>
+                <span>{t('payments.addPayment')}</span>
               </button>
               <button
                 onClick={exportToCSV}
@@ -525,7 +527,7 @@ export default function PaymentsPage() {
               <TrendingUp className="h-8 w-8 text-white" />
             </div>
             <p className="text-3xl font-bold text-gray-900 mb-1">${totalIncome.toLocaleString()}</p>
-            <p className="text-sm text-gray-600 font-medium">Ingresos Totales</p>
+            <p className="text-sm text-gray-600 font-medium">{t('payments.totalIncome')}</p>
           </motion.div>
 
           <motion.div
@@ -536,7 +538,7 @@ export default function PaymentsPage() {
               <TrendingDown className="h-8 w-8 text-white" />
             </div>
             <p className="text-3xl font-bold text-gray-900 mb-1">${totalExpenses.toLocaleString()}</p>
-            <p className="text-sm text-gray-600 font-medium">Gastos Totales</p>
+            <p className="text-sm text-gray-600 font-medium">{t('payments.totalExpenses')}</p>
           </motion.div>
 
           <motion.div
@@ -583,8 +585,8 @@ export default function PaymentsPage() {
               className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-transparent"
             >
               <option value="all">Todos los tipos</option>
-              <option value="income">Ingresos</option>
-              <option value="expense">Gastos</option>
+              <option value="income">{t('payments.income')}</option>
+              <option value="expense">{t('payments.expenses')}</option>
             </select>
             <select
               value={filterStatus}
@@ -692,7 +694,7 @@ export default function PaymentsPage() {
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Pagos a Coaches</h2>
+                <h2 className="text-2xl font-bold text-gray-900">{t('payments.coachPayments')}</h2>
                 <p className="text-gray-600 mt-1">
                   Calcula, registra y controla los pagos realizados a los coaches.
                 </p>

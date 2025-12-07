@@ -6,11 +6,13 @@ import { motion } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useTranslation } from '@/hooks/useTranslation'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
 export default function RegisterPage() {
   const router = useRouter()
+  const { t } = useTranslation()
   const [formData, setFormData] = useState({
     nombre: '',
     apellidos: '',
@@ -51,32 +53,32 @@ export default function RegisterPage() {
 
   const validateForm = () => {
     if (!formData.nombre.trim()) {
-      setError('El nombre es requerido')
+      setError(t('auth.register.nameRequired'))
       return false
     }
 
     if (!formData.apellidos.trim()) {
-      setError('Los apellidos son requeridos')
+      setError(t('auth.register.lastNameRequired'))
       return false
     }
 
     if (!formData.correo.trim()) {
-      setError('El correo electrónico es requerido')
+      setError(t('auth.register.emailRequired'))
       return false
     }
 
     if (!formData.numero_de_telefono.trim()) {
-      setError('El número de teléfono es requerido')
+      setError(t('auth.register.phoneRequired'))
       return false
     }
 
     if (formData.password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres')
+      setError(t('auth.register.passwordMinLength'))
       return false
     }
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Las contraseñas no coinciden')
+      setError(t('auth.register.passwordMismatch'))
       return false
     }
 
@@ -137,7 +139,7 @@ export default function RegisterPage() {
           return
         }
         
-        setSuccess('¡Cuenta creada exitosamente!')
+        setSuccess(t('auth.register.success'))
         setIsLoading(false)
         
         // Redirect to dashboard - use router.push for Next.js navigation
@@ -190,10 +192,10 @@ export default function RegisterPage() {
             />
           </div>
           <h2 className="text-2xl font-semibold text-gray-900">
-            Crear Cuenta
+            {t('auth.register.title')}
           </h2>
           <p className="mt-2 text-gray-600">
-            Registra una cuenta en el sistema de Pilates Mermaid
+            {t('auth.register.subtitle')}
           </p>
         </div>
 
@@ -201,12 +203,12 @@ export default function RegisterPage() {
         <form className="card space-y-6" onSubmit={handleSubmit}>
           {/* Personal Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-medium text-gray-900">Información Personal</h3>
+            <h3 className="text-lg font-medium text-gray-900">{t('auth.register.personalInfo')}</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre *
+                  {t('auth.register.firstName')} *
                 </label>
                 <input
                   id="nombre"
@@ -214,7 +216,7 @@ export default function RegisterPage() {
                   type="text"
                   required
                   className="input-field"
-                  placeholder="Tu nombre"
+                  placeholder={t('auth.register.firstName')}
                   value={formData.nombre}
                   onChange={handleInputChange}
                 />
@@ -222,7 +224,7 @@ export default function RegisterPage() {
 
               <div>
                 <label htmlFor="apellidos" className="block text-sm font-medium text-gray-700 mb-1">
-                  Apellidos *
+                  {t('auth.register.lastName')} *
                 </label>
                 <input
                   id="apellidos"
@@ -230,7 +232,7 @@ export default function RegisterPage() {
                   type="text"
                   required
                   className="input-field"
-                  placeholder="Tus apellidos"
+                  placeholder={t('auth.register.lastName')}
                   value={formData.apellidos}
                   onChange={handleInputChange}
                 />
@@ -240,7 +242,7 @@ export default function RegisterPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="correo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Correo electrónico *
+                  {t('auth.register.email')} *
                 </label>
                 <input
                   id="correo"
@@ -257,7 +259,7 @@ export default function RegisterPage() {
 
               <div>
                 <label htmlFor="numero_de_telefono" className="block text-sm font-medium text-gray-700 mb-1">
-                  Teléfono *
+                  {t('auth.register.phone')} *
                 </label>
                 <input
                   id="numero_de_telefono"
@@ -275,7 +277,7 @@ export default function RegisterPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="instagram" className="block text-sm font-medium text-gray-700 mb-1">
-                  Instagram
+                  {t('auth.register.instagram')}
                 </label>
                 <input
                   id="instagram"
@@ -290,7 +292,7 @@ export default function RegisterPage() {
 
               <div>
                 <label htmlFor="genero" className="block text-sm font-medium text-gray-700 mb-1">
-                  Género
+                  {t('auth.register.gender')}
                 </label>
                 <select
                   id="genero"
@@ -299,10 +301,10 @@ export default function RegisterPage() {
                   value={formData.genero}
                   onChange={handleInputChange}
                 >
-                  <option value="">Seleccionar...</option>
-                  <option value="Masculino">Masculino</option>
-                  <option value="Femenino">Femenino</option>
-                  <option value="Otro">Otro</option>
+                  <option value="">{t('auth.register.gender.select')}</option>
+                  <option value="Masculino">{t('auth.register.gender.male')}</option>
+                  <option value="Femenino">{t('auth.register.gender.female')}</option>
+                  <option value="Otro">{t('auth.register.gender.other')}</option>
                 </select>
               </div>
             </div>
@@ -310,7 +312,7 @@ export default function RegisterPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="cumpleanos" className="block text-sm font-medium text-gray-700 mb-1">
-                  Fecha de cumpleaños
+                  {t('auth.register.birthday')}
                 </label>
                 <input
                   id="cumpleanos"
@@ -325,13 +327,13 @@ export default function RegisterPage() {
 
             <div>
               <label htmlFor="lesion_o_limitacion_fisica" className="block text-sm font-medium text-gray-700 mb-1">
-                Lesiones o limitaciones físicas
+                {t('auth.register.injuries')}
               </label>
               <textarea
                 id="lesion_o_limitacion_fisica"
                 name="lesion_o_limitacion_fisica"
                 className="input-field h-20 resize-none"
-                placeholder="Describe cualquier lesión o limitación física que debamos conocer..."
+                placeholder={t('auth.register.injuries.placeholder')}
                 value={formData.lesion_o_limitacion_fisica}
                 onChange={(e) => handleInputChange(e as any)}
               />
@@ -340,22 +342,22 @@ export default function RegisterPage() {
 
           {/* Account Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-medium text-gray-900">Información de Cuenta</h3>
+            <h3 className="text-lg font-medium text-gray-900">{t('auth.register.accountInfo')}</h3>
             
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
               <div className="flex items-center space-x-2 mb-2">
                 <CheckCircle className="h-5 w-5 text-blue-600" />
-                <h4 className="text-sm font-medium text-blue-900">Registro de Cliente</h4>
+                <h4 className="text-sm font-medium text-blue-900">{t('auth.register.clientNote')}</h4>
               </div>
               <p className="text-sm text-blue-700">
-                Estás creando una cuenta de cliente. Después del registro, podrás elegir tu paquete de clases desde una lista completa con precios.
+                {t('auth.register.clientNoteDesc')}
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                  Contraseña *
+                  {t('auth.register.password')} *
                 </label>
                 <div className="relative">
                   <input
@@ -365,7 +367,7 @@ export default function RegisterPage() {
                     autoComplete="new-password"
                     required
                     className="input-field pr-12"
-                    placeholder="Mínimo 8 caracteres"
+                    placeholder={t('auth.register.passwordMinLength')}
                     value={formData.password}
                     onChange={handleInputChange}
                   />
@@ -385,7 +387,7 @@ export default function RegisterPage() {
 
               <div>
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirmar contraseña *
+                  {t('auth.register.confirmPassword')} *
                 </label>
                 <div className="relative">
                   <input
@@ -395,7 +397,7 @@ export default function RegisterPage() {
                     autoComplete="new-password"
                     required
                     className="input-field pr-12"
-                    placeholder="Repite tu contraseña"
+                    placeholder={t('auth.register.confirmPassword')}
                     value={formData.confirmPassword}
                     onChange={handleInputChange}
                   />
@@ -437,7 +439,7 @@ export default function RegisterPage() {
               <div>
                 <span className="text-sm font-medium">{success}</span>
                 <p className="text-xs text-green-700 mt-1">
-                  Redirigiendo al dashboard...
+                  {t('auth.register.redirecting')}
                 </p>
               </div>
             </motion.div>
@@ -452,22 +454,22 @@ export default function RegisterPage() {
             {isLoading ? (
               <div className="flex items-center justify-center space-x-2">
                 <div className="spinner"></div>
-                <span>Creando cuenta...</span>
+                <span>{t('auth.register.loading')}</span>
               </div>
             ) : (
-              'Crear Cuenta'
+              t('auth.register.button')
             )}
           </button>
 
           {/* Links */}
           <div className="text-center">
             <div className="text-sm text-gray-600">
-              ¿Ya tienes cuenta?{' '}
+              {t('auth.register.hasAccount')}{' '}
               <Link
                 href="/login"
                 className="text-black hover:underline font-medium"
               >
-                Inicia sesión aquí
+                {t('auth.register.login')}
               </Link>
             </div>
           </div>

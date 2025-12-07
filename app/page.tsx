@@ -3,9 +3,11 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { useTranslation } from '@/hooks/useTranslation'
 
 export default function HomePage() {
   const router = useRouter()
+  const { t } = useTranslation()
   
   useEffect(() => {
     // Redirect logic
@@ -92,7 +94,7 @@ export default function HomePage() {
           margin: '0 0 32px 0',
           padding: 0
         }}>
-          Redirigiendo al sistema de gestión...
+          {t('home.redirecting')}
         </p>
 
         {/* Animated Spinner */}

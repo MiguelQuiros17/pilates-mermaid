@@ -2419,21 +2419,34 @@ app.get('/api/packages', requireAuth, async (req, res) => {
 // Create package (admin)
 app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
-    const { name, type, classes_included, price, validity_months, category, description, is_live, live_from, live_until, is_active, original_price, sale_price } = req.body
+    const { name, name_es, name_en, type, classes_included, price, validity_months, category, description, description_es, description_en, is_live, live_from, live_until, is_active, original_price, sale_price } = req.body
 
     // Decode any HTML entities introduced by sanitization
     const safeName = decodeHtmlEntities(name)
+    const safeNameEs = decodeHtmlEntities(name_es)
+    const safeNameEn = decodeHtmlEntities(name_en)
     const safeDescription = decodeHtmlEntities(description)
+    const safeDescriptionEs = decodeHtmlEntities(description_es)
+    const safeDescriptionEn = decodeHtmlEntities(description_en)
     const safeCategory = decodeHtmlEntities(category)
     const safeType = decodeHtmlEntities(type)
+
+    // Apply fallback logic: if one language is blank, use the other for both
+    const finalNameEs = (safeNameEs || '').trim() || (safeNameEn || '').trim() || (safeName || '').trim()
+    const finalNameEn = (safeNameEn || '').trim() || (safeNameEs || '').trim() || (safeName || '').trim()
+    const finalDescriptionEs = (safeDescriptionEs || '').trim() || (safeDescriptionEn || '').trim() || (safeDescription || '').trim()
+    const finalDescriptionEn = (safeDescriptionEn || '').trim() || (safeDescriptionEs || '').trim() || (safeDescription || '').trim()
+    
+    // Use the non-empty name for backward compatibility
+    const finalName = finalNameEs || finalNameEn || safeName
 
     // Sensible fallbacks to avoid empty required fields causing 400s in production
     const finalCategory = safeCategory || 'Grupal'
     const finalType = safeType || (finalCategory === 'Privada' ? 'private' : 'group')
     
-    if (!safeName || !finalType || !classes_included || !price || !validity_months || !finalCategory) {
+    if (!finalName || !finalType || !classes_included || !price || !validity_months || !finalCategory) {
       console.error('[POST /api/packages] Missing required fields:', {
-        name: !!safeName,
+        name: !!finalName,
         type: !!finalType,
         classes_included,
         price,
@@ -2444,14 +2457,18 @@ app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (r
     }
     
     const pkg = await database.createPackage({
-      name: safeName,
+      name: finalName, // Keep name for backward compatibility
+      name_es: finalNameEs,
+      name_en: finalNameEn,
       type: finalType,
       classes_included,
       price,
       validity_months,
       validity_days: validity_months * 30, // backwards compatibility
       category: finalCategory,
-      description: safeDescription,
+      description: finalDescriptionEs || finalDescriptionEn || safeDescription, // Keep description for backward compatibility
+      description_es: finalDescriptionEs,
+      description_en: finalDescriptionEn,
       is_live,
       live_from: live_from || null,
       live_until: live_until || null,
@@ -2475,13 +2492,34 @@ app.put('/api/packages/:id', requireAuth, requireRole(['admin', 'coach']), async
 
     // Decode any HTML entities introduced by sanitization
     if (updates.name) updates.name = decodeHtmlEntities(updates.name)
+    if (updates.name_es) updates.name_es = decodeHtmlEntities(updates.name_es)
+    if (updates.name_en) updates.name_en = decodeHtmlEntities(updates.name_en)
     if (updates.description) updates.description = decodeHtmlEntities(updates.description)
-
-    // Decode any HTML entities introduced by sanitization
-    if (updates.name) updates.name = decodeHtmlEntities(updates.name)
-    if (updates.description) updates.description = decodeHtmlEntities(updates.description)
+    if (updates.description_es) updates.description_es = decodeHtmlEntities(updates.description_es)
+    if (updates.description_en) updates.description_en = decodeHtmlEntities(updates.description_en)
     if (updates.category) updates.category = decodeHtmlEntities(updates.category)
     if (updates.type) updates.type = decodeHtmlEntities(updates.type)
+    
+    // Apply fallback logic for bilingual fields
+    if (updates.name_es !== undefined || updates.name_en !== undefined || updates.name !== undefined) {
+      const es = (updates.name_es || '').trim()
+      const en = (updates.name_en || '').trim()
+      const legacy = (updates.name || '').trim()
+      // If one language is blank, use the other for both
+      updates.name_es = es || en || legacy
+      updates.name_en = en || es || legacy
+      updates.name = updates.name_es || updates.name_en // Keep name for backward compatibility
+    }
+    
+    if (updates.description_es !== undefined || updates.description_en !== undefined || updates.description !== undefined) {
+      const es = (updates.description_es || '').trim()
+      const en = (updates.description_en || '').trim()
+      const legacy = (updates.description || '').trim()
+      // If one language is blank, use the other for both
+      updates.description_es = es || en || legacy
+      updates.description_en = en || es || legacy
+      updates.description = updates.description_es || updates.description_en // Keep description for backward compatibility
+    }
     
     const pkg = await database.updatePackage(id, updates)
     res.json({ success: true, package: pkg })
@@ -3329,7 +3367,9 @@ app.get('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (re
       return {
       id: String(payment.id),
       date: payment.date,
-      concept: payment.concept || '',
+      concept: payment.concept || '', // Keep for backward compatibility
+      concept_es: payment.concept_es || payment.concept_en || payment.concept || '',
+      concept_en: payment.concept_en || payment.concept_es || payment.concept || '',
       amount: payment.amount || 0,
       type: payment.type || 'income',
       method: normalizedMethod,
@@ -3354,9 +3394,14 @@ app.get('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (re
 
 app.post('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
-    const { date, concept, amount, type, method, status, client_name, coach_name, description } = req.body
+    const { date, concept, concept_es, concept_en, amount, type, method, status, client_name, coach_name, description } = req.body
 
-    if (!date || !concept || !amount || !type || !method || !status) {
+    // Apply fallback logic: if one language is blank, use the other for both
+    const finalConceptEs = (concept_es || '').trim() || (concept_en || '').trim() || (concept || '').trim()
+    const finalConceptEn = (concept_en || '').trim() || (concept_es || '').trim() || (concept || '').trim()
+    const finalConcept = finalConceptEs || finalConceptEn || concept
+
+    if (!date || !finalConcept || !amount || !type || !method || !status) {
       return res.status(400).json({
         success: false,
         message: 'Todos los campos obligatorios son requeridos'
@@ -3372,9 +3417,9 @@ app.post('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (r
     }
 
     const result = await database.run(
-      `INSERT INTO payments (date, concept, amount, type, method, status, client_name, coach_name, description, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-      [date, concept, amount, type, method, status, client_name, coach_name, description]
+      `INSERT INTO payments (date, concept, concept_es, concept_en, amount, type, method, status, client_name, coach_name, description, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [date, finalConcept, finalConceptEs, finalConceptEn, amount, type, method, status, client_name, coach_name, description]
     )
 
     res.json({
@@ -3383,7 +3428,9 @@ app.post('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (r
       payment: {
         id: result.lastID,
         date,
-        concept,
+        concept: finalConcept,
+        concept_es: finalConceptEs,
+        concept_en: finalConceptEn,
         amount,
         type,
         method,
@@ -3405,7 +3452,22 @@ app.post('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (r
 app.put('/api/payments/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
-    const { date, concept, amount, type, method, status, client_name, coach_name, description } = req.body
+    const { date, concept, concept_es, concept_en, amount, type, method, status, client_name, coach_name, description } = req.body
+
+    // Apply fallback logic: if one language is blank, use the other for both
+    let finalConceptEs, finalConceptEn, finalConcept
+    if (concept_es !== undefined || concept_en !== undefined || concept !== undefined) {
+      const es = (concept_es || '').trim()
+      const en = (concept_en || '').trim()
+      const legacy = (concept || '').trim()
+      finalConceptEs = es || en || legacy
+      finalConceptEn = en || es || legacy
+      finalConcept = finalConceptEs || finalConceptEn
+    } else {
+      finalConcept = concept
+      finalConceptEs = concept_es
+      finalConceptEn = concept_en
+    }
 
     const allowedMethods = ['cash', 'transfer']
     if (!allowedMethods.includes(method)) {
@@ -3417,10 +3479,10 @@ app.put('/api/payments/:id', requireAuth, requireRole(['admin', 'coach']), async
 
     await database.run(
       `UPDATE payments SET 
-        date = ?, concept = ?, amount = ?, type = ?, method = ?, status = ?, 
+        date = ?, concept = ?, concept_es = ?, concept_en = ?, amount = ?, type = ?, method = ?, status = ?, 
         client_name = ?, coach_name = ?, description = ?, updated_at = datetime('now')
        WHERE id = ?`,
-      [date, concept, amount, type, method, status, client_name, coach_name, description, id]
+      [date, finalConcept, finalConceptEs, finalConceptEn, amount, type, method, status, client_name, coach_name, description, id]
     )
 
     res.json({
@@ -4964,6 +5026,8 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
   try {
     const {
       title,
+      title_es,
+      title_en,
       type,
       coach_id,
       coach_name,
@@ -4974,6 +5038,8 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       end_time,
       duration,
       description,
+      description_es,
+      description_en,
       status,
       instructors,
       is_recurring,
@@ -4986,7 +5052,16 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       override_type
     } = req.body
 
-    if (!title || !type || !coach_id || !date || !time || !duration) {
+    // Apply fallback logic: if one language is blank, use the other for both
+    const finalTitleEs = (title_es || '').trim() || (title_en || '').trim() || (title || '').trim()
+    const finalTitleEn = (title_en || '').trim() || (title_es || '').trim() || (title || '').trim()
+    const finalDescriptionEs = (description_es || '').trim() || (description_en || '').trim() || (description || '').trim()
+    const finalDescriptionEn = (description_en || '').trim() || (description_es || '').trim() || (description || '').trim()
+    
+    // Use the non-empty title for backward compatibility
+    const finalTitle = finalTitleEs || finalTitleEn || title
+
+    if (!finalTitle || !type || !coach_id || !date || !time || !duration) {
       return res.status(400).json({
         success: false,
         message: 'Campos obligatorios: título, tipo, coach, fecha, hora y duración'
@@ -5051,13 +5126,15 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
 
     await database.run(`
       INSERT INTO classes (
-        id, title, type, coach_id, date, time, end_time, duration, max_capacity,
-        current_bookings, status, description, instructors, is_recurring, 
+        id, title, title_es, title_en, type, coach_id, date, time, end_time, duration, max_capacity,
+        current_bookings, status, description, description_es, description_en, instructors, is_recurring, 
         recurrence_end_date, recurrence_days_of_week, is_public, walk_ins_welcome, assigned_client_ids, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
       id,
-      title,
+      finalTitle, // Keep title for backward compatibility
+      finalTitleEs,
+      finalTitleEn,
       type,
       coach_id,
       date, // For recurring classes, this is the start date
@@ -5067,7 +5144,9 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       maxCapacity,
       isRecurringBool ? 0 : currentBookings, // Recurring classes start with 0 bookings; private with client starts with 1
       status || 'scheduled',
-      description,
+      finalDescriptionEs || finalDescriptionEn || description, // Keep description for backward compatibility
+      finalDescriptionEs,
+      finalDescriptionEn,
       normalizedInstructors,
       isRecurringBool ? 1 : 0,
       recurrence_end_date || null,
@@ -5456,12 +5535,16 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
     const { id } = req.params
     const {
       title,
+      title_es,
+      title_en,
       date,
       time,
       end_time,
       duration,
       status,
       description,
+      description_es,
+      description_en,
       instructors,
       coach_id,
       coach_name,
@@ -5483,13 +5566,40 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
     }
 
     const updates = {}
-    if (title !== undefined) updates.title = title
+    
+    // Apply fallback logic for bilingual fields
+    if (title_es !== undefined || title_en !== undefined || title !== undefined) {
+      const es = (title_es || '').trim()
+      const en = (title_en || '').trim()
+      const legacy = (title || '').trim()
+      // If one language is blank, use the other for both
+      const finalTitleEs = es || en || legacy
+      const finalTitleEn = en || es || legacy
+      updates.title = finalTitleEs || finalTitleEn // Keep title for backward compatibility
+      updates.title_es = finalTitleEs
+      updates.title_en = finalTitleEn
+    } else if (title !== undefined) {
+      updates.title = title
+    }
+    
+    if (description_es !== undefined || description_en !== undefined || description !== undefined) {
+      const es = (description_es || '').trim()
+      const en = (description_en || '').trim()
+      const legacy = (description || '').trim()
+      // If one language is blank, use the other for both
+      const finalDescriptionEs = es || en || legacy
+      const finalDescriptionEn = en || es || legacy
+      updates.description = finalDescriptionEs || finalDescriptionEn // Keep description for backward compatibility
+      updates.description_es = finalDescriptionEs
+      updates.description_en = finalDescriptionEn
+    } else if (description !== undefined) {
+      updates.description = description
+    }
     if (date !== undefined) updates.date = date
     if (time !== undefined) updates.time = time
     if (end_time !== undefined) updates.end_time = end_time
     if (duration !== undefined) updates.duration = duration
     if (status !== undefined) updates.status = status
-    if (description !== undefined) updates.description = description
     if (instructors !== undefined) updates.instructors = instructors
     if (coach_id !== undefined) updates.coach_id = coach_id
     // Note: coach_name is not a column in the classes table, it's computed from a JOIN

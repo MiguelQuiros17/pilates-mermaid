@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface Client {
   id: string
@@ -36,6 +37,7 @@ interface Client {
 // Package Assignment Component
 function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: string, onPackageAdded: () => void }) {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [selectedGroupPackage, setSelectedGroupPackage] = useState('')
   const [selectedPrivatePackage, setSelectedPrivatePackage] = useState('')
   const [groupRenewalMonths, setGroupRenewalMonths] = useState(1)
@@ -73,7 +75,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
   const handleAssignPackage = async (packageId: string, category: 'Grupal' | 'Privada', renewalMonths: number) => {
     if (!clientId || !packageId) return
     if (renewalMonths === undefined || renewalMonths === null || renewalMonths < 1 || renewalMonths > 999) {
-      alert('Los meses restantes deben estar entre 1 y 999')
+      alert(t('clients.monthsRange'))
       return
     }
 
@@ -81,7 +83,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('No hay token de autenticación')
+        alert(t('clients.noToken'))
         return
       }
 
@@ -101,7 +103,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
       })
 
       if (response.ok) {
-        alert('Paquete asignado exitosamente')
+        alert(t('clients.packageAssigned'))
         onPackageAdded()
         if (category === 'Grupal') {
           setSelectedGroupPackage('')
@@ -112,11 +114,11 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
         }
       } else {
         const data = await response.json()
-        alert(data.message || 'Error al asignar paquete')
+        alert(data.message || t('clients.packageError'))
       }
     } catch (error) {
       console.error('Error assigning package:', error)
-      alert('Error al asignar paquete')
+      alert(t('clients.packageError'))
     } finally {
       setIsAssigning(false)
     }
@@ -128,7 +130,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
         <div className="p-2 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg shadow-emerald-500/20">
           <Plus className="h-5 w-5 text-white" />
         </div>
-        <h4 className="text-lg font-bold text-slate-800">Agregar Nuevo Paquete</h4>
+        <h4 className="text-lg font-bold text-slate-800">{t('clients.addPackage')}</h4>
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -136,20 +138,20 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
         <div className="bg-white rounded-xl p-5 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-            <span className="text-sm font-semibold text-blue-900 uppercase tracking-wide">Paquete Grupal</span>
+            <span className="text-sm font-semibold text-blue-900 uppercase tracking-wide">{t('clients.groupPackage')}</span>
           </div>
           
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1.5">Seleccionar paquete</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1.5">{t('clients.selectPackage')}</label>
           <select
             value={selectedGroupPackage}
             onChange={(e) => setSelectedGroupPackage(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
           >
-                <option value="">Elegir paquete grupal...</option>
+                <option value="">{t('clients.chooseGroupPackage')}</option>
                 {assignableGroupPackages.map(pkg => (
-                  <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes_included} clases)</option>
+                  <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes_included} {t('client.classes')})</option>
             ))}
           </select>
             </div>
@@ -188,7 +190,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
             disabled={!selectedGroupPackage || isAssigning}
               className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40"
           >
-              {isAssigning ? 'Asignando...' : 'Asignar Paquete Grupal'}
+              {isAssigning ? t('clients.assigning') : t('clients.assignGroupPackage')}
           </button>
         </div>
       </div>
@@ -197,7 +199,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
         <div className="bg-white rounded-xl p-5 border border-purple-100 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-            <span className="text-sm font-semibold text-purple-900 uppercase tracking-wide">Paquete Privado</span>
+            <span className="text-sm font-semibold text-purple-900 uppercase tracking-wide">{t('clients.privatePackage')}</span>
           </div>
           
           <div className="space-y-4">
@@ -208,9 +210,9 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
             onChange={(e) => setSelectedPrivatePackage(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
           >
-                <option value="">Elegir paquete privado...</option>
+                <option value="">{t('clients.choosePrivatePackage')}</option>
                 {assignablePrivatePackages.map(pkg => (
-                  <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes_included} clases)</option>
+                  <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes_included} {t('client.classes')})</option>
             ))}
           </select>
             </div>
@@ -249,7 +251,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
             disabled={!selectedPrivatePackage || isAssigning}
               className="w-full py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
           >
-              {isAssigning ? 'Asignando...' : 'Asignar Paquete Privado'}
+              {isAssigning ? t('clients.assigning') : t('clients.assignPrivatePackage')}
           </button>
           </div>
         </div>
@@ -259,6 +261,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
 }
 export default function ClientsPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -332,8 +335,8 @@ export default function ClientsPage() {
         }
       } else {
         // If response is not ok, try to get error message
-        const errorData = await response.json().catch(() => ({ message: 'Error al cargar los clientes' }))
-        setError(errorData.message || 'Error al cargar los clientes')
+        const errorData = await response.json().catch(() => ({ message: t('clients.error') }))
+        setError(errorData.message || t('clients.error'))
         setClients([]) // Show empty list instead of fake data
         console.error('Error fetching clients:', errorData)
       }
@@ -420,7 +423,7 @@ export default function ClientsPage() {
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        alert('No hay token de autenticación')
+        alert(t('clients.noToken'))
         return
       }
 
@@ -437,12 +440,12 @@ export default function ClientsPage() {
         setClientToDelete(null)
         fetchClients()
       } else {
-        const errorData = await response.json().catch(() => ({ message: 'Error al eliminar el cliente' }))
-        alert(errorData.message || 'Error al eliminar el cliente')
+        const errorData = await response.json().catch(() => ({ message: t('clients.deleteError') }))
+        alert(errorData.message || t('clients.deleteError'))
       }
     } catch (error) {
       console.error('Error deleting client:', error)
-      alert('Error de conexión al eliminar el cliente')
+      alert(t('clients.connectionError'))
     }
   }
 
@@ -480,7 +483,7 @@ export default function ClientsPage() {
           })
         }
       } else {
-        alert('Error al cargar el historial de paquetes')
+        alert(t('clients.error'))
       }
     } catch (error) {
       console.error('Error loading package history:', error)
@@ -520,9 +523,12 @@ export default function ClientsPage() {
     const expiration = new Date(expirationDate)
     const daysUntilExpiration = Math.ceil((expiration.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     
-    if (daysUntilExpiration < 0) return 'Expirado'
-    if (daysUntilExpiration <= 7) return `Expira en ${daysUntilExpiration} días`
-    return 'Activo'
+    if (daysUntilExpiration < 0) return t('clients.status.expired')
+    if (daysUntilExpiration <= 7) {
+      const daysText = daysUntilExpiration === 1 ? t('client.days').replace('días', 'día').replace('days', 'day') : t('client.days')
+      return `${t('client.expiresIn')} ${daysUntilExpiration} ${daysText}`
+    }
+    return t('clients.status.active')
   }
 
   if (isLoading) {
@@ -542,10 +548,10 @@ export default function ClientsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-              Gestión de Clientes
+              {t('clients.title')}
             </h1>
             <p className="text-slate-500 mt-1">
-              Administra todos los clientes del estudio
+              {t('clients.subtitle')}
             </p>
           </div>
         </div>
@@ -556,7 +562,7 @@ export default function ClientsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-3xl font-bold">{clients.length}</p>
-                <p className="text-blue-100 text-sm mt-1">Total Clientes</p>
+                <p className="text-blue-100 text-sm mt-1">{t('clients.total')}</p>
               </div>
               <div className="p-3 bg-white/20 rounded-xl">
                 <Users className="h-6 w-6" />
@@ -575,7 +581,7 @@ export default function ClientsPage() {
                 return daysUntilExpiration <= 7 && daysUntilExpiration >= 0
               }).length}
             </p>
-                <p className="text-amber-100 text-sm mt-1">Por Expirar (7 días)</p>
+                <p className="text-amber-100 text-sm mt-1">{t('clients.expiring')}</p>
           </div>
               <div className="p-3 bg-white/20 rounded-xl">
                 <Calendar className="h-6 w-6" />
@@ -599,7 +605,7 @@ export default function ClientsPage() {
                     return birthday >= today && birthday <= nextMonth
               }).length}
             </p>
-                <p className="text-pink-100 text-sm mt-1">🎂 Cumpleaños (30 días)</p>
+                <p className="text-pink-100 text-sm mt-1">🎂 {t('clients.birthdays')}</p>
               </div>
               <div className="p-3 bg-white/20 rounded-xl">
                 <MessageCircle className="h-6 w-6" />
@@ -616,7 +622,7 @@ export default function ClientsPage() {
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Buscar por nombre o email..."
+                  placeholder={t('clients.search')}
                   className="w-full pl-12 pr-4 py-3 bg-slate-50 border-0 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -630,11 +636,11 @@ export default function ClientsPage() {
                 value={selectedPackage}
                 onChange={(e) => setSelectedPackage(e.target.value)}
               >
-                <option value="">Todos los paquetes</option>
-                <option value="all_private">Paquetes privados</option>
-                <option value="all_group">Paquetes grupales</option>
+                <option value="">{t('clients.allPackages')}</option>
+                <option value="all_private">{t('clients.privatePackages')}</option>
+                <option value="all_group">{t('clients.groupPackages')}</option>
                 {availablePackages.filter(p => p.category === 'Grupal').length > 0 && (
-                  <option disabled>── Grupales ──</option>
+                  <option disabled>── {t('clients.groupPackages')} ──</option>
                 )}
                 {availablePackages.filter(p => p.category === 'Grupal').map(pkg => (
                   <option key={pkg.id} value={pkg.name}>{pkg.name}</option>
@@ -698,22 +704,22 @@ export default function ClientsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cliente
+                    {t('clients.name')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Contacto
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Paquete
+                    {t('clients.package')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Estado
+                    {t('clients.status')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cumpleaños
+                    {t('clients.birthday')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Acciones
+                    {t('clients.actions')}
                   </th>
                 </tr>
               </thead>
@@ -765,14 +771,14 @@ export default function ClientsPage() {
                       <button 
                         onClick={() => handleViewClient(client)}
                         className="text-blue-600 hover:text-blue-900"
-                        title="Ver detalles"
+                        title={t('clients.viewDetails')}
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button 
                         onClick={() => handleEditClient(client)}
                         className="text-gray-600 hover:text-gray-900"
-                        title="Editar cliente"
+                        title={t('clients.editClient')}
                       >
                         <Edit className="h-4 w-4" />
                       </button>
@@ -786,7 +792,7 @@ export default function ClientsPage() {
                       <button
                         onClick={() => handleDeleteClientRequest(client)}
                         className="text-red-600 hover:text-red-900"
-                        title="Eliminar cliente"
+                        title={t('clients.deleteClient')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -814,7 +820,7 @@ export default function ClientsPage() {
                 <p className="text-gray-500">
                   {clients.length === 0 
                     ? 'No hay clientes registrados' 
-                    : 'No se encontraron clientes con los filtros aplicados'}
+                    : t('clients.noResults')}
                 </p>
               )}
             </div>
@@ -839,36 +845,36 @@ export default function ClientsPage() {
             <div className="space-y-6">
               {/* Información Personal */}
               <div>
-                <h4 className="text-md font-semibold text-gray-900 mb-3">Información Personal</h4>
+                <h4 className="text-md font-semibold text-gray-900 mb-3">{t('auth.register.personalInfo')}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Nombre Completo</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.name')}</label>
                     <p className="text-sm text-gray-900">{selectedClient.nombre}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.email')}</label>
                     <p className="text-sm text-gray-900">{selectedClient.correo}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Número de Teléfono</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.phone')}</label>
                     <p className="text-sm text-gray-900">{selectedClient.numero_de_telefono}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Instagram</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.instagram')}</label>
                     <p className="text-sm text-gray-900">{selectedClient.instagram || '-'}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Cumpleaños</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.birthday')}</label>
                     <p className="text-sm text-gray-900">
                       {selectedClient.cumpleanos ? new Date(selectedClient.cumpleanos).toLocaleDateString('es-ES') : '-'}
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Género</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('auth.register.gender')}</label>
                     <p className="text-sm text-gray-900">{selectedClient.genero || '-'}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Fecha de Registro</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.registrationDate')}</label>
                     <p className="text-sm text-gray-900">
                       {selectedClient.created_at ? new Date(selectedClient.created_at).toLocaleDateString('es-ES') : '-'}
                     </p>
@@ -878,27 +884,27 @@ export default function ClientsPage() {
 
               {/* Información de Salud */}
               <div>
-                <h4 className="text-md font-semibold text-gray-900 mb-3">Información de Salud</h4>
+                <h4 className="text-md font-semibold text-gray-900 mb-3">{t('clients.healthInfo')}</h4>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Lesiones o Limitaciones Físicas</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('auth.register.injuries')}</label>
                   <p className="text-sm text-gray-900 bg-gray-50 p-3 rounded-lg">
-                    {selectedClient.lesion_o_limitacion_fisica || 'Ninguna reportada'}
+                    {selectedClient.lesion_o_limitacion_fisica || t('clients.noInjuries')}
                   </p>
                 </div>
               </div>
 
               {/* Información del Paquete */}
               <div>
-                <h4 className="text-md font-semibold text-gray-900 mb-3">Paquete de Clases</h4>
+                <h4 className="text-md font-semibold text-gray-900 mb-3">{t('clients.package')}</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Tipo de Paquete</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.packageType')}</label>
                     <p className="text-sm text-gray-900">{getPackageDisplayName(selectedClient.type_of_class)}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Fecha de Expiración</label>
+                    <label className="block text-sm font-medium text-gray-700">{t('clients.expiration')}</label>
                     <p className="text-sm text-gray-900">
-                      {selectedClient.expiration_date ? new Date(selectedClient.expiration_date).toLocaleDateString('es-ES') : 'Sin fecha de expiración'}
+                      {selectedClient.expiration_date ? new Date(selectedClient.expiration_date).toLocaleDateString('es-ES') : t('clients.noExpiration')}
                     </p>
                   </div>
                 </div>
@@ -910,7 +916,7 @@ export default function ClientsPage() {
                 onClick={() => setShowViewModal(false)}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
-                Cerrar
+                {t('common.close')}
               </button>
               <button
                 onClick={() => {
@@ -960,7 +966,7 @@ export default function ClientsPage() {
               try {
                 const token = localStorage.getItem('token')
                 if (!token) {
-                  alert('No hay token de autenticación')
+                  alert(t('clients.noToken'))
                   return
                 }
 
@@ -992,7 +998,7 @@ export default function ClientsPage() {
               <div className="space-y-6">
                 {/* Información Personal */}
                 <div>
-                  <h4 className="text-md font-semibold text-gray-900 mb-3">Información Personal</h4>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">{t('auth.register.personalInfo')}</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo *</label>
@@ -1082,13 +1088,13 @@ export default function ClientsPage() {
                   onClick={() => setShowEditModal(false)}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  Cancelar
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  Guardar Cambios
+                  {t('common.save')}
                 </button>
               </div>
             </form>
@@ -1104,7 +1110,7 @@ export default function ClientsPage() {
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-6 py-4 flex-shrink-0">
               <div className="flex justify-between items-center">
                 <div>
-                  <h3 className="text-xl font-bold text-white">Gestión de Paquetes</h3>
+                  <h3 className="text-xl font-bold text-white">{t('clients.managePackages')}</h3>
                   <p className="text-slate-300 text-sm mt-1">{selectedClient.nombre}</p>
                 </div>
               <button
@@ -1123,14 +1129,14 @@ export default function ClientsPage() {
                   <div className="p-2 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl shadow-lg shadow-indigo-500/20">
                     <Calendar className="h-5 w-5 text-white" />
                   </div>
-                  <h4 className="text-lg font-bold text-slate-800">Clases Disponibles</h4>
+                  <h4 className="text-lg font-bold text-slate-800">{t('clients.availableClasses')}</h4>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Private Classes */}
                   <div className="bg-white rounded-xl p-3 border border-purple-100 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-purple-700 uppercase">Privadas</span>
+                      <span className="text-xs font-semibold text-purple-700 uppercase">{t('clients.privatePackages')}</span>
                       <div className="w-2 h-2 rounded-full bg-purple-500"></div>
                     </div>
                     <div className="flex items-center gap-1">
@@ -1201,18 +1207,18 @@ export default function ClientsPage() {
                         })
                       })
                       if (response.ok) {
-                        alert('Clases actualizadas exitosamente')
+                        alert(t('clients.classesUpdated'))
                       } else {
-                        alert('Error al actualizar clases')
+                        alert(t('clients.classesUpdateError'))
                       }
                     } catch (error) {
                       console.error('Error updating class counts:', error)
-                      alert('Error al actualizar clases')
+                      alert(t('clients.classesUpdateError'))
                     }
                   }}
                   className="w-full mt-4 py-3 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-xl font-semibold hover:from-indigo-600 hover:to-blue-700 transition-all shadow-lg shadow-indigo-500/25"
                 >
-                  Guardar Cambios de Clases
+                  {t('common.save')}
                 </button>
               </div>
 
@@ -1225,22 +1231,22 @@ export default function ClientsPage() {
                       <div className="p-1.5 bg-emerald-500 rounded-lg">
                         <Package className="h-4 w-4 text-white" />
                   </div>
-                      <span className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Grupal Activo</span>
+                      <span className="text-sm font-bold text-emerald-800 uppercase tracking-wide">{t('clients.activeGroup')}</span>
                     </div>
                     <div className="space-y-3">
                     <div>
-                        <span className="text-xs text-emerald-600 font-medium">Paquete</span>
+                        <span className="text-xs text-emerald-600 font-medium">{t('clients.package')}</span>
                         <p className="text-base font-semibold text-emerald-900">{activeGroupPackage.package_name}</p>
                     </div>
                       <div className="flex gap-4">
                     <div>
-                          <span className="text-xs text-emerald-600 font-medium">Vence</span>
+                          <span className="text-xs text-emerald-600 font-medium">{t('clients.expires')}</span>
                           <p className="text-sm font-medium text-emerald-800">
                         {new Date(activeGroupPackage.end_date).toLocaleDateString('es-ES')}
                       </p>
                     </div>
                     <div>
-                          <span className="text-xs text-emerald-600 font-medium">Clases</span>
+                          <span className="text-xs text-emerald-600 font-medium">{t('client.classes')}</span>
                           <p className="text-sm font-medium text-emerald-800">{activeGroupPackage.classes_included}</p>
                     </div>
                     </div>
@@ -1255,22 +1261,22 @@ export default function ClientsPage() {
                       <div className="p-1.5 bg-violet-500 rounded-lg">
                         <Package className="h-4 w-4 text-white" />
                   </div>
-                      <span className="text-sm font-bold text-violet-800 uppercase tracking-wide">Privado Activo</span>
+                      <span className="text-sm font-bold text-violet-800 uppercase tracking-wide">{t('clients.activePrivate')}</span>
                     </div>
                     <div className="space-y-3">
                     <div>
-                        <span className="text-xs text-violet-600 font-medium">Paquete</span>
+                        <span className="text-xs text-violet-600 font-medium">{t('clients.package')}</span>
                         <p className="text-base font-semibold text-violet-900">{activePrivatePackage.package_name}</p>
                     </div>
                       <div className="flex gap-4">
                     <div>
-                          <span className="text-xs text-violet-600 font-medium">Vence</span>
+                          <span className="text-xs text-violet-600 font-medium">{t('clients.expires')}</span>
                           <p className="text-sm font-medium text-violet-800">
                         {new Date(activePrivatePackage.end_date).toLocaleDateString('es-ES')}
                       </p>
                     </div>
                     <div>
-                          <span className="text-xs text-violet-600 font-medium">Clases</span>
+                          <span className="text-xs text-violet-600 font-medium">{t('client.classes')}</span>
                           <p className="text-sm font-medium text-violet-800">{activePrivatePackage.classes_included}</p>
                     </div>
                     </div>
@@ -1282,8 +1288,8 @@ export default function ClientsPage() {
                 {!activeGroupPackage && !activePrivatePackage && (
                   <div className="col-span-2 bg-slate-50 rounded-2xl p-8 text-center border border-slate-200">
                     <Package className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-500 font-medium">Sin paquetes activos</p>
-                    <p className="text-slate-400 text-sm">Asigna un paquete nuevo abajo</p>
+                    <p className="text-slate-500 font-medium">{t('clients.noActivePackages')}</p>
+                    <p className="text-slate-400 text-sm">{t('clients.assignNewPackage')}</p>
                   </div>
                 )}
               </div>
@@ -1305,7 +1311,7 @@ export default function ClientsPage() {
                   <div className="p-2 bg-gradient-to-br from-slate-600 to-slate-700 rounded-xl shadow-lg shadow-slate-500/20">
                     <Calendar className="h-5 w-5 text-white" />
                   </div>
-                  <h4 className="text-lg font-bold text-slate-800">Historial de Paquetes</h4>
+                  <h4 className="text-lg font-bold text-slate-800">{t('client.packageHistory')}</h4>
                 </div>
                 {packageHistory.length > 0 ? (
                   <div className="space-y-3">
@@ -1337,14 +1343,14 @@ export default function ClientsPage() {
                             pkg.status === 'expired' ? 'bg-red-100 text-red-700' :
                             'bg-slate-100 text-slate-600'
                           }`}>
-                            {pkg.status === 'active' ? 'Activo' :
-                             pkg.status === 'expired' ? 'Expirado' : 'Cancelado'}
+                            {pkg.status === 'active' ? t('clients.status.active') :
+                             pkg.status === 'expired' ? t('clients.status.expired') : t('clients.status.cancelled')}
                           </span>
                         </div>
                         <div className="pt-3 mt-3 border-t border-slate-100">
                           <div className="flex items-center justify-between flex-wrap gap-3">
                             <div className="flex items-center gap-3">
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Meses:</span>
+                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">{t('clients.months')}:</span>
                               {editingPackageId === pkg.id ? (
                                 <div className="flex items-center gap-2">
                                   <div className="flex items-center bg-slate-100 rounded-lg overflow-hidden">
@@ -1388,17 +1394,17 @@ export default function ClientsPage() {
                                 })
                               })
                               if (response.ok) {
-                                            alert('Meses restantes actualizados exitosamente')
+                                            alert(t('clients.renewalMonthsUpdated'))
                                 setEditingPackageId(null)
                                             setEditingPackageRenewalMonths(0)
                                             handleManagePackages(selectedClient!)
                               } else {
                                             const data = await response.json()
-                                            alert(data.message || 'Error al actualizar meses restantes')
+                                            alert(data.message || t('clients.renewalMonthsError'))
                               }
                             } catch (error) {
                                           console.error('Error updating renewal months:', error)
-                                          alert('Error al actualizar meses restantes')
+                                          alert(t('clients.renewalMonthsError'))
                             }
                           }}
                                       className="px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors"
@@ -1428,7 +1434,7 @@ export default function ClientsPage() {
                                     }}
                                     className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                                   >
-                                    Editar
+                                    {t('common.edit')}
                                   </button>
                     </div>
                               )}
@@ -1437,7 +1443,7 @@ export default function ClientsPage() {
                               {pkg.status === 'active' && (
                                 <button
                                   onClick={async () => {
-                                    if (confirm('¿Estás seguro de que quieres cancelar este paquete activo?')) {
+                                    if (confirm(t('clients.cancelPackageConfirm'))) {
                                       try {
                                         const token = localStorage.getItem('token')
                                         const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}/cancel`, {
@@ -1448,28 +1454,28 @@ export default function ClientsPage() {
                                           }
                                         })
                                         if (response.ok) {
-                                          alert('Paquete cancelado exitosamente')
+                                          alert(t('clients.cancelPackageSuccess'))
                                           handleManagePackages(selectedClient!)
                                         } else {
                                           const data = await response.json()
-                                          alert(data.message || 'Error al cancelar el paquete')
+                                          alert(data.message || t('clients.cancelPackageError'))
                                         }
                                       } catch (error) {
                                         console.error('Error canceling package:', error)
-                                        alert('Error al cancelar el paquete')
+                                        alert(t('clients.cancelPackageError'))
                                       }
                                     }
                                   }}
                                   className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-100 border border-red-200 transition-colors"
                                 >
-                                  Cancelar
+                                  {t('common.cancel')}
                                 </button>
                               )}
                               {pkg.status === 'expired' && (
                                 <>
                                   <button
                                     onClick={async () => {
-                                      if (confirm('¿Renovar este paquete por 1 mes más?')) {
+                                      if (confirm(t('clients.renewPackageConfirm'))) {
                                         try {
                                           const token = localStorage.getItem('token')
                                           const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}/renew`, {
@@ -1481,25 +1487,25 @@ export default function ClientsPage() {
                                             body: JSON.stringify({ months: 1 })
                                           })
                                           if (response.ok) {
-                                            alert('Paquete renovado exitosamente')
+                                            alert(t('clients.renewPackageSuccess'))
                                             handleManagePackages(selectedClient!)
                                           } else {
                                             const data = await response.json()
-                                            alert(data.message || 'Error al renovar el paquete')
+                                            alert(data.message || t('clients.renewPackageError'))
                                           }
                                         } catch (error) {
                                           console.error('Error renewing package:', error)
-                                          alert('Error al renovar el paquete')
+                                          alert(t('clients.renewPackageError'))
                                         }
                                       }
                                     }}
                                     className="px-3 py-1.5 bg-emerald-50 text-emerald-600 text-xs font-semibold rounded-lg hover:bg-emerald-100 border border-emerald-200 transition-colors"
                                   >
-                                    Renovar
+                                    {t('clients.renew')}
                                   </button>
                                   <button
                                     onClick={async () => {
-                                      if (confirm('¿Estás seguro de que quieres eliminar este paquete del historial?')) {
+                                      if (confirm(t('clients.deletePackageConfirm'))) {
                                         try {
                                           const token = localStorage.getItem('token')
                                           const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}`, {
@@ -1509,21 +1515,21 @@ export default function ClientsPage() {
                                             }
                                           })
                                           if (response.ok) {
-                                            alert('Paquete eliminado del historial exitosamente')
+                                            alert(t('clients.deletePackageSuccess'))
                                             handleManagePackages(selectedClient!)
                                           } else {
                                             const data = await response.json()
-                                            alert(data.message || 'Error al eliminar el paquete')
+                                            alert(data.message || t('clients.deletePackageError'))
                                           }
                                         } catch (error) {
                                           console.error('Error deleting package:', error)
-                                          alert('Error al eliminar el paquete')
+                                          alert(t('clients.deletePackageError'))
                                         }
                                       }
                                     }}
                                     className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 transition-colors"
                                   >
-                                    Eliminar
+                                    {t('common.delete')}
                                   </button>
                                 </>
                               )}
@@ -1534,7 +1540,7 @@ export default function ClientsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-4">No hay historial de paquetes</p>
+                  <p className="text-gray-500 text-center py-4">{t('clients.noPackageHistory')}</p>
                 )}
               </div>
             </div>
@@ -1544,7 +1550,7 @@ export default function ClientsPage() {
                 onClick={() => setShowPackageModal(false)}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
-                Cerrar
+                {t('common.close')}
               </button>
             </div>
           </div>
@@ -1555,14 +1561,12 @@ export default function ClientsPage() {
       {showDeleteModal && clientToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-red-700 mb-3">Eliminar Cliente</h3>
+            <h3 className="text-lg font-semibold text-red-700 mb-3">{t('clients.delete')}</h3>
             <p className="text-sm text-gray-700 mb-4">
-              Esta acción <span className="font-semibold">ELIMINARÁ</span> permanentemente a{' '}
-              <span className="font-semibold">{clientToDelete.nombre}</span> y todos sus registros
-              (clases, reservas, historial de paquetes, pagos, etc.). Esta acción no se puede deshacer.
+              {t('clients.deleteConfirm')} <span className="font-semibold">{clientToDelete.nombre}</span> {t('clients.deleteConfirm2')}
             </p>
             <p className="text-sm text-gray-700 mb-4">
-              ¿Estás seguro de que quieres continuar?
+              {t('clients.deleteConfirm3')}
             </p>
             <div className="mt-4 flex justify-end space-x-3">
               <button
@@ -1573,14 +1577,14 @@ export default function ClientsPage() {
                 }}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
-                Cancelar
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteClient}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                Sí, eliminar definitivamente
+                {t('clients.confirmDelete')}
               </button>
             </div>
           </div>

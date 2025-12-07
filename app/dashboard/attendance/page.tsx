@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { CheckCircle, XCircle, Clock, Users, Calendar, User, AlertCircle } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface Class {
   id: string
@@ -41,6 +42,7 @@ interface AttendanceRecord {
 
 export default function AttendancePage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [user, setUser] = useState<any>(null)
   const [classes, setClasses] = useState<Class[]>([])
   const [selectedClass, setSelectedClass] = useState<Class | null>(null)
@@ -152,7 +154,7 @@ export default function AttendancePage() {
 
       if (response.ok) {
         const data = await response.json()
-        alert(data.message || 'Asistencia registrada exitosamente')
+        alert(data.message || t('attendance.recordSuccess'))
         // Recargar los registros de asistencia y las reservas
         if (selectedClass) {
           await loadAttendanceRecords(selectedClass.id)
@@ -160,11 +162,11 @@ export default function AttendancePage() {
         }
       } else {
         const errorData = await response.json().catch(() => ({ message: 'Error al registrar la asistencia' }))
-        alert(errorData.message || 'Error al registrar la asistencia')
+        alert(errorData.message || t('attendance.recordError'))
       }
     } catch (error) {
       console.error('Error recording attendance:', error)
-      alert('Error al registrar la asistencia. Por favor, intenta de nuevo.')
+      alert(t('attendance.recordErrorRetry'))
     }
   }
 
@@ -221,7 +223,7 @@ export default function AttendancePage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando clases...</p>
+            <p className="text-gray-600">{t('attendance.loading')}</p>
           </div>
         </div>
       </DashboardLayout>
@@ -235,7 +237,7 @@ export default function AttendancePage() {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Toma de Asistencia</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{t('attendance.title')}</h1>
               <p className="text-gray-600 mt-1">
                 Registra la asistencia de los estudiantes a las clases
               </p>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { UserPlus, Trash2, Save, AlertCircle, CheckCircle, Mail, Shield } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface RoleAssignment {
   email: string
@@ -12,6 +13,7 @@ interface RoleAssignment {
 
 export default function RoleAssignmentsPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [assignments, setAssignments] = useState<RoleAssignment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -61,15 +63,15 @@ export default function RoleAssignmentsPage() {
         if (data.success) {
           setAssignments(data.assignments || [])
         } else {
-          setError(data.message || 'Error al cargar asignaciones')
+          setError(data.message || t('roleAssignments.loadError'))
         }
       } else {
         const data = await response.json()
-        setError(data.message || 'Error al cargar asignaciones')
+        setError(data.message || t('roleAssignments.loadError'))
       }
     } catch (error) {
       console.error('Error loading assignments:', error)
-      setError('Error de conexión al cargar asignaciones')
+      setError(t('roleAssignments.connectionError'))
     } finally {
       setIsLoading(false)
     }
@@ -81,7 +83,7 @@ export default function RoleAssignmentsPage() {
     setSuccess('')
 
     if (!newEmail.trim()) {
-      setError('El email es requerido')
+      setError(t('roleAssignments.emailRequired'))
       return
     }
 
@@ -108,7 +110,7 @@ export default function RoleAssignmentsPage() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        setSuccess(data.message || 'Asignación guardada exitosamente')
+        setSuccess(data.message || t('roleAssignments.saveSuccess'))
         setNewEmail('')
         setNewRole('cliente')
         await loadAssignments()

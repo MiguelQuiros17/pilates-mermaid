@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import Link from 'next/link'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface DashboardStats {
   totalClients: number
@@ -43,6 +44,7 @@ interface User {
 
 export default function DashboardPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -82,7 +84,7 @@ export default function DashboardPage() {
       setIsLoading(true)
       const token = localStorage.getItem('token')
       if (!token) {
-        setError('No se encontró el token de autenticación')
+        setError(t('dashboard.noToken'))
         setIsLoading(false)
         return
       }
@@ -98,14 +100,14 @@ export default function DashboardPage() {
         if (data.success) {
           setStats(data.stats)
         } else {
-          setError(data.message || 'Error al cargar las estadísticas')
+          setError(data.message || t('dashboard.error'))
         }
       } else {
-        setError('Error al cargar las estadísticas del dashboard')
+        setError(t('dashboard.error'))
       }
     } catch (error) {
       console.error('Error loading dashboard stats:', error)
-      setError('Error al conectar con el servidor')
+      setError(t('dashboard.error'))
     } finally {
       setIsLoading(false)
     }
@@ -164,16 +166,16 @@ export default function DashboardPage() {
 
   const getGreeting = () => {
     const hour = new Date().getHours()
-    if (hour < 12) return 'Buenos días'
-    if (hour < 18) return 'Buenas tardes'
-    return 'Buenas noches'
+    if (hour < 12) return t('client.greeting.morning')
+    if (hour < 18) return t('client.greeting.afternoon')
+    return t('client.greeting.evening')
   }
 
   const getRoleDisplayName = (role: string) => {
     switch (role) {
-      case 'admin': return 'Administrador'
-      case 'coach': return 'Coach'
-      case 'cliente': return 'Cliente'
+      case 'admin': return t('admin.role.admin')
+      case 'coach': return t('admin.role.coach')
+      case 'cliente': return t('admin.role.cliente')
       default: return role
     }
   }

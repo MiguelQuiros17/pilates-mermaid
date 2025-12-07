@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Mail, ArrowLeft, CheckCircle, XCircle } from 'lucide-react'
 import Image from 'next/image'
+import { useTranslation } from '@/hooks/useTranslation'
 
 export default function ForgotPasswordPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const router = useRouter()
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
@@ -33,11 +35,11 @@ export default function ForgotPasswordPage() {
       if (response.ok && data.success) {
         setSuccess(true)
       } else {
-        setError(data.message || 'Error al enviar el email de recuperación')
+        setError(data.message || t('auth.forgotPassword.error'))
       }
     } catch (error) {
       console.error('Forgot password error:', error)
-      setError('Error al enviar el email de recuperación. Por favor, intenta de nuevo.')
+      setError(t('auth.forgotPassword.error'))
     } finally {
       setIsLoading(false)
     }
@@ -60,16 +62,16 @@ export default function ForgotPasswordPage() {
             <CheckCircle className="w-10 h-10 text-green-600" />
           </motion.div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            Email Enviado
+            {t('auth.forgotPassword.success.title')}
           </h1>
           <p className="text-gray-600 mb-6">
-            Si el email existe en nuestro sistema, recibirás un enlace para restablecer tu contraseña en los próximos minutos.
+            {t('auth.forgotPassword.success.message')}
           </p>
           <button
             onClick={() => router.push('/login')}
             className="w-full bg-gray-900 text-white py-3 rounded-lg font-medium hover:bg-gray-800 transition-colors"
           >
-            Volver al Login
+            {t('auth.forgotPassword.success.back')}
           </button>
         </motion.div>
       </div>
@@ -94,10 +96,10 @@ export default function ForgotPasswordPage() {
             />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            ¿Olvidaste tu contraseña?
+            {t('auth.forgotPassword.title')}
           </h1>
           <p className="text-gray-600">
-            Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña
+            {t('auth.forgotPassword.subtitle')}
           </p>
         </div>
 
@@ -115,7 +117,7 @@ export default function ForgotPasswordPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-              Email
+              {t('auth.forgotPassword.email')}
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -142,12 +144,12 @@ export default function ForgotPasswordPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                Enviando...
+                {t('auth.forgotPassword.loading')}
               </>
             ) : (
               <>
                 <Mail className="w-5 h-5 mr-2" />
-                Enviar Enlace de Recuperación
+                {t('auth.forgotPassword.button')}
               </>
             )}
           </button>
@@ -159,7 +161,7 @@ export default function ForgotPasswordPage() {
             className="text-sm text-gray-600 hover:text-gray-900 flex items-center justify-center mx-auto"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
-            Volver al Login
+            {t('auth.forgotPassword.back')}
           </button>
         </div>
       </motion.div>

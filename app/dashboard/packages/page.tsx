@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import WhatsAppButton, { WhatsAppTemplates } from '@/components/WhatsAppButton'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface PackageType {
     id: string
@@ -149,6 +150,7 @@ const useCountdown = (targetDate: string | null | undefined) => {
 }
 
 export default function PackagesPage() {
+  const { t } = useTranslation()
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [availablePackages, setAvailablePackages] = useState<PackageType[]>([])
   const [adminPackages, setAdminPackages] = useState<PackageType[]>([])
@@ -464,18 +466,18 @@ export default function PackagesPage() {
         loadPackages()
       } else {
         const data = await response.json()
-        alert(data.message || 'Error al guardar paquete')
+        alert(data.message || t('packages.saveError'))
       }
     } catch (err) {
       console.error('savePackage error', err)
-      alert('Error al guardar paquete')
+      alert(t('packages.saveError'))
     } finally {
       setIsSavingPackage(false)
     }
   }
 
   const deletePackage = async (id: string, name: string) => {
-    if (!confirm(`¿Eliminar el paquete "${name}"?`)) return
+    if (!confirm(`${t('packages.deleteConfirm')} "${name}"?`)) return
 
     try {
       const token = localStorage.getItem('token')
@@ -486,7 +488,7 @@ export default function PackagesPage() {
       if (response.ok) {
         loadPackages()
       } else {
-        alert('Error al eliminar paquete')
+        alert(t('packages.deleteError'))
       }
     } catch (err) {
       console.error('deletePackage error', err)
@@ -548,18 +550,18 @@ export default function PackagesPage() {
         loadBundles()
       } else {
         const data = await response.json()
-        alert(data.message || 'Error al guardar bundle')
+        alert(data.message || t('packages.saveBundleError'))
       }
     } catch (err) {
       console.error('saveBundle error', err)
-      alert('Error al guardar bundle')
+      alert(t('packages.saveBundleError'))
     } finally {
       setIsSavingBundle(false)
     }
   }
 
   const deleteBundle = async (id: string, name: string) => {
-    if (!confirm(`¿Eliminar el bundle "${name}"? Esta acción no se puede deshacer.`)) return
+    if (!confirm(`${t('packages.deleteBundleConfirm')} "${name}"? ${t('packages.cannotUndo')}`)) return
     
     try {
       const token = localStorage.getItem('token')
@@ -577,11 +579,11 @@ export default function PackagesPage() {
       } else {
         const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }))
         console.error('[Packages] Delete bundle error:', response.status, errorData)
-        alert(`Error al eliminar bundle: ${errorData.message || 'Error desconocido'}`)
+        alert(`${t('packages.deleteBundleError')}: ${errorData.message || t('packages.unknownError')}`)
       }
     } catch (err) {
       console.error('deleteBundle error', err)
-      alert(`Error al eliminar bundle: ${err instanceof Error ? err.message : 'Error desconocido'}`)
+      alert(`${t('packages.deleteBundleError')}: ${err instanceof Error ? err.message : t('packages.unknownError')}`)
     }
   }
 
@@ -885,7 +887,7 @@ export default function PackagesPage() {
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
           >
             <Edit className="h-4 w-4" />
-            Editar
+            {t('common.edit')}
           </button>
           <button
             onClick={() => deletePackage(pkg.id, pkg.name)}
@@ -1334,7 +1336,7 @@ export default function PackagesPage() {
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium ${isCombo ? 'text-purple-700 bg-purple-100 hover:bg-purple-200' : 'text-amber-700 bg-amber-100 hover:bg-amber-200'} rounded-lg transition-colors`}
           >
             <Edit className="h-4 w-4" />
-            Editar
+            {t('common.edit')}
           </button>
           <button
             onClick={() => deleteBundle(bundle.id, bundle.name)}
@@ -1353,7 +1355,7 @@ export default function PackagesPage() {
         {/* Header */}
           <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            {user?.role === 'cliente' ? 'Mi Paquete' : 'Gestión de Paquetes'}
+            {user?.role === 'cliente' ? t('packages.myPackage') : t('packages.title')}
           </h1>
           <p className="text-gray-600 mt-1">
             {user?.role === 'cliente' 
@@ -1374,7 +1376,7 @@ export default function PackagesPage() {
               className={`${groupPackageData.isExpired ? 'bg-gradient-to-br from-gray-400 to-gray-500' : 'bg-gradient-to-br from-blue-500 to-blue-600'} rounded-2xl p-6 text-white shadow-lg`}
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Clases Grupales</h3>
+                <h3 className="text-xl font-bold">{t('packages.groupClasses')}</h3>
                 <Users className="h-8 w-8 opacity-80" />
                 </div>
               <div className="mb-4">
@@ -1427,7 +1429,7 @@ export default function PackagesPage() {
               className={`${privatePackageData.isExpired ? 'bg-gradient-to-br from-gray-400 to-gray-500' : 'bg-gradient-to-br from-purple-500 to-purple-600'} rounded-2xl p-6 text-white shadow-lg`}
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold">Clases Privadas</h3>
+                <h3 className="text-xl font-bold">{t('packages.privateClasses')}</h3>
                 <User className="h-8 w-8 opacity-80" />
                 </div>
               <div className="mb-4">
@@ -1485,7 +1487,7 @@ export default function PackagesPage() {
                     <Users className="h-6 w-6 text-blue-600" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">Paquetes Grupales</h2>
+                    <h2 className="text-xl font-bold text-gray-900">{t('packages.groupPackages')}</h2>
                     <p className="text-sm text-gray-500">{groupPackages.length} paquetes disponibles</p>
                   </div>
                 </div>
@@ -1494,7 +1496,7 @@ export default function PackagesPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                 >
                   <Plus className="h-5 w-5" />
-                  Agregar Paquete
+                  {t('packages.addPackage')}
                     </button>
               </div>
               
@@ -1527,7 +1529,7 @@ export default function PackagesPage() {
                     <User className="h-6 w-6 text-purple-600" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">Paquetes Privados</h2>
+                    <h2 className="text-xl font-bold text-gray-900">{t('packages.privatePackages')}</h2>
                     <p className="text-sm text-gray-500">{privatePackages.length} paquetes disponibles</p>
                   </div>
                 </div>
@@ -1536,7 +1538,7 @@ export default function PackagesPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
                 >
                   <Plus className="h-5 w-5" />
-                  Agregar Paquete
+                  {t('packages.addPackage')}
                 </button>
               </div>
               
@@ -1578,7 +1580,7 @@ export default function PackagesPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 transition-colors font-medium"
                 >
                   <Plus className="h-5 w-5" />
-                  Agregar Bundle
+                  {t('packages.addBundle')}
                 </button>
               </div>
               
@@ -1806,7 +1808,7 @@ export default function PackagesPage() {
                   {/* Name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nombre del Paquete *
+                      {t('packages.packageName')} *
                     </label>
                     <input
                       type="text"

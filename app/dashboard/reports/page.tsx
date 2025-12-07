@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -38,6 +39,7 @@ interface User {
 
 export default function ReportsPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [user, setUser] = useState<User | null>(null)
   const [reportData, setReportData] = useState<ReportData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -171,7 +173,7 @@ export default function ReportsPage() {
           <div className="absolute inset-0 bg-black/20"></div>
           <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-4xl font-bold mb-2">Reportes y Análisis</h1>
+              <h1 className="text-4xl font-bold mb-2">{t('reports.title')}</h1>
               <p className="text-gray-300 text-lg">
                 Análisis completo del rendimiento del estudio
               </p>
@@ -182,7 +184,7 @@ export default function ReportsPage() {
                 className="bg-white/10 backdrop-blur-sm text-white px-6 py-3 rounded-xl hover:bg-white/20 transition-all duration-200 flex items-center space-x-2 shadow-lg"
               >
                 <Download className="h-5 w-5" />
-                <span>Exportar Reporte</span>
+                <span>{t('reports.export')}</span>
               </button>
             </div>
           </div>

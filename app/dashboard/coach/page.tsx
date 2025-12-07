@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Calendar, Clock, Users, CheckCircle, XCircle, AlertCircle, TrendingUp, DollarSign } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { useTranslation } from '@/hooks/useTranslation'
 
 interface CoachClass {
   id: string
@@ -34,6 +35,7 @@ interface CoachStats {
 
 export default function CoachDashboard() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+  const { t } = useTranslation()
   const [user, setUser] = useState<any>(null)
   const [classes, setClasses] = useState<CoachClass[]>([])
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
@@ -164,7 +166,7 @@ export default function CoachDashboard() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando dashboard...</p>
+            <p className="text-gray-600">{t('coach.loading')}</p>
           </div>
         </div>
       </DashboardLayout>
@@ -178,9 +180,9 @@ export default function CoachDashboard() {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Dashboard Coach</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{t('coach.dashboardTitle')}</h1>
               <p className="text-gray-600 mt-1">
-                Bienvenida, {user.nombre}. Aquí tienes un resumen de tus clases y estadísticas.
+                {t('coach.welcome')}, {user.nombre}. {t('coach.summary')}
               </p>
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -201,7 +203,7 @@ export default function CoachDashboard() {
                 <Calendar className="h-6 w-6 text-blue-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Clases Este Mes</p>
+                <p className="text-sm font-medium text-gray-600">{t('coach.classesThisMonth')}</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalClasses}</p>
               </div>
             </div>
@@ -216,7 +218,7 @@ export default function CoachDashboard() {
                 <Users className="h-6 w-6 text-green-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Estudiantes Atendidos</p>
+                <p className="text-sm font-medium text-gray-600">{t('coach.studentsAttended')}</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.totalStudents}</p>
               </div>
             </div>
@@ -231,7 +233,7 @@ export default function CoachDashboard() {
                 <TrendingUp className="h-6 w-6 text-purple-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Tasa de Asistencia</p>
+                <p className="text-sm font-medium text-gray-600">{t('coach.attendanceRate')}</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.attendanceRate}%</p>
               </div>
             </div>
@@ -246,7 +248,7 @@ export default function CoachDashboard() {
                 <DollarSign className="h-6 w-6 text-yellow-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Ganancias del Mes</p>
+                <p className="text-sm font-medium text-gray-600">{t('coach.monthlyEarnings')}</p>
                 <p className="text-2xl font-bold text-gray-900">${stats.monthlyEarnings}</p>
               </div>
             </div>
@@ -257,8 +259,8 @@ export default function CoachDashboard() {
           {/* Próximas Clases */}
           <div className="bg-white rounded-lg shadow">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">Próximas Clases</h2>
-              <p className="text-sm text-gray-600 mt-1">Tus clases programadas</p>
+              <h2 className="text-lg font-semibold text-gray-900">{t('coach.upcomingClasses')}</h2>
+              <p className="text-sm text-gray-600 mt-1">{t('coach.scheduledClasses')}</p>
             </div>
             
             <div className="p-6">
