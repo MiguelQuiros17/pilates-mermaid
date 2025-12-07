@@ -347,7 +347,7 @@ export default function PackagesPage() {
     }
     
     // Sync is_live with is_active (they're now the same thing)
-    const isActive = pkg.is_active === 1 || pkg.is_active === true
+    const isActive = pkg.is_active
     
     setPackageForm({
       name: pkg.name,
@@ -412,7 +412,7 @@ export default function PackagesPage() {
       price: bundle.price,
       live_from: liveFrom,
       live_until: liveUntil,
-      is_active: bundle.is_active === 1 || bundle.is_active === true,
+      is_active: bundle.is_active,
     })
     setIsBundleModalOpen(true)
   }
