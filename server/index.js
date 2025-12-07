@@ -2365,13 +2365,15 @@ app.get('/api/packages', requireAuth, async (req, res) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
 
+    const cleanedPackages = []
     for (const pkg of packages) {
       const updates = {}
       // Expiration: if live_until has passed, deactivate and clear dates
       if (pkg.live_until) {
         const [y, m, d] = pkg.live_until.split('-').map(Number)
-        const liveUntilDate = new Date(y, m - 1, d, 23, 59, 59, 999)
-        if (todayStart > liveUntilDate) {
+        // Treat live_until as expiring at the START of that day (00:00 local)
+        const liveUntilDate = new Date(y, m - 1, d, 0, 0, 0, 0)
+        if (todayStart >= liveUntilDate) {
           updates.is_active = 0
           updates.is_live = 0
           updates.live_from = null
@@ -2395,7 +2397,15 @@ app.get('/api/packages', requireAuth, async (req, res) => {
         await database.updatePackage(pkg.id, updates)
         Object.assign(pkg, updates)
       }
+
+      // Only include if still active after cleanup
+      if (pkg.is_active === 1 || pkg.is_active === true) {
+        cleanedPackages.push(pkg)
+      }
     }
+
+    // For clients, only return active packages; admins see all
+    packages = isAdmin ? packages : cleanedPackages
 
     console.log(`[GET /api/packages] User ${user.correo} (${user.role}) - returning ${packages.length} packages`)
     
@@ -2534,13 +2544,15 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
 
+    const cleanedBundles = []
     for (const b of bundles) {
       const updates = {}
       // Expiration
       if (b.live_until) {
         const [y, m, d] = b.live_until.split('-').map(Number)
-        const liveUntilDate = new Date(y, m - 1, d, 23, 59, 59, 999)
-        if (todayStart > liveUntilDate) {
+        // Treat live_until as expiring at START of that day
+        const liveUntilDate = new Date(y, m - 1, d, 0, 0, 0, 0)
+        if (todayStart >= liveUntilDate) {
           updates.is_active = 0
           updates.is_live = 0
           updates.live_from = null
@@ -2563,7 +2575,14 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
         await database.updatePackageBundle(b.id, updates)
         Object.assign(b, updates)
       }
+
+      if (b.is_active === 1 || b.is_active === true) {
+        cleanedBundles.push(b)
+      }
     }
+
+    // For clients, only return active bundles; admins see all
+    bundles = isAdmin ? bundles : cleanedBundles
 
     console.log('[Get Bundles] Raw bundles from DB:', bundles.length)
     if (bundles.length > 0) {
