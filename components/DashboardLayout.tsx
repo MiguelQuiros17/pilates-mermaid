@@ -133,10 +133,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           }
         }),
         fetch(`${API_BASE_URL}/api/users/${user.id}/bookings`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
       ])
 
       if (notificationsRes.ok) {
@@ -492,7 +492,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                       // Mark as viewed when opening
                       setHasViewedNotifications(true)
                       if (notifications.length === 0) {
-                        loadNotifications()
+                      loadNotifications()
                       }
                     }
                   }}

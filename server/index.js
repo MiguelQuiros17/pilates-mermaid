@@ -2447,21 +2447,22 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
           return false
         }
         
-        // Check date ranges (only if set)
+        // Check date ranges (only if set) - use local date parsing to avoid timezone issues
         const now = new Date()
-        now.setHours(0, 0, 0, 0)
         
         if (b.live_from) {
-          const liveFrom = new Date(b.live_from)
-          liveFrom.setHours(0, 0, 0, 0)
+          // Parse as local date (YYYY-MM-DD format)
+          const [year, month, day] = b.live_from.split('-').map(Number)
+          const liveFrom = new Date(year, month - 1, day, 0, 0, 0, 0) // Start of day in local time
           if (now < liveFrom) {
             console.log('[Get Bundles] Filtered out bundle (future):', b.id, b.name, 'live_from:', b.live_from)
             return false
           }
         }
         if (b.live_until) {
-          const liveUntil = new Date(b.live_until)
-          liveUntil.setHours(23, 59, 59, 999)
+          // Parse as local date (YYYY-MM-DD format)
+          const [year, month, day] = b.live_until.split('-').map(Number)
+          const liveUntil = new Date(year, month - 1, day, 23, 59, 59, 999) // End of day in local time
           if (now > liveUntil) {
             console.log('[Get Bundles] Filtered out bundle (expired):', b.id, b.name, 'live_until:', b.live_until)
             return false
@@ -2598,7 +2599,7 @@ app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (
   }
 })
 
-// Delete (soft) package bundle (admin)
+// Delete package bundle (admin) - hard delete
 app.delete('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { id } = req.params
@@ -2606,7 +2607,7 @@ app.delete('/api/package-bundles/:id', requireAuth, requireRole(['admin']), asyn
     res.json({ success: true, bundle })
   } catch (error) {
     console.error('Delete bundle error:', error)
-    res.status(500).json({ success: false, message: 'Error al eliminar bundle' })
+    res.status(500).json({ success: false, message: 'Error al eliminar bundle: ' + error.message })
   }
 })
 
@@ -2910,7 +2911,7 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req
         message: 'Cliente y paquete son requeridos'
       })
     }
-    
+
     if (renewalMonths === undefined || renewalMonths === null || renewalMonths < 1 || renewalMonths > 999) {
       return res.status(400).json({
         success: false,
@@ -3806,7 +3807,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), 
   try {
     const { id } = req.params
     const { months = 1 } = req.body
-    
+
     // Check if package exists and is expired
     const pkg = await database.getPackageHistoryById(id)
     if (!pkg) {
@@ -3815,7 +3816,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), 
         message: 'Paquete no encontrado'
       })
     }
-    
+
     if (pkg.status !== 'expired') {
       return res.status(400).json({
         success: false,
@@ -3839,7 +3840,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), 
     const validityDays = originalPackage ? originalPackage.validity_days : 30
     const newEndDate = new Date()
     newEndDate.setDate(newEndDate.getDate() + validityDays)
-    
+
     // Update the package: set to active, set new dates, set renewal months
     const startDateStr = new Date().toISOString().split('T')[0]
     await database.run(`
@@ -3862,7 +3863,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), 
         UPDATE users SET private_classes_remaining = private_classes_remaining + ? WHERE id = ?
       `, [classesIncluded, pkg.user_id])
     }
-    
+
     res.json({
       success: true,
       message: 'Paquete renovado exitosamente'
@@ -4362,11 +4363,11 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
     // Para clases recurrentes, el conteo se calcula dinámicamente por occurrence_date
     // Note: isRecurring was already declared above, so we reuse it
     if (!isRecurring) {
-      await database.run(`
-        UPDATE classes 
-        SET current_bookings = current_bookings + 1, updated_at = datetime('now')
-        WHERE id = ?
-      `, [class_id])
+    await database.run(`
+      UPDATE classes 
+      SET current_bookings = current_bookings + 1, updated_at = datetime('now')
+      WHERE id = ?
+    `, [class_id])
     }
 
     // Descontar una clase del paquete del usuario según el tipo
@@ -4480,8 +4481,8 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
     } else {
       booking = await database.get(
         `SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND (occurrence_date IS NULL OR occurrence_date = '') AND status = 'confirmed'`,
-        [userId, class_id]
-      )
+      [userId, class_id]
+    )
     }
 
     console.log('[Cancel Booking] Found booking:', booking)
@@ -4561,7 +4562,7 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
     } else {
       console.log('[Cancel Booking] Refunding class...')
       try {
-        await database.addClassToUser(userId, classType)
+      await database.addClassToUser(userId, classType)
         console.log('[Cancel Booking] Class refunded')
       } catch (refundErr) {
         console.error('[Cancel Booking] Refund error:', refundErr)
@@ -4878,7 +4879,7 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
     
     console.log('[Create Class] is_public received:', is_public, 'type:', typeof is_public, 'converted to:', isPublicValue)
     console.log('[Create Class] walk_ins_welcome received:', walk_ins_welcome, 'type:', typeof walk_ins_welcome, 'converted to:', walkInsValue)
-    
+
     await database.run(`
       INSERT INTO classes (
         id, title, type, coach_id, date, time, end_time, duration, max_capacity,
@@ -5334,7 +5335,7 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
         const recurringValue = (is_recurring === true || is_recurring === 1 || is_recurring === '1')
         updates.is_recurring = recurringValue ? 1 : 0
       }
-      if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
+    if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
       // Always update is_public if provided (even if 0/false)
       if (is_public !== undefined) {
         // Explicitly handle all possible values: true/1/'1'/'true' -> 1, everything else -> 0
@@ -5369,7 +5370,7 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
           updates.assigned_client_ids = cleaned
         }
       }
-      if (max_capacity !== undefined) updates.max_capacity = max_capacity
+    if (max_capacity !== undefined) updates.max_capacity = max_capacity
       if (req.body.recurrence_days_of_week !== undefined) {
         // Parse and store recurrence days
         let recurrenceDaysArray = []

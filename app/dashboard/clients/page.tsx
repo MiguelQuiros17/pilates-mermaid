@@ -142,16 +142,16 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1.5">Seleccionar paquete</label>
-              <select
-                value={selectedGroupPackage}
-                onChange={(e) => setSelectedGroupPackage(e.target.value)}
+          <select
+            value={selectedGroupPackage}
+            onChange={(e) => setSelectedGroupPackage(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              >
+          >
                 <option value="">Elegir paquete grupal...</option>
                 {assignableGroupPackages.map(pkg => (
                   <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes_included} clases)</option>
-                ))}
-              </select>
+            ))}
+          </select>
             </div>
             
             <div>
@@ -163,7 +163,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
                 >
                   <span className="text-lg font-bold">−</span>
                 </button>
-                <input
+            <input
                   type="number"
                   min="1"
                   max="999"
@@ -174,7 +174,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
                   }}
                   className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <button
+          <button
                   onClick={() => setGroupRenewalMonths(Math.min(999, groupRenewalMonths + 1))}
                   className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
                 >
@@ -185,13 +185,13 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
 
             <button
               onClick={() => handleAssignPackage(selectedGroupPackage, 'Grupal', groupRenewalMonths)}
-              disabled={!selectedGroupPackage || isAssigning}
+            disabled={!selectedGroupPackage || isAssigning}
               className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40"
-            >
+          >
               {isAssigning ? 'Asignando...' : 'Asignar Paquete Grupal'}
-            </button>
-          </div>
+          </button>
         </div>
+      </div>
 
         {/* Private Package Card */}
         <div className="bg-white rounded-xl p-5 border border-purple-100 shadow-sm hover:shadow-md transition-shadow">
@@ -201,18 +201,18 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
           </div>
           
           <div className="space-y-4">
-            <div>
+      <div>
               <label className="block text-xs font-medium text-slate-500 mb-1.5">Seleccionar paquete</label>
-              <select
-                value={selectedPrivatePackage}
-                onChange={(e) => setSelectedPrivatePackage(e.target.value)}
+          <select
+            value={selectedPrivatePackage}
+            onChange={(e) => setSelectedPrivatePackage(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              >
+          >
                 <option value="">Elegir paquete privado...</option>
                 {assignablePrivatePackages.map(pkg => (
                   <option key={pkg.id} value={pkg.id}>{pkg.name} ({pkg.classes_included} clases)</option>
-                ))}
-              </select>
+            ))}
+          </select>
             </div>
             
             <div>
@@ -224,7 +224,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
                 >
                   <span className="text-lg font-bold">−</span>
                 </button>
-                <input
+            <input
                   type="number"
                   min="1"
                   max="999"
@@ -235,7 +235,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
                   }}
                   className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <button
+          <button
                   onClick={() => setPrivateRenewalMonths(Math.min(999, privateRenewalMonths + 1))}
                   className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
                 >
@@ -246,11 +246,11 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
 
             <button
               onClick={() => handleAssignPackage(selectedPrivatePackage, 'Privada', privateRenewalMonths)}
-              disabled={!selectedPrivatePackage || isAssigning}
+            disabled={!selectedPrivatePackage || isAssigning}
               className="w-full py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
-            >
+          >
               {isAssigning ? 'Asignando...' : 'Asignar Paquete Privado'}
-            </button>
+          </button>
           </div>
         </div>
       </div>
@@ -560,23 +560,23 @@ export default function ClientsPage() {
               </div>
               <div className="p-3 bg-white/20 rounded-xl">
                 <Users className="h-6 w-6" />
-              </div>
+            </div>
             </div>
           </div>
           <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl p-5 text-white shadow-lg shadow-amber-500/25">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-3xl font-bold">
-                  {clients.filter(c => {
-                    if (!c.expiration_date) return false
-                    const expiration = new Date(c.expiration_date)
-                    const today = new Date()
-                    const daysUntilExpiration = Math.ceil((expiration.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-                    return daysUntilExpiration <= 7 && daysUntilExpiration >= 0
-                  }).length}
-                </p>
+              {clients.filter(c => {
+                if (!c.expiration_date) return false
+                const expiration = new Date(c.expiration_date)
+                const today = new Date()
+                const daysUntilExpiration = Math.ceil((expiration.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                return daysUntilExpiration <= 7 && daysUntilExpiration >= 0
+              }).length}
+            </p>
                 <p className="text-amber-100 text-sm mt-1">Por Expirar (7 días)</p>
-              </div>
+          </div>
               <div className="p-3 bg-white/20 rounded-xl">
                 <Calendar className="h-6 w-6" />
               </div>
@@ -589,16 +589,16 @@ export default function ClientsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-3xl font-bold">
-                  {clients.filter(c => {
-                    if (!c.cumpleanos) return false
-                    const birthday = new Date(c.cumpleanos)
-                    const today = new Date()
+              {clients.filter(c => {
+                if (!c.cumpleanos) return false
+                const birthday = new Date(c.cumpleanos)
+                const today = new Date()
                     const nextMonth = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-                    birthday.setFullYear(today.getFullYear())
+                birthday.setFullYear(today.getFullYear())
                     if (birthday < today) birthday.setFullYear(today.getFullYear() + 1)
                     return birthday >= today && birthday <= nextMonth
-                  }).length}
-                </p>
+              }).length}
+            </p>
                 <p className="text-pink-100 text-sm mt-1">🎂 Cumpleaños (30 días)</p>
               </div>
               <div className="p-3 bg-white/20 rounded-xl">
@@ -1107,12 +1107,12 @@ export default function ClientsPage() {
                   <h3 className="text-xl font-bold text-white">Gestión de Paquetes</h3>
                   <p className="text-slate-300 text-sm mt-1">{selectedClient.nombre}</p>
                 </div>
-                <button
-                  onClick={() => setShowPackageModal(false)}
+              <button
+                onClick={() => setShowPackageModal(false)}
                   className="p-2 hover:bg-white/10 rounded-xl transition-colors"
-                >
+              >
                   <X className="h-5 w-5 text-white" />
-                </button>
+              </button>
               </div>
             </div>
             
@@ -1219,64 +1219,64 @@ export default function ClientsPage() {
               {/* Active Packages - Side by side */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Active Group Package */}
-                {activeGroupPackage && (
+              {activeGroupPackage && (
                   <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl p-5 border border-emerald-200">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="p-1.5 bg-emerald-500 rounded-lg">
                         <Package className="h-4 w-4 text-white" />
-                      </div>
+                  </div>
                       <span className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Grupal Activo</span>
                     </div>
                     <div className="space-y-3">
-                      <div>
+                    <div>
                         <span className="text-xs text-emerald-600 font-medium">Paquete</span>
                         <p className="text-base font-semibold text-emerald-900">{activeGroupPackage.package_name}</p>
-                      </div>
+                    </div>
                       <div className="flex gap-4">
-                        <div>
+                    <div>
                           <span className="text-xs text-emerald-600 font-medium">Vence</span>
                           <p className="text-sm font-medium text-emerald-800">
-                            {new Date(activeGroupPackage.end_date).toLocaleDateString('es-ES')}
-                          </p>
-                        </div>
-                        <div>
+                        {new Date(activeGroupPackage.end_date).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+                    <div>
                           <span className="text-xs text-emerald-600 font-medium">Clases</span>
                           <p className="text-sm font-medium text-emerald-800">{activeGroupPackage.classes_included}</p>
-                        </div>
-                      </div>
+                    </div>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
                 {/* Active Private Package */}
-                {activePrivatePackage && (
+              {activePrivatePackage && (
                   <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-2xl p-5 border border-violet-200">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="p-1.5 bg-violet-500 rounded-lg">
                         <Package className="h-4 w-4 text-white" />
-                      </div>
+                  </div>
                       <span className="text-sm font-bold text-violet-800 uppercase tracking-wide">Privado Activo</span>
                     </div>
                     <div className="space-y-3">
-                      <div>
+                    <div>
                         <span className="text-xs text-violet-600 font-medium">Paquete</span>
                         <p className="text-base font-semibold text-violet-900">{activePrivatePackage.package_name}</p>
-                      </div>
+                    </div>
                       <div className="flex gap-4">
-                        <div>
+                    <div>
                           <span className="text-xs text-violet-600 font-medium">Vence</span>
                           <p className="text-sm font-medium text-violet-800">
-                            {new Date(activePrivatePackage.end_date).toLocaleDateString('es-ES')}
-                          </p>
-                        </div>
-                        <div>
+                        {new Date(activePrivatePackage.end_date).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+                    <div>
                           <span className="text-xs text-violet-600 font-medium">Clases</span>
                           <p className="text-sm font-medium text-violet-800">{activePrivatePackage.classes_included}</p>
-                        </div>
-                      </div>
+                    </div>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
                 {/* Empty state if no active packages */}
                 {!activeGroupPackage && !activePrivatePackage && (
@@ -1354,7 +1354,7 @@ export default function ClientsPage() {
                                     >
                                       −
                                     </button>
-                                    <input
+                        <input
                                       type="number"
                                       min="1"
                                       max="999"
@@ -1365,44 +1365,44 @@ export default function ClientsPage() {
                                       }}
                                       className="w-14 px-1 py-1.5 bg-transparent text-center text-sm font-semibold focus:outline-none"
                                     />
-                                    <button
+                        <button
                                       onClick={() => setEditingPackageRenewalMonths(Math.min(999, editingPackageRenewalMonths + 1))}
                                       className="px-2 py-1.5 text-slate-600 hover:bg-slate-200 transition-colors"
-                                    >
+                        >
                                       +
-                                    </button>
+                        </button>
                                   </div>
                                   {editingPackageRenewalMonths !== (pkg.renewal_months ?? 0) && (
-                                    <button
-                                      onClick={async () => {
-                                        try {
+                        <button
+                          onClick={async () => {
+                            try {
                                           const token = localStorage.getItem('token')
                                           const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}/update-renewal`, {
                                             method: 'POST',
-                                            headers: {
+                                headers: {
                                               'Authorization': `Bearer ${token}`,
                                               'Content-Type': 'application/json'
-                                            },
-                                            body: JSON.stringify({
+                                },
+                                body: JSON.stringify({
                                               renewal_months: editingPackageRenewalMonths
-                                            })
-                                          })
-                                          if (response.ok) {
+                                })
+                              })
+                              if (response.ok) {
                                             alert('Meses restantes actualizados exitosamente')
-                                            setEditingPackageId(null)
+                                setEditingPackageId(null)
                                             setEditingPackageRenewalMonths(0)
                                             handleManagePackages(selectedClient!)
-                                          } else {
+                              } else {
                                             const data = await response.json()
                                             alert(data.message || 'Error al actualizar meses restantes')
-                                          }
-                                        } catch (error) {
+                              }
+                            } catch (error) {
                                           console.error('Error updating renewal months:', error)
                                           alert('Error al actualizar meses restantes')
-                                        }
-                                      }}
+                            }
+                          }}
                                       className="px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-lg hover:bg-blue-600 transition-colors"
-                                    >
+                        >
                                       ✓
                                     </button>
                                   )}
@@ -1414,8 +1414,8 @@ export default function ClientsPage() {
                                     className="px-3 py-1.5 bg-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-300 transition-colors"
                                   >
                                     ✕
-                                  </button>
-                                </div>
+                        </button>
+                      </div>
                               ) : (
                                 <div className="flex items-center gap-2">
                                   <span className="px-3 py-1 bg-slate-100 rounded-lg text-sm font-bold text-slate-700">
@@ -1430,9 +1430,9 @@ export default function ClientsPage() {
                                   >
                                     Editar
                                   </button>
-                                </div>
+                    </div>
                               )}
-                            </div>
+                  </div>
                             <div className="flex gap-2">
                               {pkg.status === 'active' && (
                                 <button
@@ -1527,7 +1527,7 @@ export default function ClientsPage() {
                                   </button>
                                 </>
                               )}
-                            </div>
+                          </div>
                           </div>
                         </div>
                       </div>

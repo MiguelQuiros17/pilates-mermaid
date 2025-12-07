@@ -1159,7 +1159,7 @@ export default function ClassesPage(): JSX.Element {
             : (classToEdit as any).recurrence_days_of_week
           if (Array.isArray(days)) {
             setRecurrenceDaysOfWeek(days)
-          } else {
+    } else {
             setRecurrenceDaysOfWeek([])
           }
         } catch {
@@ -1212,7 +1212,7 @@ export default function ClassesPage(): JSX.Element {
 
   const openViewClassModal = (cls: Class) => {
       setViewingClass(cls as any)
-      setShowViewClassModal(true)
+    setShowViewClassModal(true)
   }
 
   // Separate handler for saving group classes
@@ -1545,30 +1545,30 @@ export default function ClassesPage(): JSX.Element {
         loadCanceledOccurrences()
       } else {
         // Cancel entire class (non-recurring or entire recurring class)
-        const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ status: 'cancelled' })
-        })
+      const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: 'cancelled' })
+      })
 
-        const data = await response.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({}))
 
-        if (!response.ok || !data.success) {
-          setNotification({
-            type: 'error',
-            message: data.message || 'Error al cancelar la clase.'
-          })
-          return
-        }
-
+      if (!response.ok || !data.success) {
         setNotification({
-          type: 'success',
-          message: 'Clase cancelada exitosamente.'
+          type: 'error',
+          message: data.message || 'Error al cancelar la clase.'
         })
-        loadClasses()
+        return
+      }
+
+      setNotification({
+        type: 'success',
+        message: 'Clase cancelada exitosamente.'
+      })
+      loadClasses()
       }
     } catch (error) {
       console.error('Error cancelling class:', error)
@@ -1799,7 +1799,7 @@ export default function ClassesPage(): JSX.Element {
       const [targetYear, targetMonth, targetDay] = dateStr.split('-').map(Number)
       const target = new Date(targetYear, targetMonth - 1, targetDay)
       target.setHours(0, 0, 0, 0)
-      
+
       const [baseYear, baseMonth, baseDay] = baseDateStr.split('-').map(Number)
       const baseDate = new Date(baseYear, baseMonth - 1, baseDay)
       baseDate.setHours(0, 0, 0, 0)
@@ -1859,8 +1859,8 @@ export default function ClassesPage(): JSX.Element {
         // Fallback: show weekly (same day of week as start date)
         const startDayOfWeek = baseDate.getDay()
         if (dayOfWeek === startDayOfWeek) {
-          const diffDays = Math.floor((target.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24))
-          if (diffDays % 7 === 0) {
+      const diffDays = Math.floor((target.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24))
+      if (diffDays % 7 === 0) {
             // Calculate current_bookings for this specific occurrence from booking counts
             const bookingCounts = recurringBookingCounts[cls.id] || {}
             const occurrenceBookings = bookingCounts[dateStr] || 0
@@ -1940,7 +1940,7 @@ export default function ClassesPage(): JSX.Element {
     // Check if user is booked in this class
     const userIsBooked = isUserBooked(classItem.id, (classItem as any).occurrence_date)
     if (userIsBooked) {
-      return 'bg-green-500'
+    return 'bg-green-500'
     }
     
     // Check if class is full
@@ -2053,12 +2053,12 @@ export default function ClassesPage(): JSX.Element {
                 <div className="flex items-center gap-4">
                   {/* Navigation Arrows + Date */}
                   <div className="flex items-center gap-2">
-                    <button
+                  <button
                       onClick={() => calendarMode === 'month' ? navigateMonth('prev') : navigateWeek('prev')}
                       className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
                     <h2 className="text-2xl font-bold text-gray-900 min-w-[280px] text-center">
                       {calendarMode === 'month' 
                         ? currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
@@ -2110,66 +2110,66 @@ export default function ClassesPage(): JSX.Element {
 
             {/* Calendar Grid - Month View */}
             {calendarMode === 'month' && (
-              <div className="p-6">
-                <div className="grid grid-cols-7 gap-2 mb-6">
-                  {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
-                    <div key={day} className="p-3 text-center text-sm font-semibold text-gray-600 bg-gray-50 rounded-lg">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="grid grid-cols-7 gap-2">
-                  {days.map((day, index) => {
-                    if (!day) {
-                      return <div key={index} className="h-32"></div>
-                    }
-                    
-                    const dayClasses = getClassesForDate(day)
-                    const isToday = day.toDateString() === new Date().toDateString()
-                    const isSelected = selectedDate && day.toDateString() === selectedDate.toDateString()
-                    
-                    return (
-                      <div
-                        key={day.getTime()}
-                        className={`min-h-32 p-2 border-2 rounded-xl cursor-pointer transition-all duration-200 hover:shadow-md ${
-                          isToday 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : isSelected 
-                              ? 'border-gray-400 bg-gray-50' 
-                              : 'border-gray-200 hover:border-gray-300'
-                        } ${dayClasses.length > 0 ? 'h-auto' : 'h-32'}`}
-                        onClick={() => {
+            <div className="p-6">
+              <div className="grid grid-cols-7 gap-2 mb-6">
+                {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
+                  <div key={day} className="p-3 text-center text-sm font-semibold text-gray-600 bg-gray-50 rounded-lg">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              
+              <div className="grid grid-cols-7 gap-2">
+                {days.map((day, index) => {
+                  if (!day) {
+                    return <div key={index} className="h-32"></div>
+                  }
+                  
+                  const dayClasses = getClassesForDate(day)
+                  const isToday = day.toDateString() === new Date().toDateString()
+                  const isSelected = selectedDate && day.toDateString() === selectedDate.toDateString()
+                  
+                  return (
+                    <div
+                      key={day.getTime()}
+                      className={`min-h-32 p-2 border-2 rounded-xl cursor-pointer transition-all duration-200 hover:shadow-md ${
+                        isToday 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : isSelected 
+                            ? 'border-gray-400 bg-gray-50' 
+                            : 'border-gray-200 hover:border-gray-300'
+                      } ${dayClasses.length > 0 ? 'h-auto' : 'h-32'}`}
+                      onClick={() => {
                           setSelectedDate(day)
-                        }}
-                      >
-                        <div className="text-sm font-semibold text-gray-900 mb-2">
-                          {day.getDate()}
-                        </div>
-                        <div className="space-y-1">
-                          {dayClasses.slice(0, user.role === 'cliente' ? 2 : 3).map(cls => {
-                            const isCancelled = cls.status === 'cancelled'
-                            const isFull = cls.current_bookings >= cls.max_capacity
+                      }}
+                    >
+                      <div className="text-sm font-semibold text-gray-900 mb-2">
+                        {day.getDate()}
+                      </div>
+                      <div className="space-y-1">
+                        {dayClasses.slice(0, user.role === 'cliente' ? 2 : 3).map(cls => {
+                          const isCancelled = cls.status === 'cancelled'
+                          const isFull = cls.current_bookings >= cls.max_capacity
                             const userIsBooked = isUserBooked(cls.id, (cls as any).occurrence_date)
-                            return (
-                            <div
-                              key={cls.id}
-                              className={`space-y-1 rounded-lg p-1`}
-                            >
-                              {user.role === 'cliente' ? (
-                                <>
-                                  {!userIsBooked && isFull ? (
+                          return (
+                          <div
+                            key={cls.id}
+                            className={`space-y-1 rounded-lg p-1`}
+                          >
+                            {user.role === 'cliente' ? (
+                              <>
+                                {!userIsBooked && isFull ? (
                                     <div className="text-xs px-2 py-1 rounded bg-gray-500 text-white truncate">
-                                      {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} <span className="italic">(full)</span>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div
+                                    {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''} <span className="italic">(full)</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div
                                         className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
-                                        onClick={(e) => {
-                                          e.stopPropagation()
+                                      onClick={(e) => {
+                                        e.stopPropagation()
                                           openViewClassModal(cls)
-                                        }}
+                                      }}
                                         title="Click para ver detalles"
                                       >
                                         {isCancelled ? (
@@ -2177,7 +2177,7 @@ export default function ClassesPage(): JSX.Element {
                                         ) : (
                                           <span>{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}</span>
                                         )}
-                                      </div>
+                                    </div>
                                     </>
                                   )}
                                 </>
@@ -2185,10 +2185,10 @@ export default function ClassesPage(): JSX.Element {
                                 <div 
                                   className={`text-xs px-2 py-1 rounded ${getAvailabilityColor(cls)} text-white truncate cursor-pointer hover:opacity-80 transition-opacity`}
                                   title={`${cls.time}${cls.end_time ? ` - ${cls.end_time}` : ''}${cls.type === 'group' ? ` - ${cls.current_bookings}/${cls.max_capacity} reservas` : ''} - ${cls.coach_name}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
+                                          onClick={(e) => {
+                                            e.stopPropagation()
                                     openViewClassModal(cls)
-                                  }}
+                                          }}
                                 >
                                   {isCancelled ? (
                                     <span className="line-through">{cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}</span>
@@ -2202,8 +2202,8 @@ export default function ClassesPage(): JSX.Element {
                           {dayClasses.length > (user.role === 'cliente' ? 2 : 3) && (
                             <div 
                               className="text-xs text-blue-600 font-medium cursor-pointer hover:text-blue-800 hover:underline"
-                              onClick={(e) => {
-                                e.stopPropagation()
+                                          onClick={(e) => {
+                                            e.stopPropagation()
                                 setSelectedDate(day)
                               }}
                             >
@@ -2213,7 +2213,7 @@ export default function ClassesPage(): JSX.Element {
                           {dayClasses.length === 0 && (
                             <div className="text-xs text-gray-400 italic">
                               Sin clases
-                            </div>
+                                    </div>
                           )}
                         </div>
                       </div>
@@ -2245,7 +2245,7 @@ export default function ClassesPage(): JSX.Element {
                         >
                           <div className="text-xs font-medium uppercase">{dayName}</div>
                           <div className={`text-lg font-bold ${isToday ? 'text-white' : 'text-gray-900'}`}>{day.getDate()}</div>
-                        </div>
+                              </div>
                         
                         {/* Day Content */}
                         <div 
@@ -2283,15 +2283,15 @@ export default function ClassesPage(): JSX.Element {
                                 >
                                   <div className={`text-xs font-semibold ${isCancelled ? 'line-through text-red-600' : 'text-gray-900'}`}>
                                     {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
-                                  </div>
+                          </div>
                                   <div className="text-xs text-gray-600 truncate mt-0.5">
                                     {cls.title || (cls.type === 'private' ? 'Clase Privada' : 'Clase Grupal')}
                                   </div>
                                   {user?.role !== 'cliente' && cls.type === 'group' && (
                                     <div className="text-xs text-gray-500 mt-1">
                                       {cls.current_bookings}/{cls.max_capacity} reservas
-                                    </div>
-                                  )}
+                          </div>
+                        )}
                                   {user?.role === 'cliente' && (
                                     <div className="mt-1">
                                       {isCancelled ? (
@@ -2308,18 +2308,18 @@ export default function ClassesPage(): JSX.Element {
                                 </div>
                               )
                             })}
-                            {dayClasses.length === 0 && (
+                        {dayClasses.length === 0 && (
                               <div className="text-xs text-gray-400 italic text-center py-4">
-                                Sin clases
-                              </div>
-                            )}
+                            Sin clases
                           </div>
-                        </div>
+                        )}
+                          </div>
                       </div>
-                    )
-                  })}
-                </div>
+                    </div>
+                  )
+                })}
               </div>
+            </div>
             )}
           </div>
         )}
@@ -2371,11 +2371,11 @@ export default function ClassesPage(): JSX.Element {
                               <h4 className={`font-semibold text-gray-900 ${isCancelled ? 'line-through' : ''}`}>
                                 {decodeHtmlEntities(cls.title || 'Clase')}
                               </h4>
-                              <span className={`px-2 py-1 text-xs rounded-full ${
-                                cls.type === 'group' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-                              }`}>
-                                {cls.type === 'group' ? 'Grupal' : 'Privada'}
-                              </span>
+                            <span className={`px-2 py-1 text-xs rounded-full ${
+                              cls.type === 'group' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                            }`}>
+                              {cls.type === 'group' ? 'Grupal' : 'Privada'}
+                            </span>
                               {userIsBooked && !isCancelled && (
                                 <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
                                   ✓ Reservado
@@ -2386,36 +2386,36 @@ export default function ClassesPage(): JSX.Element {
                                   Cancelada
                                 </span>
                               )}
-                            </div>
+                          </div>
                             <div className="flex items-center flex-wrap gap-3 text-sm text-gray-600">
-                              <span className="flex items-center">
-                                <Clock className="h-4 w-4 mr-1" />
+                            <span className="flex items-center">
+                              <Clock className="h-4 w-4 mr-1" />
                                 {cls.time}{cls.end_time ? ` - ${cls.end_time}` : ''}
-                              </span>
+                            </span>
                               <span>{cls.duration} min</span>
                               {cls.coach_name && <span>Coach: {cls.coach_name}</span>}
-                            </div>
                           </div>
+                        </div>
                           
                           {/* Booking info and actions */}
                           <div className="flex items-center gap-4">
                             {/* Capacity indicator (only for group classes) */}
                             {cls.type === 'group' && (
                               <div className="text-right">
-                                <div className="text-sm font-semibold text-gray-900 mb-1">
+                          <div className="text-sm font-semibold text-gray-900 mb-1">
                                   {cls.current_bookings}/{cls.max_capacity}
-                                </div>
+                          </div>
                                 <div className="w-20 bg-gray-200 rounded-full h-2">
-                                  <div
-                                    className={`h-2 rounded-full ${
+                            <div
+                              className={`h-2 rounded-full ${
                                       isFull ? 'bg-red-500' :
-                                      (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                      'bg-green-500'
-                                    }`}
-                                    style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
-                                  ></div>
-                                </div>
-                              </div>
+                                (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
                             )}
                             
                             {/* Client actions */}
@@ -2452,36 +2452,36 @@ export default function ClassesPage(): JSX.Element {
                             {/* Admin/Coach actions */}
                             {(user?.role === 'admin' || user?.role === 'coach') && (
                               <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
+                            <button
+                              type="button"
                                   onClick={() => {
                                     setSelectedDate(null)
                                     openEditModal(cls, (cls as any).occurrence_date)
                                   }}
                                   className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm"
-                                >
-                                  Editar
-                                </button>
+                            >
+                              Editar
+                            </button>
                                 {!isCancelled && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCancelClass(cls)}
+                            <button
+                              type="button"
+                              onClick={() => handleCancelClass(cls)}
                                     className="px-3 py-1.5 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 text-sm"
-                                  >
+                            >
                                     Cancelar
-                                  </button>
+                            </button>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteClass(cls)}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteClass(cls)}
                                   className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm"
-                                >
-                                  Eliminar
-                                </button>
-                              </div>
-                            )}
+                            >
+                              Eliminar
+                            </button>
                           </div>
-                        </div>
+                        )}
+                      </div>
+                    </div>
                       </div>
                     )
                   })
@@ -2568,11 +2568,11 @@ export default function ClassesPage(): JSX.Element {
 
                 if (allClasses.length === 0) {
                   return (
-                    <div className="text-center py-12 text-gray-500">
-                      <Calendar className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-                      <p className="text-lg font-medium">No hay clases disponibles</p>
-                      <p className="text-sm text-gray-400 mt-2">Las clases aparecerán aquí cuando estén programadas</p>
-                    </div>
+                <div className="text-center py-12 text-gray-500">
+                  <Calendar className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+                  <p className="text-lg font-medium">No hay clases disponibles</p>
+                  <p className="text-sm text-gray-400 mt-2">Las clases aparecerán aquí cuando estén programadas</p>
+                </div>
                   )
                 }
 
@@ -2621,7 +2621,7 @@ export default function ClassesPage(): JSX.Element {
                         <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
                           Clases Regulares
                         </h3>
-                        <div className="space-y-4">
+                <div className="space-y-4">
                           {regularClasses.map((cls, index) => {
                     const isCancelled = cls.status === 'cancelled'
                     return (
@@ -2646,7 +2646,7 @@ export default function ClassesPage(): JSX.Element {
                                 // Apply template replacement for all classes
                                 const classDate = new Date(cls.date + 'T00:00:00')
                                 const title = cls.title || (cls.type === 'private'
-                                  ? `${(clients.find(c => c.id === (cls as any).client_id)?.nombre || 'Cliente')} - Sesión Privada`
+                                ? `${(clients.find(c => c.id === (cls as any).client_id)?.nombre || 'Cliente')} - Sesión Privada`
                                   : 'Clase')
                                 return decodeHtmlEntities(replaceTemplateVariables(title, classDate, cls))
                               })()}
@@ -2691,22 +2691,22 @@ export default function ClassesPage(): JSX.Element {
                         
                         <div className="ml-6 flex items-center space-x-6">
                           {cls.type === 'group' && (
-                            <div className="text-right">
-                              <div className="text-sm font-semibold text-gray-900 mb-1">
-                                {cls.current_bookings}/{cls.max_capacity} reservas
-                              </div>
-                              <div className="w-32 bg-gray-200 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full ${
-                                    (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
-                                    (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                    (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
-                                    'bg-green-500'
-                                  }`}
-                                  style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
-                                ></div>
-                              </div>
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-gray-900 mb-1">
+                              {cls.current_bookings}/{cls.max_capacity} reservas
                             </div>
+                            <div className="w-32 bg-gray-200 rounded-full h-2">
+                              <div
+                                className={`h-2 rounded-full ${
+                                  (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
+                                  (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                  (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
+                                  'bg-green-500'
+                                }`}
+                                style={{ width: `${Math.min((cls.current_bookings / cls.max_capacity) * 100, 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
                           )}
                           
                           {/* Acciones según el rol */}
@@ -2759,7 +2759,7 @@ export default function ClassesPage(): JSX.Element {
                       if (recurringEntries.length === 0) return null
                       
                       return (
-                        <div>
+                            <div>
                           <h3 className="text-lg font-semibold text-gray-900 mb-4 pb-2 border-b border-gray-200">
                             Clases Recurrentes
                           </h3>
@@ -2864,49 +2864,49 @@ export default function ClassesPage(): JSX.Element {
                                       {user.role === 'cliente' && (
                                         <div>
                                           {isUserBooked(cls.id, (cls as any).occurrence_date) ? (
-                                            <button
+                                <button
                                               onClick={() => cancelBooking(cls.id, (cls as any).occurrence_date)}
-                                              className="bg-red-500 text-white px-6 py-2.5 rounded-xl hover:bg-red-600 transition-all duration-200 hover:scale-105 font-medium"
-                                            >
-                                              Cancelar
-                                            </button>
-                                          ) : (
-                                            <button
-                                              onClick={() => bookClass(cls.id)}
-                                              disabled={cls.current_bookings >= cls.max_capacity}
-                                              className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 ${
-                                                cls.current_bookings >= cls.max_capacity
-                                                  ? 'bg-gray-400 text-white cursor-not-allowed'
-                                                  : 'bg-green-500 text-white hover:bg-green-600'
-                                              }`}
-                                            >
-                                              {cls.current_bookings >= cls.max_capacity ? 'Llena' : 'Reservar'}
-                                            </button>
-                                          )}
-                                        </div>
-                                      )}
-                                      
+                                  className="bg-red-500 text-white px-6 py-2.5 rounded-xl hover:bg-red-600 transition-all duration-200 hover:scale-105 font-medium"
+                                >
+                                  Cancelar
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => bookClass(cls.id)}
+                                  disabled={cls.current_bookings >= cls.max_capacity}
+                                  className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 ${
+                                    cls.current_bookings >= cls.max_capacity
+                                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                                      : 'bg-green-500 text-white hover:bg-green-600'
+                                  }`}
+                                >
+                                  {cls.current_bookings >= cls.max_capacity ? 'Llena' : 'Reservar'}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          
                                       {(user.role === 'admin' || user.role === 'coach') && cls.type === 'group' && (
-                                        <div className="text-sm text-gray-500 space-y-1">
-                                          <div className="flex items-center space-x-2">
-                                            <div className={`w-3 h-3 rounded-full ${
-                                              (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
-                                              (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
-                                              (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
-                                              'bg-green-500'
-                                            }`}></div>
-                                            <span>
-                                              {Math.round((cls.current_bookings / cls.max_capacity) * 100)}% ocupación
-                                            </span>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              )
-                            })}
-                          </div>
+                            <div className="text-sm text-gray-500 space-y-1">
+                              <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full ${
+                                  (cls.current_bookings / cls.max_capacity) >= 1 ? 'bg-red-500' :
+                                  (cls.current_bookings / cls.max_capacity) >= 0.8 ? 'bg-amber-500' :
+                                  (cls.current_bookings / cls.max_capacity) >= 0.6 ? 'bg-yellow-500' :
+                                  'bg-green-500'
+                                }`}></div>
+                                <span>
+                                  {Math.round((cls.current_bookings / cls.max_capacity) * 100)}% ocupación
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                    )
+                  })}
+                </div>
                         </div>
                       )
                     })()}
@@ -3015,10 +3015,10 @@ export default function ClassesPage(): JSX.Element {
                   ) : (
                     <>
                       {!isRecurring && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Agregar Clientes (Opcional)
-                          </label>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Agregar Clientes (Opcional)
+                        </label>
                         <div className="relative">
                           <input
                             type="text"
@@ -3071,7 +3071,7 @@ export default function ClassesPage(): JSX.Element {
                             })}
                           </div>
                         )}
-                        </div>
+                      </div>
                       )}
                       {isRecurring && (
                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -3166,8 +3166,8 @@ export default function ClassesPage(): JSX.Element {
                               </p>
                             )}
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
                               Fecha de inicio
                             </label>
                             <input
@@ -3183,17 +3183,17 @@ export default function ClassesPage(): JSX.Element {
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                               Fecha de finalización (Opcional)
-                            </label>
-                            <input
-                              type="date"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              value={recurrenceEndDate}
-                              onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                            />
-                            <p className="mt-1 text-xs text-gray-500">
-                              Deja este campo vacío para que la clase se repita indefinidamente.
-                            </p>
-                          </div>
+                          </label>
+                          <input
+                            type="date"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            value={recurrenceEndDate}
+                            onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                          />
+                          <p className="mt-1 text-xs text-gray-500">
+                            Deja este campo vacío para que la clase se repita indefinidamente.
+                          </p>
+                        </div>
                         </>
                       )}
                       <div className="mt-2">
@@ -3249,17 +3249,17 @@ export default function ClassesPage(): JSX.Element {
                   </div>
                   
                   {!isRecurring && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Fecha
-                      </label>
-                      <input
-                        type="date"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={privateClassDate}
-                        onChange={(e) => setPrivateClassDate(e.target.value)}
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Fecha
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={privateClassDate}
+                      onChange={(e) => setPrivateClassDate(e.target.value)}
+                    />
+                  </div>
                   )}
                   
                   <div>
@@ -3390,17 +3390,17 @@ export default function ClassesPage(): JSX.Element {
                     </div>
 
                     {!isRecurring && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Fecha
-                        </label>
-                        <input
-                          type="date"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={editDate}
-                          onChange={(e) => setEditDate(e.target.value)}
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                      />
+                    </div>
                     )}
                     
                     <div>
@@ -3466,71 +3466,71 @@ export default function ClassesPage(): JSX.Element {
 
                     {/* Client Management - show for non-recurring OR for recurring with occurrence date */}
                     {(!isRecurring || editOccurrenceDate) && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
                           {isRecurring && editOccurrenceDate 
                             ? `Asistentes para esta fecha (${editOccurrenceDate})`
                             : 'Agregar / Editar Clientes (Opcional)'
                           }
-                        </label>
+                      </label>
                         {isRecurring && editOccurrenceDate && (
                           <p className="text-xs text-blue-600 mb-2">
                             Nota: Estás editando los asistentes solo para esta ocurrencia específica.
                           </p>
                         )}
-                        <div className="relative">
-                          <input
-                            type="text"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="Buscar cliente..."
-                            value={groupClassClientSearch}
-                            onChange={(e) => setGroupClassClientSearch(e.target.value)}
-                          />
-                          {groupClassClientSearch && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                              {clients
-                                .filter(c =>
-                                  c.nombre.toLowerCase().includes(groupClassClientSearch.toLowerCase()) &&
-                                  !groupClassClientIds.includes(c.id)
-                                )
-                                .map(client => (
-                                  <div
-                                    key={client.id}
-                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                                    onClick={() => {
-                                      setGroupClassClientIds([...groupClassClientIds, client.id])
-                                      setGroupClassClientSearch('')
-                                    }}
-                                  >
-                                    {client.nombre}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                        {groupClassClientIds.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {groupClassClientIds.map(clientId => {
-                              const client = clients.find(c => c.id === clientId)
-                              return client ? (
-                                <span
-                                  key={clientId}
-                                  className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                      <div className="relative">
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Buscar cliente..."
+                          value={groupClassClientSearch}
+                          onChange={(e) => setGroupClassClientSearch(e.target.value)}
+                        />
+                        {groupClassClientSearch && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {clients
+                              .filter(c =>
+                                c.nombre.toLowerCase().includes(groupClassClientSearch.toLowerCase()) &&
+                                !groupClassClientIds.includes(c.id)
+                              )
+                              .map(client => (
+                                <div
+                                  key={client.id}
+                                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                                  onClick={() => {
+                                    setGroupClassClientIds([...groupClassClientIds, client.id])
+                                    setGroupClassClientSearch('')
+                                  }}
                                 >
                                   {client.nombre}
-                                  <button
-                                    type="button"
-                                    onClick={() => setGroupClassClientIds(groupClassClientIds.filter(id => id !== clientId))}
-                                    className="ml-2 text-blue-600 hover:text-blue-800"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              ) : null
-                            })}
+                                </div>
+                              ))}
                           </div>
                         )}
                       </div>
+                      {groupClassClientIds.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {groupClassClientIds.map(clientId => {
+                            const client = clients.find(c => c.id === clientId)
+                            return client ? (
+                              <span
+                                key={clientId}
+                                className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                              >
+                                {client.nombre}
+                                <button
+                                  type="button"
+                                  onClick={() => setGroupClassClientIds(groupClassClientIds.filter(id => id !== clientId))}
+                                  className="ml-2 text-blue-600 hover:text-blue-800"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ) : null
+                          })}
+                        </div>
+                      )}
+                    </div>
                     )}
                     {isRecurring && !editOccurrenceDate && (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -3622,8 +3622,8 @@ export default function ClassesPage(): JSX.Element {
                             </p>
                           )}
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
                             Fecha de inicio
                           </label>
                           <input
@@ -3639,17 +3639,17 @@ export default function ClassesPage(): JSX.Element {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                             Fecha de finalización (Opcional)
-                          </label>
-                          <input
-                            type="date"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={recurrenceEndDate}
-                            onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                          />
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          value={recurrenceEndDate}
+                          onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                        />
                           <p className="mt-1 text-xs text-gray-500">
                             Deja este campo vacío para que la clase se repita indefinidamente.
                           </p>
-                        </div>
+                      </div>
                       </>
                     )}
 
@@ -3861,15 +3861,15 @@ export default function ClassesPage(): JSX.Element {
                       </span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setShowViewClassModal(false)}
+                <button
+                  onClick={() => setShowViewClassModal(false)}
                     className="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors"
-                  >
+                >
                     <X className="h-5 w-5" />
-                  </button>
-                </div>
+                </button>
               </div>
-              
+                </div>
+
               {/* Content */}
               <div className="p-5 overflow-y-auto max-h-[60vh]">
                 {/* Date and Time Card */}
@@ -3881,19 +3881,19 @@ export default function ClassesPage(): JSX.Element {
                           const classDate = (viewingClass as any).occurrence_date || viewingClass.date
                           return new Date(classDate + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'short' })
                         })()}
-                      </div>
+                </div>
                       <div className="text-2xl font-bold text-gray-900">
                         {(() => {
                           const classDate = (viewingClass as any).occurrence_date || viewingClass.date
                           return new Date(classDate + 'T00:00:00').getDate()
                         })()}
-                      </div>
+                </div>
                       <div className="text-xs font-medium text-gray-500">
                         {(() => {
                           const classDate = (viewingClass as any).occurrence_date || viewingClass.date
                           return new Date(classDate + 'T00:00:00').toLocaleDateString('es-ES', { month: 'short' })
                         })()}
-                      </div>
+                </div>
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center text-gray-900 font-semibold text-lg">
@@ -3922,7 +3922,7 @@ export default function ClassesPage(): JSX.Element {
                         return viewingClass.description || ''
                       })())}
                     </p>
-                  </div>
+                </div>
                 )}
 
                 {/* Info Grid */}
@@ -3934,15 +3934,15 @@ export default function ClassesPage(): JSX.Element {
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs font-medium text-gray-500 uppercase mb-1">Estado</div>
                     <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full ${
-                      viewingClass.status === 'scheduled' ? 'bg-green-100 text-green-800' :
+                    viewingClass.status === 'scheduled' ? 'bg-green-100 text-green-800' :
                       viewingClass.status === 'completed' ? 'bg-gray-200 text-gray-700' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {viewingClass.status === 'scheduled' ? 'Programada' :
-                       viewingClass.status === 'completed' ? 'Completada' : 'Cancelada'}
-                    </span>
-                  </div>
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {viewingClass.status === 'scheduled' ? 'Programada' :
+                     viewingClass.status === 'completed' ? 'Completada' : 'Cancelada'}
+                  </span>
                 </div>
+              </div>
 
                 {/* Capacity (only for group classes) */}
                 {viewingClass.type === 'group' && (
@@ -4116,12 +4116,12 @@ export default function ClassesPage(): JSX.Element {
 
                 {/* Close button if no other actions shown */}
                 {viewingClass.status !== 'scheduled' && user?.role !== 'admin' && user?.role !== 'coach' && (
-                  <button
-                    onClick={() => setShowViewClassModal(false)}
+                <button
+                  onClick={() => setShowViewClassModal(false)}
                     className="w-full px-4 py-2.5 text-gray-700 bg-gray-200 rounded-xl hover:bg-gray-300 transition-colors font-medium"
-                  >
-                    Cerrar
-                  </button>
+                >
+                  Cerrar
+                </button>
                 )}
               </div>
             </div>

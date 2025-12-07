@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [formData, setFormData] = useState({
     nombre: '',
     apellidos: '',
@@ -108,11 +110,11 @@ export default function RegisterPage() {
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         
-        // Redirect to dashboard immediately using window.location for reliable redirect
+        // Redirect to dashboard using Next.js router for reliable redirects in production
         setIsLoading(false)
         // Use setTimeout to ensure localStorage is written before redirect
         setTimeout(() => {
-          window.location.href = '/dashboard'
+          router.push('/dashboard')
         }, 100)
       } else {
         setIsLoading(false)

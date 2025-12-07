@@ -107,6 +107,47 @@ const defaultBundleFormState = {
   is_active: true,
 }
 
+// Countdown hook for expiration dates
+const useCountdown = (targetDate: string | null | undefined) => {
+  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null)
+
+  useEffect(() => {
+    if (!targetDate) {
+      setTimeLeft(null)
+      return
+    }
+
+    const updateCountdown = () => {
+      // Parse date string as local date (YYYY-MM-DD format) and set to end of day
+      const [year, month, day] = targetDate.split('-').map(Number)
+      const targetDateObj = new Date(year, month - 1, day, 23, 59, 59, 999) // End of day in local time
+      // Subtract 24 hours (1 day) from the target date
+      const target = targetDateObj.getTime() - (24 * 60 * 60 * 1000)
+      const now = new Date().getTime()
+      const difference = target - now
+
+      if (difference <= 0) {
+        setTimeLeft(null)
+        return
+      }
+
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24))
+      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60))
+      const seconds = Math.floor((difference % (1000 * 60)) / 1000)
+
+      setTimeLeft({ days, hours, minutes, seconds })
+    }
+
+    updateCountdown()
+    const interval = setInterval(updateCountdown, 1000)
+
+    return () => clearInterval(interval)
+  }, [targetDate])
+
+  return timeLeft
+}
+
 export default function PackagesPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [availablePackages, setAvailablePackages] = useState<PackageType[]>([])
@@ -124,6 +165,35 @@ export default function PackagesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [classCounts, setClassCounts] = useState<{private: number, group: number}>({private: 0, group: 0})
+
+  // Helper functions for date logic (defined early so they can be used in loadPackages)
+  const isDateInFuture = (dateString: string | null | undefined): boolean => {
+    if (!dateString) return false
+    // Parse date string as local date (YYYY-MM-DD format)
+    const [year, month, day] = dateString.split('-').map(Number)
+    const date = new Date(year, month - 1, day, 0, 0, 0, 0) // Start of day in local time
+    const now = new Date()
+    // Compare dates (not times) - get today's date at start of day
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+    return date > today
+  }
+
+  const isDateInPast = (dateString: string | null | undefined): boolean => {
+    if (!dateString) return false
+    // Parse date string as local date (YYYY-MM-DD format)
+    const [year, month, day] = dateString.split('-').map(Number)
+    const date = new Date(year, month - 1, day, 23, 59, 59, 999) // End of day in local time
+    const now = new Date()
+    return date < now
+  }
+
+  const shouldDisableActiveCheckbox = (liveFrom: string, liveUntil: string): boolean => {
+    // Disable if live_from is set (will activate automatically when date arrives)
+    if (liveFrom && liveFrom.trim() !== '') return true
+    // Disable if live_until is set (will expire automatically when date arrives)
+    if (liveUntil && liveUntil.trim() !== '') return true
+    return false
+  }
   const [activeGroupPackage, setActiveGroupPackage] = useState<any>(null)
   const [activePrivatePackage, setActivePrivatePackage] = useState<any>(null)
   const [packageHistory, setPackageHistory] = useState<any[]>([])
@@ -191,7 +261,30 @@ export default function PackagesPage() {
           setAvailablePackages(validPackages)
           setAdminPackages(validPackages)
         } else {
-          setAvailablePackages(validPackages.filter(p => p.is_active !== false && p.is_active !== 0))
+          // Filter out inactive, expired, and future packages for clients
+          const filtered = validPackages.filter(p => {
+            // Must be active
+            if (p.is_active === false) {
+              console.log('[Packages] Filtered out package (inactive):', p.id, p.name)
+              return false
+            }
+            
+            // If live_from is set and in the future, don't show (not activated yet)
+            if (p.live_from && isDateInFuture(p.live_from)) {
+              console.log('[Packages] Filtered out package (future):', p.id, p.name, 'live_from:', p.live_from)
+              return false
+            }
+            
+            // If expired (live_until has passed), don't show
+            if (p.live_until && isDateInPast(p.live_until)) {
+              console.log('[Packages] Filtered out package (expired):', p.id, p.name, 'live_until:', p.live_until)
+              return false
+            }
+            
+            return true
+          })
+          console.log('[Packages] Filtered packages for client:', filtered.length, 'out of', validPackages.length)
+          setAvailablePackages(filtered)
         }
       }
     } catch (error) {
@@ -238,6 +331,24 @@ export default function PackagesPage() {
   const openEditModal = (pkg: PackageType) => {
     setEditingPackage(pkg)
     setModalCategory(pkg.category)
+    
+    // Clear expired dates
+    let liveFrom = pkg.live_from || ''
+    let liveUntil = pkg.live_until || ''
+    
+    // If live_from has passed, clear it
+    if (liveFrom && isDateInPast(liveFrom)) {
+      liveFrom = ''
+    }
+    
+    // If live_until has passed, clear it
+    if (liveUntil && isDateInPast(liveUntil)) {
+      liveUntil = ''
+    }
+    
+    // Sync is_live with is_active (they're now the same thing)
+    const isActive = pkg.is_active === 1 || pkg.is_active === true
+    
     setPackageForm({
       name: pkg.name,
       type: pkg.type || '',
@@ -246,10 +357,10 @@ export default function PackagesPage() {
       validity_months: pkg.validity_months || Math.ceil(pkg.validity_days / 30) || 1,
       category: pkg.category,
       description: pkg.description || '',
-      is_live: pkg.is_live !== false,
-      live_from: pkg.live_from || '',
-      live_until: pkg.live_until || '',
-      is_active: pkg.is_active !== false,
+      is_live: isActive, // Sync with is_active
+      live_from: liveFrom,
+      live_until: liveUntil,
+      is_active: isActive,
       original_price: pkg.original_price || '',
       sale_price: pkg.sale_price || '',
     })
@@ -270,6 +381,21 @@ export default function PackagesPage() {
 
   const openEditBundleModal = (bundle: PackageBundle) => {
     setEditingBundle(bundle)
+    
+    // Clear expired dates
+    let liveFrom = bundle.live_from || ''
+    let liveUntil = bundle.live_until || ''
+    
+    // If live_from has passed, clear it
+    if (liveFrom && isDateInPast(liveFrom)) {
+      liveFrom = ''
+    }
+    
+    // If live_until has passed, clear it
+    if (liveUntil && isDateInPast(liveUntil)) {
+      liveUntil = ''
+    }
+    
     setBundleForm({
       name: bundle.name,
       description: bundle.description || '',
@@ -284,9 +410,9 @@ export default function PackagesPage() {
         ? bundle.private_months_included 
         : (bundle.months_included || 3),
       price: bundle.price,
-      live_from: bundle.live_from || '',
-      live_until: bundle.live_until || '',
-      is_active: bundle.is_active !== false,
+      live_from: liveFrom,
+      live_until: liveUntil,
+      is_active: bundle.is_active === 1 || bundle.is_active === true,
     })
     setIsBundleModalOpen(true)
   }
@@ -311,8 +437,10 @@ export default function PackagesPage() {
         ? `${API_BASE_URL}/api/packages/${editingPackage.id}`
         : `${API_BASE_URL}/api/packages`
       
+      // Sync is_live with is_active (they're now the same thing)
       const body = {
         ...packageForm,
+        is_live: packageForm.is_active, // Sync with is_active
         validity_days: packageForm.validity_months * 30,
         original_price: packageForm.original_price || null,
         sale_price: packageForm.sale_price || null,
@@ -368,8 +496,8 @@ export default function PackagesPage() {
     const hasPackage = bundleForm.group_package_id || bundleForm.private_package_id || bundleForm.package_id
     if (!bundleForm.name || !hasPackage || bundleForm.price === undefined) {
       alert('Por favor completa todos los campos requeridos (nombre, al menos un paquete y precio)')
-        return
-      }
+      return
+    }
 
     // Validate months based on selected packages
     if (bundleForm.group_package_id && (!bundleForm.group_months_included || bundleForm.group_months_included < 1)) {
@@ -392,17 +520,23 @@ export default function PackagesPage() {
         ? `${API_BASE_URL}/api/package-bundles/${editingBundle.id}`
         : `${API_BASE_URL}/api/package-bundles`
       
+      // Ensure is_active is always included (even if false)
+      const payload = {
+        ...bundleForm,
+        is_active: bundleForm.is_active !== undefined ? bundleForm.is_active : true,
+        // Clear legacy package_id if using new fields
+        package_id: (!bundleForm.group_package_id && !bundleForm.private_package_id) ? bundleForm.package_id : null
+      }
+      
+      console.log('[Packages] Saving bundle with payload:', JSON.stringify(payload, null, 2))
+      
       const response = await fetch(url, {
         method: editingBundle ? 'PUT' : 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          ...bundleForm,
-          // Clear legacy package_id if using new fields
-          package_id: (!bundleForm.group_package_id && !bundleForm.private_package_id) ? bundleForm.package_id : null
-        })
+        body: JSON.stringify(payload)
       })
 
       if (response.ok) {
@@ -421,7 +555,7 @@ export default function PackagesPage() {
   }
 
   const deleteBundle = async (id: string, name: string) => {
-    if (!confirm(`¿Eliminar el bundle "${name}"?`)) return
+    if (!confirm(`¿Eliminar el bundle "${name}"? Esta acción no se puede deshacer.`)) return
     
     try {
       const token = localStorage.getItem('token')
@@ -430,13 +564,20 @@ export default function PackagesPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
+        const data = await response.json()
+        console.log('[Packages] Bundle deleted:', data)
+        // Remove from local state immediately
+        setBundles(prev => prev.filter(b => b.id !== id))
+        // Reload to ensure sync
         loadBundles()
       } else {
-        alert('Error al eliminar bundle')
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }))
+        console.error('[Packages] Delete bundle error:', response.status, errorData)
+        alert(`Error al eliminar bundle: ${errorData.message || 'Error desconocido'}`)
       }
     } catch (err) {
       console.error('deleteBundle error', err)
-      alert('Error al eliminar bundle')
+      alert(`Error al eliminar bundle: ${err instanceof Error ? err.message : 'Error desconocido'}`)
     }
   }
 
@@ -550,21 +691,23 @@ export default function PackagesPage() {
     ? bundles 
     : bundles.filter(b => {
         // Must be active
-        if (b.is_active === false || b.is_active === 0) return false
+        if (b.is_active === false) return false
         
-        // Check live date range if set
+        // Check live date range if set (use local date parsing)
         const now = new Date()
-        now.setHours(0, 0, 0, 0)
         
         if (b.live_from) {
-          const liveFrom = new Date(b.live_from)
-          liveFrom.setHours(0, 0, 0, 0)
-          if (now < liveFrom) return false
+          // Parse as local date (YYYY-MM-DD format)
+          const [year, month, day] = b.live_from.split('-').map(Number)
+          const liveFrom = new Date(year, month - 1, day, 0, 0, 0, 0) // Start of day in local time
+          if (now < liveFrom) {
+            console.log('[Packages] Filtered out bundle (future):', b.id, b.name, 'live_from:', b.live_from)
+            return false
+          }
         }
         if (b.live_until) {
-          const liveUntil = new Date(b.live_until)
-          liveUntil.setHours(23, 59, 59, 999)
-          if (now > liveUntil) return false
+          // If expired, don't show it
+          if (isDateInPast(b.live_until)) return false
         }
         
         return true
@@ -756,6 +899,12 @@ export default function PackagesPage() {
     const isOnSale = pkg.original_price && pkg.sale_price && pkg.sale_price < pkg.original_price
     const percentOff = isOnSale ? Math.round(((pkg.original_price! - pkg.sale_price!) / pkg.original_price!) * 100) : 0
     const displayPrice = isOnSale ? pkg.sale_price! : pkg.price
+    const countdown = useCountdown(pkg.live_until)
+    // Only show expiration if live_until is set and not expired
+    const hasExpiration = pkg.live_until && !isDateInPast(pkg.live_until)
+    
+    // Don't render if expired (shouldn't happen due to filtering, but double-check)
+    if (pkg.live_until && isDateInPast(pkg.live_until)) return null
     
     return (
             <motion.div
@@ -799,6 +948,51 @@ export default function PackagesPage() {
             <Calendar className="h-4 w-4 mr-2 text-gray-400" />
             Válido por {pkg.validity_months || Math.ceil(pkg.validity_days / 30)} {(pkg.validity_months || Math.ceil(pkg.validity_days / 30)) === 1 ? 'mes' : 'meses'}
                 </div>
+                {hasExpiration && (() => {
+                  // Parse date as local date to avoid timezone issues
+                  const [year, month, day] = pkg.live_until!.split('-').map(Number)
+                  const expirationDate = new Date(year, month - 1, day)
+                  const formattedDate = expirationDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+                  
+                  return (
+                    <div className="p-3 bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200 rounded-lg shadow-sm">
+                      <div className="flex items-center gap-2 text-sm text-red-700 font-semibold mb-2">
+                        <Clock className="h-4 w-4" />
+                        Expira: {formattedDate}
+                </div>
+                      {countdown ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2.5rem] text-center">
+                              {countdown.days}
+                            </span>
+                            <span className="text-xs text-red-600 font-medium">d</span>
+              </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2rem] text-center">
+                              {String(countdown.hours).padStart(2, '0')}
+                            </span>
+                            <span className="text-xs text-red-600 font-medium">h</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2rem] text-center">
+                              {String(countdown.minutes).padStart(2, '0')}
+                            </span>
+                            <span className="text-xs text-red-600 font-medium">m</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2rem] text-center">
+                              {String(countdown.seconds).padStart(2, '0')}
+                            </span>
+                            <span className="text-xs text-red-600 font-medium">s</span>
+                          </div>
+                  </div>
+                ) : (
+                        <div className="text-sm text-red-600 font-semibold">Expirado</div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
         <div className="pt-4 border-t border-gray-100">
@@ -826,6 +1020,12 @@ export default function PackagesPage() {
   // Client Bundle Card
   const ClientBundleCard = ({ bundle, index }: { bundle: PackageBundle, index: number }) => {
     const isCombo = bundle.is_combo || bundle.category === 'Combo'
+    const countdown = useCountdown(bundle.live_until)
+    // Only show expiration if live_until is set and not expired
+    const hasExpiration = bundle.live_until && !isDateInPast(bundle.live_until)
+    
+    // Don't render if expired
+    if (bundle.live_until && isDateInPast(bundle.live_until)) return null
     
     return (
       <motion.div
@@ -934,6 +1134,53 @@ export default function PackagesPage() {
             <span className="text-gray-600">Ahorras:</span>
             <span className="text-green-600 font-semibold">${bundle.savings.toLocaleString()} MXN</span>
           </div>
+          {hasExpiration && (() => {
+            // Parse date as local date to avoid timezone issues
+            const [year, month, day] = bundle.live_until!.split('-').map(Number)
+            const expirationDate = new Date(year, month - 1, day)
+            const formattedDate = expirationDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+            
+            return (
+              <div className="pt-3 mt-3 border-t-2 border-red-200">
+                <div className="p-3 bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200 rounded-lg shadow-sm">
+                  <div className="flex items-center gap-2 text-sm text-red-700 font-semibold mb-2">
+                    <Clock className="h-4 w-4" />
+                    Expira: {formattedDate}
+                  </div>
+                  {countdown ? (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2.5rem] text-center">
+                          {countdown.days}
+                        </span>
+                        <span className="text-xs text-red-600 font-medium">d</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2rem] text-center">
+                          {String(countdown.hours).padStart(2, '0')}
+                        </span>
+                        <span className="text-xs text-red-600 font-medium">h</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2rem] text-center">
+                          {String(countdown.minutes).padStart(2, '0')}
+                        </span>
+                        <span className="text-xs text-red-600 font-medium">m</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-sm min-w-[2rem] text-center">
+                          {String(countdown.seconds).padStart(2, '0')}
+                        </span>
+                        <span className="text-xs text-red-600 font-medium">s</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-red-600 font-semibold">Expirado</div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
         
         <div className={`pt-4 border-t ${isCombo ? 'border-purple-200' : 'border-amber-200'}`}>
@@ -1502,61 +1749,6 @@ export default function PackagesPage() {
               )}
             </section>
 
-            {/* Bundles Section - Client (only show if there are bundles) */}
-            {bundles.length > 0 && (
-              <section>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2 bg-gradient-to-br from-amber-100 to-orange-100 rounded-lg">
-                    <Gift className="h-6 w-6 text-amber-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">Bundles de Renovación</h2>
-                    <p className="text-sm text-gray-500">
-                      Ahorra con paquetes multi-mes
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Combo Bundles */}
-                {comboBundles.length > 0 && (
-                  <div className="mb-6">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-purple-500" />
-                      Bundles Combo (Grupal + Privado)
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {comboBundles.map((bundle, index) => (
-                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Group Bundles */}
-                {groupBundles.length > 0 && (
-                  <div className="mb-6">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Bundles Grupales</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {groupBundles.map((bundle, index) => (
-                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Private Bundles */}
-                {privateBundles.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Bundles Privados</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {privateBundles.map((bundle, index) => (
-                        <ClientBundleCard key={bundle.id} bundle={bundle} index={index} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </section>
-            )}
           </>
         )}
 
@@ -1747,7 +1939,15 @@ export default function PackagesPage() {
                         <input
                           type="date"
                           value={packageForm.live_from}
-                          onChange={(e) => setPackageForm({ ...packageForm, live_from: e.target.value })}
+                          onChange={(e) => {
+                            const newLiveFrom = e.target.value
+                            // If setting live_from, and live_until is set but no live_from, force active
+                            let updates: any = { live_from: newLiveFrom }
+                            if (newLiveFrom && packageForm.live_until && !packageForm.live_from) {
+                              updates.is_active = true
+                            }
+                            setPackageForm({ ...packageForm, ...updates })
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                       </div>
@@ -1756,32 +1956,60 @@ export default function PackagesPage() {
                         <input
                           type="date"
                           value={packageForm.live_until}
-                          onChange={(e) => setPackageForm({ ...packageForm, live_until: e.target.value })}
+                          onChange={(e) => {
+                            const newLiveUntil = e.target.value
+                            let updates: any = { live_until: newLiveUntil }
+                            
+                            // If setting live_until without live_from, force active
+                            if (newLiveUntil && !packageForm.live_from) {
+                              updates.is_active = true
+                            }
+                            
+                            setPackageForm({ ...packageForm, ...updates })
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
+                        {packageForm.live_until && !packageForm.live_from && (
+                          <p className="text-xs text-amber-600 mt-1">⚠️ Se activará automáticamente hasta esta fecha</p>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Status toggles */}
-                  <div className="flex gap-6">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                  {/* Status toggle */}
+                  <div>
+                    <label className={`flex items-center gap-2 ${shouldDisableActiveCheckbox(packageForm.live_from, packageForm.live_until) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                       <input
                         type="checkbox"
                         checked={packageForm.is_active}
-                        onChange={(e) => setPackageForm({ ...packageForm, is_active: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        disabled={shouldDisableActiveCheckbox(packageForm.live_from, packageForm.live_until)}
+                        onChange={(e) => {
+                          const newIsActive = e.target.checked
+                          let updates: any = { is_active: newIsActive }
+                          
+                          // If setting active and live_from has passed, clear live_from
+                          if (newIsActive && packageForm.live_from && isDateInPast(packageForm.live_from)) {
+                            updates.live_from = ''
+                          }
+                          
+                          setPackageForm({ ...packageForm, ...updates })
+                        }}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
                       />
-                      <span className="text-sm text-gray-700">Paquete activo</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={packageForm.is_live}
-                        onChange={(e) => setPackageForm({ ...packageForm, is_live: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">Visible para clientes</span>
+                      <span className="text-sm text-gray-700">
+                        Paquete activo (visible para clientes)
+                        {shouldDisableActiveCheckbox(packageForm.live_from, packageForm.live_until) && (
+                          <span className="text-xs text-amber-600 ml-1">
+                            {packageForm.live_from && isDateInFuture(packageForm.live_from) 
+                              ? '(se activará automáticamente)' 
+                              : packageForm.live_until && isDateInPast(packageForm.live_until)
+                              ? '(expirado)'
+                              : packageForm.live_from || packageForm.live_until
+                              ? '(controlado por fechas)'
+                              : ''}
+                        </span>
+                        )}
+                        </span>
                     </label>
                   </div>
                 </div>
@@ -2166,7 +2394,15 @@ export default function PackagesPage() {
                         <input
                           type="date"
                           value={bundleForm.live_from}
-                          onChange={(e) => setBundleForm({ ...bundleForm, live_from: e.target.value })}
+                          onChange={(e) => {
+                            const newLiveFrom = e.target.value
+                            // If setting live_from, and live_until is set but no live_from, force active
+                            let updates: any = { live_from: newLiveFrom }
+                            if (newLiveFrom && bundleForm.live_until && !bundleForm.live_from) {
+                              updates.is_active = true
+                            }
+                            setBundleForm({ ...bundleForm, ...updates })
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                         />
                       </div>
@@ -2175,23 +2411,60 @@ export default function PackagesPage() {
                         <input
                           type="date"
                           value={bundleForm.live_until}
-                          onChange={(e) => setBundleForm({ ...bundleForm, live_until: e.target.value })}
+                          onChange={(e) => {
+                            const newLiveUntil = e.target.value
+                            let updates: any = { live_until: newLiveUntil }
+                            
+                            // If setting live_until without live_from, force active
+                            if (newLiveUntil && !bundleForm.live_from) {
+                              updates.is_active = true
+                            }
+                            
+                            setBundleForm({ ...bundleForm, ...updates })
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                         />
+                        {bundleForm.live_until && !bundleForm.live_from && (
+                          <p className="text-xs text-amber-600 mt-1">⚠️ Se activará automáticamente hasta esta fecha</p>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {/* Status toggle */}
                   <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className={`flex items-center gap-2 ${shouldDisableActiveCheckbox(bundleForm.live_from, bundleForm.live_until) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                       <input
                         type="checkbox"
                         checked={bundleForm.is_active}
-                        onChange={(e) => setBundleForm({ ...bundleForm, is_active: e.target.checked })}
-                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                        disabled={shouldDisableActiveCheckbox(bundleForm.live_from, bundleForm.live_until)}
+                        onChange={(e) => {
+                          const newIsActive = e.target.checked
+                          let updates: any = { is_active: newIsActive }
+                          
+                          // If setting active and live_from has passed, clear live_from
+                          if (newIsActive && bundleForm.live_from && isDateInPast(bundleForm.live_from)) {
+                            updates.live_from = ''
+                          }
+                          
+                          setBundleForm({ ...bundleForm, ...updates })
+                        }}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 disabled:opacity-50"
                       />
-                      <span className="text-sm text-gray-700">Bundle activo (visible para clientes)</span>
+                      <span className="text-sm text-gray-700">
+                        Bundle activo (visible para clientes)
+                        {shouldDisableActiveCheckbox(bundleForm.live_from, bundleForm.live_until) && (
+                          <span className="text-xs text-amber-600 ml-1">
+                            {bundleForm.live_from && isDateInFuture(bundleForm.live_from) 
+                              ? '(se activará automáticamente)' 
+                              : bundleForm.live_until && isDateInPast(bundleForm.live_until)
+                              ? '(expirado)'
+                              : bundleForm.live_from || bundleForm.live_until
+                              ? '(controlado por fechas)'
+                              : ''}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   </div>
                 </div>

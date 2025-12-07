@@ -1,23 +1,27 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 
 export default function HomePage() {
+  const router = useRouter()
+  
   useEffect(() => {
     // Redirect logic
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('token')
       const target = token ? '/dashboard' : '/login'
       
+      // Use Next.js router for reliable redirects in production
       // Redirect after short delay to show loading state
       const timer = setTimeout(() => {
-        window.location.href = target
-      }, 800)
+        router.push(target)
+      }, 300)
 
       return () => clearTimeout(timer)
     }
-  }, [])
+  }, [router])
 
   // Render visible content with logo and animated spinner
   return (

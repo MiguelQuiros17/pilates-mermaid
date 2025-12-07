@@ -129,7 +129,7 @@ export default function DashboardPage() {
         }),
         fetch(`${API_BASE_URL}/api/users/${userId}/class-counts`, {
           headers: { 'Authorization': `Bearer ${token}` }
-        })
+      })
       ])
 
       if (classesRes.ok) {
