@@ -1112,7 +1112,7 @@ app.post('/api/auth/reset-password', preserveOriginalEmail, [
 })
 
 // User management endpoints
-app.get('/api/users', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/users', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { role } = req.query
     const users = await database.getAllUsers(role)
@@ -1188,7 +1188,7 @@ app.get('/api/users/clients', requireAuth, requireRole(['admin', 'coach']), asyn
 })
 
 // Get all coaches (admin only)
-app.get('/api/users/coaches', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/users/coaches', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const allUsers = await database.all('SELECT * FROM users ORDER BY created_at DESC', [])
     const coaches = allUsers.filter(user => user.role && user.role.toLowerCase() === 'coach')
@@ -1657,7 +1657,7 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
 })
 
 // Delete user (hard delete with related data)
-app.delete('/api/users/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.delete('/api/users/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
 
@@ -1725,7 +1725,7 @@ app.post('/api/whatsapp/generate-url', [
 })
 
 // Dashboard stats endpoint
-app.get('/api/dashboard/stats', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const users = await database.getAllUsers()
     const clients = users.filter(u => u.role === 'cliente')
@@ -1901,7 +1901,7 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin']), async (req,
 })
 
 // Role assignments management endpoints (Admin only)
-app.get('/api/admin/role-assignments', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
     const dataDir = path.dirname(roleAssignmentsPath)
@@ -1951,7 +1951,7 @@ app.get('/api/admin/role-assignments', requireAuth, requireRole(['admin']), asyn
   }
 })
 
-app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin']), preserveOriginalEmail, [
+app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coach']), preserveOriginalEmail, [
   body('email').custom((value) => {
     if (!value || typeof value !== 'string') {
       throw new Error('Email inválido')
@@ -2198,7 +2198,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin']), pre
   }
 })
 
-app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin']), [
+app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin', 'coach']), [
   body('role').isIn(['admin', 'coach', 'cliente']).withMessage('Rol inválido')
 ], async (req, res) => {
   try {
@@ -2282,7 +2282,7 @@ app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin']
   }
 })
 
-app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin']), async (req, res) => {
+app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { email } = req.params
     const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
@@ -2370,7 +2370,7 @@ app.get('/api/packages', requireAuth, async (req, res) => {
 })
 
 // Create package (admin)
-app.post('/api/packages', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { name, type, classes_included, price, validity_months, category, description, is_live, live_from, live_until, is_active, original_price, sale_price } = req.body
 
@@ -2409,7 +2409,7 @@ app.post('/api/packages', requireAuth, requireRole(['admin']), async (req, res) 
 })
 
 // Update package (admin)
-app.put('/api/packages/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.put('/api/packages/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const updates = req.body || {}
@@ -2433,7 +2433,7 @@ app.put('/api/packages/:id', requireAuth, requireRole(['admin']), async (req, re
 })
 
 // Delete (soft) package (admin)
-app.delete('/api/packages/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.delete('/api/packages/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const pkg = await database.deletePackage(id)
@@ -2592,7 +2592,7 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
 })
 
 // Create package bundle (admin)
-app.post('/api/package-bundles', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/package-bundles', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { name, description, package_id, group_package_id, private_package_id, months_included, group_months_included, private_months_included, price, is_live, live_from, live_until, is_active } = req.body
 
@@ -2643,7 +2643,7 @@ app.post('/api/package-bundles', requireAuth, requireRole(['admin']), async (req
 })
 
 // Update package bundle (admin)
-app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const updates = req.body || {}
@@ -2665,7 +2665,7 @@ app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (
 })
 
 // Delete package bundle (admin) - hard delete
-app.delete('/api/package-bundles/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.delete('/api/package-bundles/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const bundle = await database.deletePackageBundle(id)
@@ -2925,7 +2925,7 @@ app.post('/api/classes/:id/attendance/remove', requireAuth, requireRole(['admin'
 })
 
 // Get user attendance record (admin only)
-app.get('/api/users/:id/attendance-record', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/users/:id/attendance-record', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     
@@ -2966,7 +2966,7 @@ app.get('/api/my-attendance', requireAuth, async (req, res) => {
 })
 
 // Assign package to client (admin only)
-app.post('/api/packages/assign', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/packages/assign', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { clientId, packageId, renewalMonths, overrideNegativeBalance } = req.body
 
@@ -3143,7 +3143,7 @@ app.get('/api/users/:id/class-counts', requireAuth, requireRole(['admin', 'coach
 })
 
 // Update user class counts (admin only)
-app.post('/api/users/:id/update-class-counts', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/users/:id/update-class-counts', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { private_classes_remaining, group_classes_remaining } = req.body
@@ -3190,7 +3190,7 @@ app.post('/api/users/:id/update-class-counts', requireAuth, requireRole(['admin'
 })
 
 // Update package auto-renew (admin only)
-app.put('/api/packages/:id/auto-renew', requireAuth, requireRole(['admin']), async (req, res) => {
+app.put('/api/packages/:id/auto-renew', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { auto_renew } = req.body
@@ -3248,7 +3248,7 @@ app.get('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (re
   }
 })
 
-app.post('/api/payments', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { date, concept, amount, type, method, status, client_name, coach_name, description } = req.body
 
@@ -3298,7 +3298,7 @@ app.post('/api/payments', requireAuth, requireRole(['admin']), async (req, res) 
   }
 })
 
-app.put('/api/payments/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.put('/api/payments/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { date, concept, amount, type, method, status, client_name, coach_name, description } = req.body
@@ -3674,7 +3674,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
   }
 })
 
-app.post('/api/users/:id/package-history', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { package_name, package_type, classes_included, start_date, end_date, payment_method, amount_paid, status } = req.body
@@ -3742,7 +3742,7 @@ app.post('/api/users/:id/package-history', requireAuth, requireRole(['admin']), 
 })
 
 // Deactivate an active package (optionally purging remaining classes)
-app.post('/api/package-history/:id/deactivate', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/package-history/:id/deactivate', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { behavior } = req.body
@@ -3782,7 +3782,7 @@ app.post('/api/package-history/:id/deactivate', requireAuth, requireRole(['admin
 
 
 // Update renewal months for a package
-app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { renewal_months } = req.body
@@ -3868,7 +3868,7 @@ app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['a
 })
 
 // Renew an expired package
-app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { months = 1 } = req.body
@@ -3943,7 +3943,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin']), 
 })
 
 // Cancel (expire) an active package
-app.post('/api/package-history/:id/cancel', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/package-history/:id/cancel', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     
@@ -3980,7 +3980,7 @@ app.post('/api/package-history/:id/cancel', requireAuth, requireRole(['admin']),
 })
 
 // Delete a package history entry (only expired packages)
-app.delete('/api/package-history/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.delete('/api/package-history/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
 
@@ -4149,7 +4149,7 @@ app.put('/api/users/:id/notification-settings', requireAuth, requireRole(['admin
 })
 
 // Security management endpoints (admin only)
-app.post('/api/admin/security/unblock-ip', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/admin/security/unblock-ip', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { ip } = req.body
     
@@ -4181,7 +4181,7 @@ app.post('/api/admin/security/unblock-ip', requireAuth, requireRole(['admin']), 
   }
 })
 
-app.post('/api/admin/security/clear-blocked-ips', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/admin/security/clear-blocked-ips', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     SecurityService.clearBlockedIPs()
     
@@ -4203,7 +4203,7 @@ app.post('/api/admin/security/clear-blocked-ips', requireAuth, requireRole(['adm
   }
 })
 
-app.get('/api/admin/security/blocked-ips', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/admin/security/blocked-ips', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     // Get all blocked IPs (this would need to be implemented in SecurityService)
     const blockedIPs = Array.from(SecurityService.blockedIPs.entries()).map(([ip, blockedUntil]) => ({
@@ -4226,7 +4226,7 @@ app.get('/api/admin/security/blocked-ips', requireAuth, requireRole(['admin']), 
   }
 })
 
-app.get('/api/admin/expiring-packages', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/admin/expiring-packages', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { days = 7 } = req.query
     const expiringPackages = await database.getExpiringPackages(parseInt(days))
@@ -4243,7 +4243,7 @@ app.get('/api/admin/expiring-packages', requireAuth, requireRole(['admin']), asy
 })
 
 // Send expiration notifications
-app.post('/api/admin/send-expiration-notifications', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/admin/send-expiration-notifications', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { days = 7 } = req.body
     const expiringPackages = await database.getExpiringPackages(parseInt(days))
@@ -5975,7 +5975,7 @@ app.get('/api/recurring-classes/canceled-occurrences', requireAuth, requireRole(
 })
 
 // Delete class (admin only)
-app.delete('/api/classes/:id', requireAuth, requireRole(['admin']), async (req, res) => {
+app.delete('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
 
@@ -6259,7 +6259,7 @@ app.post('/api/attendance/record', requireAuth, requireRole(['admin', 'coach']),
 })
 
 // Initialize all group classes endpoint
-app.post('/api/classes/initialize', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/classes/initialize', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     // Limpiar clases, reservas y asistencias existentes antes de recrear el calendario
     await database.run('DELETE FROM attendance')
@@ -6441,7 +6441,7 @@ app.post('/api/email/send-expiration-notification', async (req, res) => {
 })
 
 // Reports endpoint
-app.get('/api/reports', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/reports', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { startDate, endDate } = req.query
     
@@ -6543,7 +6543,7 @@ app.post('/api/email/send-expiration-notification', async (req, res) => {
 })
 
 // Coach payments endpoints
-app.get('/api/coach-payments', requireAuth, requireRole(['admin']), async (req, res) => {
+app.get('/api/coach-payments', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const payments = await database.all(`
       SELECT * FROM coach_payments 
@@ -6563,7 +6563,7 @@ app.get('/api/coach-payments', requireAuth, requireRole(['admin']), async (req, 
   }
 })
 
-app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin']), async (req, res) => {
+app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { period_start, period_end, coach_name } = req.body
     
@@ -6650,7 +6650,7 @@ app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin']), a
   }
 })
 
-app.put('/api/coach-payments/:id/mark-paid', requireAuth, requireRole(['admin']), async (req, res) => {
+app.put('/api/coach-payments/:id/mark-paid', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     
