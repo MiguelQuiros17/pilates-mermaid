@@ -89,7 +89,11 @@ export default function RegisterPage() {
       // Preparar datos para enviar al backend (excluir apellidos y confirmPassword)
       const { apellidos, confirmPassword, ...dataToSend } = formData
       
-      const response = await fetch('/api/auth/register', {
+      const registerUrl = API_BASE_URL
+        ? `${API_BASE_URL.replace(/\/$/, '')}/api/auth/register`
+        : '/api/auth/register'
+
+      const response = await fetch(registerUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -110,11 +114,10 @@ export default function RegisterPage() {
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         
-        // Redirect to dashboard using Next.js router for reliable redirects in production
+        // Redirect to dashboard; use hard navigation to avoid any stale routing state
         setIsLoading(false)
-        // Use setTimeout to ensure localStorage is written before redirect
         setTimeout(() => {
-          router.push('/dashboard')
+          window.location.replace('/dashboard')
         }, 100)
       } else {
         setIsLoading(false)

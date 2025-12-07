@@ -288,6 +288,19 @@ app.use((req, res, next) => {
   next()
 })
 
+// Helper: decode common HTML entities (escape inserts &#x27; for apostrophes)
+const decodeHtmlEntities = (str) => {
+  if (typeof str !== 'string') return str
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&#96;/g, '`')
+}
+
 // Input sanitization middleware - Skip for auth endpoints to avoid false positives
 app.use((req, res, next) => {
   // Skip aggressive sanitization for registration/login - rely on express-validator instead
@@ -2360,20 +2373,26 @@ app.get('/api/packages', requireAuth, async (req, res) => {
 app.post('/api/packages', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { name, type, classes_included, price, validity_months, category, description, is_live, live_from, live_until, is_active, original_price, sale_price } = req.body
+
+    // Decode any HTML entities introduced by sanitization
+    const safeName = decodeHtmlEntities(name)
+    const safeDescription = decodeHtmlEntities(description)
+    const safeCategory = decodeHtmlEntities(category)
+    const safeType = decodeHtmlEntities(type)
     
     if (!name || !type || !classes_included || !price || !validity_months || !category) {
       return res.status(400).json({ success: false, message: 'Faltan datos del paquete' })
     }
     
     const pkg = await database.createPackage({
-      name,
-      type,
+      name: safeName,
+      type: safeType,
       classes_included,
       price,
       validity_months,
       validity_days: validity_months * 30, // backwards compatibility
-      category,
-      description,
+      category: safeCategory,
+      description: safeDescription,
       is_live,
       live_from: live_from || null,
       live_until: live_until || null,
@@ -2394,6 +2413,16 @@ app.put('/api/packages/:id', requireAuth, requireRole(['admin']), async (req, re
   try {
     const { id } = req.params
     const updates = req.body || {}
+
+    // Decode any HTML entities introduced by sanitization
+    if (updates.name) updates.name = decodeHtmlEntities(updates.name)
+    if (updates.description) updates.description = decodeHtmlEntities(updates.description)
+
+    // Decode any HTML entities introduced by sanitization
+    if (updates.name) updates.name = decodeHtmlEntities(updates.name)
+    if (updates.description) updates.description = decodeHtmlEntities(updates.description)
+    if (updates.category) updates.category = decodeHtmlEntities(updates.category)
+    if (updates.type) updates.type = decodeHtmlEntities(updates.type)
     
     const pkg = await database.updatePackage(id, updates)
     res.json({ success: true, package: pkg })
@@ -2566,6 +2595,10 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
 app.post('/api/package-bundles', requireAuth, requireRole(['admin']), async (req, res) => {
   try {
     const { name, description, package_id, group_package_id, private_package_id, months_included, group_months_included, private_months_included, price, is_live, live_from, live_until, is_active } = req.body
+
+    // Decode any HTML entities introduced by sanitization
+    const safeName = decodeHtmlEntities(name)
+    const safeDescription = decodeHtmlEntities(description)
     
     // Need at least one package (group, private, or legacy package_id)
     if (!name || (!package_id && !group_package_id && !private_package_id) || price === undefined) {
@@ -2587,8 +2620,8 @@ app.post('/api/package-bundles', requireAuth, requireRole(['admin']), async (req
     
     // Set is_live to match is_active (they're now the same thing)
     const bundle = await database.createPackageBundle({
-      name,
-      description,
+      name: safeName,
+      description: safeDescription,
       package_id: package_id || null,
       group_package_id: group_package_id || null,
       private_package_id: private_package_id || null,

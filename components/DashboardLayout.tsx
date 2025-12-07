@@ -96,11 +96,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             return
           }
         } else {
-          // Token invalid or expired, redirect to login
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
-          router.push('/login')
-          return
+          // If verify fails, fall back to cached user instead of immediate redirect
+          if (userData) {
+            try {
+              const parsedUser = JSON.parse(userData)
+              setUser(parsedUser)
+            } catch (e) {
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              router.push('/login')
+              return
+            }
+          } else {
+            localStorage.removeItem('token')
+            localStorage.removeItem('user')
+            router.push('/login')
+            return
+          }
         }
       } catch (error) {
         console.error('Error verifying authentication:', error)
