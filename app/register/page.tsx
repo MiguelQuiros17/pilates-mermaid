@@ -91,8 +91,10 @@ export default function RegisterPage() {
       // Preparar datos para enviar al backend (excluir apellidos y confirmPassword)
       const { apellidos, confirmPassword, ...dataToSend } = formData
       
-      const registerUrl = API_BASE_URL
-        ? `${API_BASE_URL.replace(/\/$/, '')}/api/auth/register`
+      // Build register URL with runtime fallback to current origin (production proxy safety)
+      const baseUrl = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+      const registerUrl = baseUrl
+        ? `${baseUrl.replace(/\/$/, '')}/api/auth/register`
         : '/api/auth/register'
 
       const response = await fetch(registerUrl, {

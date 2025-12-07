@@ -70,8 +70,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       try {
         // Build full URL to avoid proxy issues in production
-        const verifyUrl = API_BASE_URL
-          ? `${API_BASE_URL.replace(/\/$/, '')}/api/auth/verify`
+        // Build verify URL with runtime fallback to current origin (production proxy safety)
+        const baseUrl = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+        const verifyUrl = baseUrl
+          ? `${baseUrl.replace(/\/$/, '')}/api/auth/verify`
           : '/api/auth/verify'
 
         // Verify token is valid by making a request to the backend

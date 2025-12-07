@@ -1148,8 +1148,8 @@ app.get('/api/users', requireAuth, requireRole(['admin']), async (req, res) => {
   }
 })
 
-// Get all clients (admin only)
-app.get('/api/users/clients', requireAuth, requireRole(['admin']), async (req, res) => {
+// Get all clients (admin or coach)
+app.get('/api/users/clients', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     // Fetch all users with role 'cliente' (case-insensitive matching)
     const allUsers = await database.all('SELECT * FROM users ORDER BY created_at DESC', [])
@@ -5624,8 +5624,8 @@ app.get('/api/classes/:id/client', requireAuth, requireRole(['admin', 'coach']),
   }
 })
 
-// Assign/change client for a private class
-app.post('/api/classes/:id/assign-client', requireAuth, requireRole(['admin']), async (req, res) => {
+// Assign/change client for a private class (admin or coach)
+app.post('/api/classes/:id/assign-client', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
     const { client_id } = req.body
