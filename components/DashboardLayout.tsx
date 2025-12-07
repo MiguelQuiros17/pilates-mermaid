@@ -69,8 +69,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
 
       try {
+        // Build full URL to avoid proxy issues in production
+        const verifyUrl = API_BASE_URL
+          ? `${API_BASE_URL.replace(/\/$/, '')}/api/auth/verify`
+          : '/api/auth/verify'
+
         // Verify token is valid by making a request to the backend
-        const response = await fetch('/api/auth/verify', {
+        const response = await fetch(verifyUrl, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -115,7 +120,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
 
     verifyAuth()
-  }, [router])
+  }, [router, API_BASE_URL])
 
   const loadNotifications = useCallback(async () => {
     if (!user?.id) return
