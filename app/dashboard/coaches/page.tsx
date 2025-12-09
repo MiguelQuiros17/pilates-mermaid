@@ -30,6 +30,8 @@ interface Coach {
   updated_at: string
 }
 
+import { getApiUrl } from '@/lib/utils/api'
+
 export default function CoachesPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [coaches, setCoaches] = useState<Coach[]>([])
@@ -51,7 +53,7 @@ export default function CoachesPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/users/coaches`, {
+      const response = await fetch(getApiUrl('/api/users/coaches'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -41,6 +41,8 @@ interface User {
   role: 'admin' | 'coach' | 'cliente'
 }
 
+import { getApiUrl } from '@/lib/utils/api'
+
 export default function DashboardPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -118,16 +120,16 @@ export default function DashboardPage() {
 
       // Load all client data in parallel
       const [classesRes, bookingsRes, packageRes, countsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/users/${userId}/classes`, {
+        fetch(getApiUrl(`/api/users/${userId}/classes`), {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch(`${API_BASE_URL}/api/users/${userId}/bookings`, {
+        fetch(getApiUrl(`/api/users/${userId}/bookings`), {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch(`${API_BASE_URL}/api/users/${userId}/package-history`, {
+        fetch(getApiUrl(`/api/users/${userId}/package-history`), {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch(`${API_BASE_URL}/api/users/${userId}/class-counts`, {
+        fetch(getApiUrl(`/api/users/${userId}/class-counts`), {
           headers: { 'Authorization': `Bearer ${token}` }
       })
       ])

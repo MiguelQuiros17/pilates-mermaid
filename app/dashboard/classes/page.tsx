@@ -7,6 +7,8 @@ import DashboardLayout from '@/components/DashboardLayout'
 import { Class, User } from '@/types'
 import { useTranslation } from '@/hooks/useTranslation'
 
+import { getApiUrl } from '@/lib/utils/api'
+
 export default function ClassesPage(): JSX.Element {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const { language } = useTranslation()
@@ -231,7 +233,7 @@ export default function ClassesPage(): JSX.Element {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/users/clients`, {
+      const response = await fetch(getApiUrl('/api/users/clients'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -257,7 +259,7 @@ export default function ClassesPage(): JSX.Element {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/users/coaches`, {
+      const response = await fetch(getApiUrl('/api/users/coaches'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -281,7 +283,7 @@ export default function ClassesPage(): JSX.Element {
     try {
       const token = localStorage.getItem('token')
       if (!user?.id) return
-      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/bookings`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.id}/bookings`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -299,7 +301,7 @@ export default function ClassesPage(): JSX.Element {
     try {
       const token = localStorage.getItem('token')
       if (!user?.id || user?.role !== 'cliente') return
-      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/class-counts`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.id}/class-counts`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -320,7 +322,7 @@ export default function ClassesPage(): JSX.Element {
     try {
       const token = localStorage.getItem('token')
       if (!user?.id || user.role !== 'cliente') return
-      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}/classes`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.id}/classes`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -342,7 +344,7 @@ export default function ClassesPage(): JSX.Element {
       const token = localStorage.getItem('token')
       if (!token || user?.role !== 'cliente') return
       
-      const response = await fetch(`${API_BASE_URL}/api/my-attendance`, {
+      const response = await fetch(getApiUrl('/api/my-attendance'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       
@@ -367,8 +369,8 @@ export default function ClassesPage(): JSX.Element {
       if (!token) return
       
       const url = occurrenceDate 
-        ? `${API_BASE_URL}/api/classes/${cls.id}/attendance?occurrence_date=${occurrenceDate}`
-        : `${API_BASE_URL}/api/classes/${cls.id}/attendance`
+        ? getApiUrl(`/api/classes/${cls.id}/attendance?occurrence_date=${occurrenceDate}`)
+        : getApiUrl(`/api/classes/${cls.id}/attendance`)
       
       const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -405,7 +407,7 @@ export default function ClassesPage(): JSX.Element {
       const counts: { [classId: string]: { [occurrenceDate: string]: number } } = {}
       await Promise.all(recurringClasses.map(async (cls) => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/recurring-classes/${cls.id}/booking-counts`, {
+          const response = await fetch(getApiUrl(`/api/recurring-classes/${cls.id}/booking-counts`), {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -440,7 +442,7 @@ export default function ClassesPage(): JSX.Element {
         status
       }))
       
-      const response = await fetch(`${API_BASE_URL}/api/classes/${attendanceClass.id}/attendance/bulk`, {
+      const response = await fetch(getApiUrl(`/api/classes/${attendanceClass.id}/attendance/bulk`), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -481,7 +483,7 @@ export default function ClassesPage(): JSX.Element {
       
       const occurrenceDate = (attendanceClass as any).occurrence_date || null
       
-      const response = await fetch(`${API_BASE_URL}/api/classes/${attendanceClass.id}/attendance/remove`, {
+      const response = await fetch(getApiUrl(`/api/classes/${attendanceClass.id}/attendance/remove`), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -522,7 +524,7 @@ export default function ClassesPage(): JSX.Element {
       const token = localStorage.getItem('token')
       if (!token || user?.role !== 'admin') return
       
-      const response = await fetch(`${API_BASE_URL}/api/users/${userId}/attendance-record`, {
+      const response = await fetch(getApiUrl(`/api/users/${userId}/attendance-record`), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       
@@ -562,7 +564,7 @@ export default function ClassesPage(): JSX.Element {
       const token = localStorage.getItem('token')
       if (!token) return
       
-      const response = await fetch(`${API_BASE_URL}/api/recurring-classes/canceled-occurrences`, {
+      const response = await fetch(getApiUrl('/api/recurring-classes/canceled-occurrences'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -911,7 +913,7 @@ export default function ClassesPage(): JSX.Element {
       try {
         const token = localStorage.getItem('token')
         if (token) {
-          const response = await fetch(`${API_BASE_URL}/api/users/coaches`, {
+          const response = await fetch(getApiUrl('/api/users/coaches'), {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -969,7 +971,7 @@ export default function ClassesPage(): JSX.Element {
         if (classType === 'private' && privateClassClientId) {
           const client = clients.find(c => c.id === privateClassClientId)
           if (client) {
-            const checkResponse = await fetch(`${API_BASE_URL}/api/users/${privateClassClientId}/class-counts`, {
+            const checkResponse = await fetch(getApiUrl(`/api/users/${privateClassClientId}/class-counts`), {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
@@ -997,7 +999,7 @@ export default function ClassesPage(): JSX.Element {
           for (const clientId of groupClassClientIds) {
             const client = clients.find(c => c.id === clientId)
             if (client) {
-              const checkResponse = await fetch(`${API_BASE_URL}/api/users/${clientId}/class-counts`, {
+              const checkResponse = await fetch(getApiUrl(`/api/users/${clientId}/class-counts`), {
                 headers: {
                   'Authorization': `Bearer ${token}`
                 }
@@ -1024,7 +1026,7 @@ export default function ClassesPage(): JSX.Element {
 
       const classData = await getClassCreationData()
       console.log('[Create Class] isPublic state:', isPublic, 'classData.is_public:', classData.is_public, 'full classData:', classData)
-      const response = await fetch(`${API_BASE_URL}/api/classes`, {
+      const response = await fetch(getApiUrl('/api/classes'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1106,7 +1108,7 @@ export default function ClassesPage(): JSX.Element {
       if (classIsRecurring && occDate) {
         try {
           const token = localStorage.getItem('token')
-          const response = await fetch(`${API_BASE_URL}/api/classes/${classToEdit.id}/bookings?occurrence_date=${occDate}`, {
+          const response = await fetch(getApiUrl(`/api/classes/${classToEdit.id}/bookings?occurrence_date=${occDate}`), {
             headers: { 'Authorization': `Bearer ${token}` }
           })
           if (response.ok) {
@@ -1171,7 +1173,7 @@ export default function ClassesPage(): JSX.Element {
       try {
         const token = localStorage.getItem('token')
         if (token) {
-          const response = await fetch(`${API_BASE_URL}/api/classes/${classToEdit.id}/client`, {
+          const response = await fetch(getApiUrl(`/api/classes/${classToEdit.id}/client`), {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -1252,7 +1254,7 @@ export default function ClassesPage(): JSX.Element {
       if (isRecurring && editOccurrenceDate) {
         console.log('[handleSaveGroupClass] Updating occurrence bookings for:', editOccurrenceDate, 'clients:', groupClassClientIds)
         // Update attendees for this specific occurrence
-        const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}/occurrence-bookings`, {
+        const response = await fetch(getApiUrl(`/api/classes/${editingClass.id}/occurrence-bookings`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1303,7 +1305,7 @@ export default function ClassesPage(): JSX.Element {
         }
         
         // Update main class properties
-        const classResponse = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
+        const classResponse = await fetch(getApiUrl(`/api/classes/${editingClass.id}`), {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -1360,7 +1362,7 @@ export default function ClassesPage(): JSX.Element {
       console.log('Saving group class updates:', updates)
       console.log('[handleSaveGroupClass] isPublic state:', isPublic, 'sending:', updates.is_public)
 
-      const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
+      const response = await fetch(getApiUrl(`/api/classes/${editingClass.id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1443,7 +1445,7 @@ export default function ClassesPage(): JSX.Element {
       console.log('Saving private class updates:', updates)
 
       // Update the class basic info
-      const response = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}`, {
+      const response = await fetch(getApiUrl(`/api/classes/${editingClass.id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1461,7 +1463,7 @@ export default function ClassesPage(): JSX.Element {
 
       // If client changed, update the client assignment
       if (editClientId && editClientId !== originalClientId) {
-        const assignResponse = await fetch(`${API_BASE_URL}/api/classes/${editingClass.id}/assign-client`, {
+        const assignResponse = await fetch(getApiUrl(`/api/classes/${editingClass.id}/assign-client`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1512,7 +1514,7 @@ export default function ClassesPage(): JSX.Element {
       if (isRecurringOccurrence) {
         // Cancel specific occurrence
         const occurrenceDate = (cls as any).occurrence_date
-        const response = await fetch(`${API_BASE_URL}/api/recurring-classes/${cls.id}/cancel-occurrence`, {
+        const response = await fetch(getApiUrl(`/api/recurring-classes/${cls.id}/cancel-occurrence`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1543,7 +1545,7 @@ export default function ClassesPage(): JSX.Element {
         loadCanceledOccurrences()
       } else {
         // Cancel entire class (non-recurring or entire recurring class)
-      const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}`, {
+      const response = await fetch(getApiUrl(`/api/classes/${cls.id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1585,7 +1587,7 @@ export default function ClassesPage(): JSX.Element {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}/reinstate`, {
+      const response = await fetch(getApiUrl(`/api/classes/${cls.id}/reinstate`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1669,7 +1671,7 @@ export default function ClassesPage(): JSX.Element {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/classes/${cls.id}`, {
+      const response = await fetch(getApiUrl(`/api/classes/${cls.id}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
+import { getApiUrl } from '@/lib/utils/api'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -64,7 +65,7 @@ export default function ReportsPage() {
         return
       }
 
-      let url = '${API_BASE_URL}/api/reports'
+      let url = getApiUrl('/api/reports')
       const params = new URLSearchParams()
       
       if (selectedPeriod === 'custom' && dateRange.start && dateRange.end) {

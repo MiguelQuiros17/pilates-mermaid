@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
+import { getApiUrl } from '@/lib/utils/api'
 import { 
   Settings, 
   User, 
@@ -93,7 +94,7 @@ export default function SettingsPage() {
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
       
-      const response = await fetch(`${API_BASE_URL}/api/users/${user.id}`, {
+      const response = await fetch(getApiUrl(`/api/users/${user.id}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

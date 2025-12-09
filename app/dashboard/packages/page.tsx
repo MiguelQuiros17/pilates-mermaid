@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
 import WhatsAppButton, { WhatsAppTemplates } from '@/components/WhatsAppButton'
+import { getApiUrl } from '@/lib/utils/api'
 
 interface PackageType {
     id: string
@@ -203,7 +204,7 @@ export default function PackagesPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const countsResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/class-counts`, {
+      const countsResponse = await fetch(getApiUrl(`/api/users/${userId}/class-counts`), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (countsResponse.ok) {
@@ -214,7 +215,7 @@ export default function PackagesPage() {
         })
       }
 
-      const packageResponse = await fetch(`${API_BASE_URL}/api/users/${userId}/package-history`, {
+      const packageResponse = await fetch(getApiUrl(`/api/users/${userId}/package-history`), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (packageResponse.ok) {
@@ -247,7 +248,7 @@ export default function PackagesPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/packages?includeInactive=1&includeScheduled=1`, {
+      const response = await fetch(getApiUrl('/api/packages?includeInactive=1&includeScheduled=1'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       
@@ -305,7 +306,7 @@ export default function PackagesPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/package-bundles`, {
+      const response = await fetch(getApiUrl('/api/package-bundles'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       
@@ -444,8 +445,8 @@ export default function PackagesPage() {
     try {
       const token = localStorage.getItem('token')
       const url = editingPackage 
-        ? `${API_BASE_URL}/api/packages/${editingPackage.id}`
-        : `${API_BASE_URL}/api/packages`
+        ? getApiUrl(`/api/packages/${editingPackage.id}`)
+        : getApiUrl('/api/packages')
       
       // Sync is_live with is_active (they're now the same thing)
       const body = {
@@ -485,7 +486,7 @@ export default function PackagesPage() {
 
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`${API_BASE_URL}/api/packages/${id}`, {
+      const response = await fetch(getApiUrl(`/api/packages/${id}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -527,8 +528,8 @@ export default function PackagesPage() {
     try {
       const token = localStorage.getItem('token')
       const url = editingBundle 
-        ? `${API_BASE_URL}/api/package-bundles/${editingBundle.id}`
-        : `${API_BASE_URL}/api/package-bundles`
+        ? getApiUrl(`/api/package-bundles/${editingBundle.id}`)
+        : getApiUrl('/api/package-bundles')
       
       // Ensure is_active is always included (even if false)
       const payload = {
@@ -569,7 +570,7 @@ export default function PackagesPage() {
     
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`${API_BASE_URL}/api/package-bundles/${id}`, {
+      const response = await fetch(getApiUrl(`/api/package-bundles/${id}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })

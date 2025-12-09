@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '@/components/DashboardLayout'
+import { getApiUrl } from '@/lib/utils/api'
 import { 
   CreditCard, 
   DollarSign, 
@@ -236,7 +237,7 @@ export default function PaymentsPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/coach-payments/${paymentId}/mark-paid`, {
+      const response = await fetch(getApiUrl(`/api/coach-payments/${paymentId}/mark-paid`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`

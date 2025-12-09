@@ -22,6 +22,7 @@ import {
   DollarSign
 } from 'lucide-react'
 import LanguageSelector from './LanguageSelector'
+import { getApiUrl } from '@/lib/utils/api'
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -161,13 +162,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       if (!token) return
 
       // Load notifications and bookings in parallel
-      // Use relative URLs when API_BASE_URL is empty (same origin)
-      const notificationsUrl = API_BASE_URL 
-        ? `${API_BASE_URL.replace(/\/$/, '')}/api/users/${user.id}/notifications`
-        : `/api/users/${user.id}/notifications`
-      const bookingsUrl = API_BASE_URL
-        ? `${API_BASE_URL.replace(/\/$/, '')}/api/users/${user.id}/bookings`
-        : `/api/users/${user.id}/bookings`
+      const notificationsUrl = getApiUrl(`/api/users/${user.id}/notifications`)
+      const bookingsUrl = getApiUrl(`/api/users/${user.id}/bookings`)
       
       const [notificationsRes, bookingsRes] = await Promise.all([
         fetch(notificationsUrl, {

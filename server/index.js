@@ -939,12 +939,18 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
       VALUES (?, ?, ?, ?, 0, datetime('now'))
     `, [tokenId, user.id, resetToken, expiresAt.toISOString()])
 
-      // Send password reset email
+      // Send password reset email with timeout
     try {
-      const emailResult = await emailService.sendPasswordReset(user.correo, user.nombre, resetToken)
+      // Add overall timeout for the email operation (25 seconds to be under the 30s frontend timeout)
+      const emailPromise = emailService.sendPasswordReset(user.correo, user.nombre, resetToken)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Email operation timeout')), 25000)
+      )
+
+      const emailResult = await Promise.race([emailPromise, timeoutPromise])
       
-      if (!emailResult.success) {
-        console.error('Email service returned failure:', emailResult.error)
+      if (!emailResult || !emailResult.success) {
+        console.error('Email service returned failure:', emailResult?.error || 'Unknown error')
         // Delete token if email fails
         await database.run('DELETE FROM password_reset_tokens WHERE id = ?', [tokenId])
         
@@ -952,7 +958,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         SecurityService.logSecurityEvent('PASSWORD_RESET_EMAIL_FAILED', {
           userId: user.id,
           email: user.correo,
-          error: emailResult.error,
+          error: emailResult?.error || 'Unknown error',
           ip: clientIP
         })
         
@@ -986,9 +992,13 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         ip: clientIP
       })
       
+      // Check if it's a timeout error
+      const isTimeout = emailError.message && emailError.message.includes('timeout')
       res.status(500).json({
         success: false,
-        message: 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
+        message: isTimeout 
+          ? 'El envío de email está tardando demasiado. Por favor, verifica la configuración de email o intenta más tarde.'
+          : 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
       })
     }
   } catch (error) {

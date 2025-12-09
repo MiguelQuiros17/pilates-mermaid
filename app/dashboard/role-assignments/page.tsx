@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { UserPlus, Trash2, Save, AlertCircle, CheckCircle, Mail, Shield } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { getApiUrl } from '@/lib/utils/api'
 
 interface RoleAssignment {
   email: string
@@ -50,7 +51,7 @@ export default function RoleAssignmentsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/admin/role-assignments`, {
+      const response = await fetch(getApiUrl('/api/admin/role-assignments'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -93,7 +94,7 @@ export default function RoleAssignmentsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/admin/role-assignments`, {
+      const response = await fetch(getApiUrl('/api/admin/role-assignments'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -153,7 +154,7 @@ export default function RoleAssignmentsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/admin/role-assignments`, {
+      const response = await fetch(getApiUrl('/api/admin/role-assignments'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -203,7 +204,7 @@ export default function RoleAssignmentsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/admin/role-assignments/${encodeURIComponent(email)}`, {
+      const response = await fetch(getApiUrl(`/api/admin/role-assignments/${encodeURIComponent(email)}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

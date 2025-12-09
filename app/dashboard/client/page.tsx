@@ -20,23 +20,7 @@ import {
 import DashboardLayout from '@/components/DashboardLayout'
 import WhatsAppButton from '@/components/WhatsAppButton'
 import { useTranslation } from '@/hooks/useTranslation'
-
-// Configuración de API URL
-const API_URL =
-    process.env.NEXT_PUBLIC_API_URL ||
-    (typeof window !== 'undefined' ? window.location.origin : '')
-
-// Helper para construir URLs de API
-const getApiUrl = (path: string) => {
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-        return path
-    }
-    if (path.startsWith('/api')) {
-        return path // Rutas relativas en producción
-    }
-    const baseUrl = API_URL || ''
-    return baseUrl ? `${baseUrl}${path.startsWith('/') ? path : `/${path}`}` : path
-}
+import { getApiUrl } from '@/lib/utils/api'
 
 interface User {
     id: string

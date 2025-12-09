@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { getApiUrl } from '@/lib/utils/api'
 
 interface Client {
   id: string
@@ -49,7 +50,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
     try {
       const token = localStorage.getItem('token')
       if (!token) return
-      const response = await fetch(`${API_BASE_URL}/api/packages?scope=admin&includeInactive=0&includeScheduled=0`, {
+      const response = await fetch(getApiUrl('/api/packages?scope=admin&includeInactive=0&includeScheduled=0'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
@@ -85,7 +86,7 @@ function PackageAssignmentSection({ clientId, onPackageAdded }: { clientId: stri
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/packages/assign`, {
+      const response = await fetch(getApiUrl('/api/packages/assign'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -284,7 +285,7 @@ export default function ClientsPage() {
     try {
       const token = localStorage.getItem('token')
       if (!token) return
-      const response = await fetch(`${API_BASE_URL}/api/packages?scope=admin`, {
+      const response = await fetch(getApiUrl('/api/packages?scope=admin'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
@@ -424,7 +425,7 @@ export default function ClientsPage() {
         return
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/users/${clientToDelete.id}`, {
+      const response = await fetch(getApiUrl(`/api/users/${clientToDelete.id}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -451,7 +452,7 @@ export default function ClientsPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(`${API_BASE_URL}/api/users/${client.id}/package-history`, {
+      const response = await fetch(getApiUrl(`/api/users/${client.id}/package-history`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -467,7 +468,7 @@ export default function ClientsPage() {
         setShowPackageModal(true)
 
         // Load class counts
-        const countsResponse = await fetch(`${API_BASE_URL}/api/users/${client.id}/class-counts`, {
+        const countsResponse = await fetch(getApiUrl(`/api/users/${client.id}/class-counts`), {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -964,7 +965,7 @@ export default function ClientsPage() {
                   return
                 }
 
-                const response = await fetch(`${API_BASE_URL}/api/users/${selectedClient.id}`, {
+                const response = await fetch(getApiUrl(`/api/users/${selectedClient.id}`), {
                   method: 'PUT',
                   headers: {
                     'Content-Type': 'application/json',
@@ -1189,7 +1190,7 @@ export default function ClientsPage() {
                     const token = localStorage.getItem('token')
                     if (!token || !selectedClient) return
                     try {
-                      const response = await fetch(`${API_BASE_URL}/api/users/${selectedClient.id}/update-class-counts`, {
+                      const response = await fetch(getApiUrl(`/api/users/${selectedClient.id}/update-class-counts`), {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
@@ -1377,7 +1378,7 @@ export default function ClientsPage() {
                           onClick={async () => {
                             try {
                                           const token = localStorage.getItem('token')
-                                          const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}/update-renewal`, {
+                                          const response = await fetch(getApiUrl(`/api/package-history/${pkg.id}/update-renewal`), {
                                             method: 'POST',
                                 headers: {
                                               'Authorization': `Bearer ${token}`,
@@ -1440,7 +1441,7 @@ export default function ClientsPage() {
                                     if (confirm('¿Estás seguro de que quieres cancelar este paquete activo?')) {
                                       try {
                                         const token = localStorage.getItem('token')
-                                        const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}/cancel`, {
+                                        const response = await fetch(getApiUrl(`/api/package-history/${pkg.id}/cancel`), {
                                           method: 'POST',
                                           headers: {
                                             'Authorization': `Bearer ${token}`,
@@ -1472,7 +1473,7 @@ export default function ClientsPage() {
                                       if (confirm('¿Renovar este paquete por 1 mes más?')) {
                                         try {
                                           const token = localStorage.getItem('token')
-                                          const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}/renew`, {
+                                          const response = await fetch(getApiUrl(`/api/package-history/${pkg.id}/renew`), {
                                             method: 'POST',
                                             headers: {
                                               'Authorization': `Bearer ${token}`,
@@ -1502,7 +1503,7 @@ export default function ClientsPage() {
                                       if (confirm('¿Estás seguro de que quieres eliminar este paquete del historial?')) {
                                         try {
                                           const token = localStorage.getItem('token')
-                                          const response = await fetch(`${API_BASE_URL}/api/package-history/${pkg.id}`, {
+                                          const response = await fetch(getApiUrl(`/api/package-history/${pkg.id}`), {
                                             method: 'DELETE',
                                             headers: {
                                               'Authorization': `Bearer ${token}`

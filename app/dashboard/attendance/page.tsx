@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { CheckCircle, XCircle, Clock, Users, Calendar, User, AlertCircle } from 'lucide-react'
 import DashboardLayout from '@/components/DashboardLayout'
+import { getApiUrl } from '@/lib/utils/api'
 
 interface Class {
   id: string
@@ -68,7 +69,7 @@ export default function AttendancePage() {
       const firstDayStr = firstDayOfMonth.toISOString().split('T')[0]
       const lastDayStr = lastDayOfMonth.toISOString().split('T')[0]
       
-        const response = await fetch(`${API_BASE_URL}/api/classes?filter=current_month`, {
+        const response = await fetch(getApiUrl('/api/classes?filter=current_month'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -94,7 +95,7 @@ export default function AttendancePage() {
   const loadClassBookings = async (classId: string) => {
     try {
       const token = localStorage.getItem('token')
-        const response = await fetch(`${API_BASE_URL}/api/classes/${classId}/bookings`, {
+        const response = await fetch(getApiUrl(`/api/classes/${classId}/bookings`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
