@@ -3,13 +3,14 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
 // Define CSP once so it's easy to tweak later
+// Note: 'self' in connect-src allows connections to the same origin (including custom domains)
 const ContentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline' 'unsafe-eval';
   style-src 'self' 'unsafe-inline';
   img-src 'self' data: blob: https://pilatesmermaid.com https://www.pilatesmermaid.com;
   font-src 'self' data:;
-  connect-src 'self' https://pilates-mermaid-production.up.railway.app http://localhost:3001 'self';
+  connect-src 'self' http://localhost:3001 http://127.0.0.1:3001;
   frame-ancestors 'none';
   base-uri 'self';
 `.replace(/\s{2,}/g, ' ').trim()

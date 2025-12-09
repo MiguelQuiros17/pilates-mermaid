@@ -1,0 +1,385 @@
+@page "/VendorConnections/translation"
+
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Infrastructure
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@using System.Text
+@using Aloha.Domain.Customization
+@using System.ComponentModel.DataAnnotations
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin")]
+
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject UserManager<AdminUser> UserManager
+@inject IAdminActivityService adminActivityService
+@inject AuthenticationStateProvider authStateProvider
+@inject ITranslationHelper TranslationHelper
+@rendermode InteractiveServer
+
+<h3>Translation API Configuration</h3>
+
+<div>
+    <EditForm class="pb-3" Context="editContext" EditContext="editContext" FormName="EditTranslationSettings" OnValidSubmit="SubmitForm">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="mb-3">
+            <label class="form-label" for="primaryProvider">Primary Translation Provider</label>
+            <InputSelect @bind-Value="input.PrimaryProvider" class="form-select" id="primaryProvider">
+                <option value="Azure">Azure Translator (Recommended)</option>
+                <option value="Google">Google Cloud Translation</option>
+            </InputSelect>
+            <div class="form-text">
+                The primary provider will be used first. If it fails, the fallback provider will be used automatically.
+            </div>
+            <ValidationMessage For="() => input.PrimaryProvider" />
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Azure Translator Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="azureApiKey">Azure API Key</label>
+                    <InputPassword @bind-Value="input.AzureApiKey" class="form-control" Id="azureApiKey" />
+                    <div class="form-text">
+                        Get your API key from <a href="https://portal.azure.com" target="_blank">Azure Portal</a> → Your Translator Resource → Keys and Endpoint
+                    </div>
+                    <ValidationMessage For="() => input.AzureApiKey" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="azureRegion">Azure Region</label>
+                    <InputText @bind-Value="input.AzureRegion" class="form-control" id="azureRegion" placeholder="e.g., eastus, westus2" />
+                    <div class="form-text">
+                        The region where your Azure Translator resource is located
+                    </div>
+                    <ValidationMessage For="() => input.AzureRegion" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="azureEndpoint">Azure Endpoint</label>
+                    <InputText @bind-Value="input.AzureEndpoint" class="form-control" id="azureEndpoint" placeholder="https://api.cognitive.microsofttranslator.com" />
+                    <div class="form-text">
+                        Default: <code>https://api.cognitive.microsofttranslator.com</code>
+                    </div>
+                    <ValidationMessage For="() => input.AzureEndpoint" />
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Google Cloud Translation Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="googleApiKey">Google API Key</label>
+                    <InputPassword @bind-Value="input.GoogleApiKey" class="form-control" Id="googleApiKey" />
+                    <div class="form-text">
+                        Get your API key from <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a> → APIs & Services → Credentials
+                    </div>
+                    <ValidationMessage For="() => input.GoogleApiKey" />
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <button type="button" class="btn btn-outline-primary" @onclick="TestConnection" disabled="@isTesting">
+                @if (isTesting)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                Test Connection
+            </button>
+            <a href="/VendorConnections" class="btn btn-secondary ms-2">Back</a>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(testResult))
+        {
+            <div class="alert @(testSuccess ? "alert-success" : "alert-danger") mt-3">
+                <strong>@(testSuccess ? "Success!" : "Error:")</strong> @testResult
+            </div>
+        }
+
+        <div class="flex-row gap-2 mb-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Translation" RouteAfterSaved="/VendorConnections" />
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private AdminUser? AdminUser = default!;
+    private bool isTesting = false;
+    private string? testResult = null;
+    private bool testSuccess = false;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task SubmitForm()
+    {
+        try
+        {
+            messageRef?.SetSaving(true);
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            // Load existing settings or create new
+            // Load all and filter in memory since EF Core can't translate Encoding.UTF8.GetString to SQL
+            var allStyleSheets = await db.CustomStyleSheets.ToListAsync();
+            var existingSettings = allStyleSheets.FirstOrDefault(f => 
+                f.FileContent != null && 
+                f.FileContent.Length > 0 &&
+                Encoding.UTF8.GetString(f.FileContent).Contains("\"PrimaryProvider\""));
+
+            var settingsDto = new TranslationSettingsDto
+            {
+                PrimaryProvider = input.PrimaryProvider,
+                Azure = new AzureTranslationSettingsDto
+                {
+                    ApiKey = input.AzureApiKey ?? "",
+                    Region = input.AzureRegion ?? "global",
+                    Endpoint = input.AzureEndpoint ?? "https://api.cognitive.microsofttranslator.com"
+                },
+                Google = new GoogleTranslationSettingsDto
+                {
+                    ApiKey = input.GoogleApiKey ?? ""
+                }
+            };
+
+            var json = JsonSerializer.Serialize(settingsDto, new JsonSerializerOptions { WriteIndented = false });
+            var bytes = Encoding.UTF8.GetBytes(json);
+
+            if (existingSettings is null)
+            {
+                // Note: CustomStyleSheetUseCase.TranslationSettings needs to be added to the enum
+                // For now, using BootstrapCompleteOverride as a placeholder - you'll need to add TranslationSettings to the enum
+                // The content check above will still find it by the "PrimaryProvider" key
+                var newFile = CustomStyleSheet.Create(CustomStyleSheetUseCase.BootstrapCompleteOverride, "application/json", bytes);
+                await db.AddAsync(newFile);
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.CoreConfiguration, 
+                    $"Translation configuration was added: Primary Provider = {input.PrimaryProvider}", 
+                    settingsDto, new List<string>());
+            }
+            else
+            {
+                var originalJson = existingSettings.FileContent is { Length: > 0 } 
+                    ? Encoding.UTF8.GetString(existingSettings.FileContent) 
+                    : "{}";
+                var originalSettings = JsonSerializer.Deserialize<TranslationSettingsDto>(originalJson) ?? new TranslationSettingsDto();
+                
+                existingSettings.Update("application/json", bytes);
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.CoreConfiguration, 
+                    $"Translation configuration was edited: Primary Provider = {input.PrimaryProvider}", 
+                    originalSettings, settingsDto, new List<string>());
+            }
+
+            await db.SaveChangesAsync();
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch (Exception ex)
+        {
+            messageStore.Add(() => input.PrimaryProvider!, $"Error saving configuration: {ex.Message}");
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+        finally
+        {
+            messageRef?.SetSaving(false);
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+            if (authUser.Identity?.Name != null)
+            {
+                AdminUser = await UserManager.FindByEmailAsync(authUser.Identity.Name);
+            }
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            
+            // Load all CustomStyleSheets and filter in memory since EF Core can't translate Encoding.UTF8.GetString
+            var allStyleSheets = await db.CustomStyleSheets.ToListAsync();
+            var settingsFile = allStyleSheets.FirstOrDefault(f => 
+                f.FileContent != null && 
+                f.FileContent.Length > 0 &&
+                Encoding.UTF8.GetString(f.FileContent).Contains("\"PrimaryProvider\""));
+
+            if (settingsFile?.FileContent is { Length: > 0 })
+            {
+                var json = Encoding.UTF8.GetString(settingsFile.FileContent);
+                var settings = JsonSerializer.Deserialize<TranslationSettingsDto>(json);
+                
+                if (settings != null)
+                {
+                    input.PrimaryProvider = settings.PrimaryProvider ?? "Azure";
+                    input.AzureApiKey = settings.Azure?.ApiKey ?? "";
+                    input.AzureRegion = settings.Azure?.Region ?? "global";
+                    input.AzureEndpoint = settings.Azure?.Endpoint ?? "https://api.cognitive.microsofttranslator.com";
+                    input.GoogleApiKey = settings.Google?.ApiKey ?? "";
+                }
+            }
+            else
+            {
+                // Default values
+                input.PrimaryProvider = "Azure";
+                input.AzureRegion = "global";
+                input.AzureEndpoint = "https://api.cognitive.microsofttranslator.com";
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log error and use defaults
+            // Default values
+            input.PrimaryProvider = "Azure";
+            input.AzureRegion = "global";
+            input.AzureEndpoint = "https://api.cognitive.microsofttranslator.com";
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task TestConnection()
+    {
+        isTesting = true;
+        testResult = null;
+        testSuccess = false;
+        StateHasChanged();
+
+        try
+        {
+            // Temporarily update configuration for testing
+            var testSettings = new TranslationSettingsDto
+            {
+                PrimaryProvider = input.PrimaryProvider,
+                Azure = new AzureTranslationSettingsDto
+                {
+                    ApiKey = input.AzureApiKey ?? "",
+                    Region = input.AzureRegion ?? "global",
+                    Endpoint = input.AzureEndpoint ?? "https://api.cognitive.microsofttranslator.com"
+                },
+                Google = new GoogleTranslationSettingsDto
+                {
+                    ApiKey = input.GoogleApiKey ?? ""
+                }
+            };
+
+            // Check if at least one provider is configured
+            var hasAzure = !string.IsNullOrWhiteSpace(input.AzureApiKey);
+            var hasGoogle = !string.IsNullOrWhiteSpace(input.GoogleApiKey);
+
+            if (!hasAzure && !hasGoogle)
+            {
+                testResult = "Please configure at least one translation provider (Azure or Google).";
+                testSuccess = false;
+                return;
+            }
+
+            if (input.PrimaryProvider == "Azure" && !hasAzure)
+            {
+                testResult = "Primary provider (Azure) is selected but Azure API key is not configured.";
+                testSuccess = false;
+                return;
+            }
+
+            if (input.PrimaryProvider == "Google" && !hasGoogle)
+            {
+                testResult = "Primary provider (Google) is selected but Google API key is not configured.";
+                testSuccess = false;
+                return;
+            }
+
+            // Test with a simple translation
+            // Note: This will use the current appsettings.json configuration, not the form values
+            // For a full test, we'd need to temporarily update the configuration
+            var testText = "Hello, world!";
+            var translated = await TranslationHelper.TranslateAsync(testText, "es-CR");
+
+            if (translated != null)
+            {
+                testResult = $"Connection successful! Test translation: '{testText}' → '{translated}'. Note: This test uses the currently saved configuration. Save your changes to update the configuration.";
+                testSuccess = true;
+            }
+            else
+            {
+                var isConfigured = TranslationHelper.IsTranslationApiConfigured();
+                if (!isConfigured)
+                {
+                    testResult = "Translation API is not configured. Please configure at least one provider and save the configuration.";
+                }
+                else
+                {
+                    testResult = "Translation failed. Please check your API keys and ensure they are correct. Save your changes to update the configuration.";
+                }
+                testSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            testResult = $"Error testing connection: {ex.Message}";
+            testSuccess = false;
+        }
+        finally
+        {
+            isTesting = false;
+            StateHasChanged();
+        }
+    }
+
+    private class Input
+    {
+        [Required]
+        public string PrimaryProvider { get; set; } = "Azure";
+
+        public string? AzureApiKey { get; set; }
+        public string? AzureRegion { get; set; }
+        public string? AzureEndpoint { get; set; }
+        public string? GoogleApiKey { get; set; }
+    }
+
+    private class TranslationSettingsDto
+    {
+        public string PrimaryProvider { get; set; } = "Azure";
+        public AzureTranslationSettingsDto? Azure { get; set; }
+        public GoogleTranslationSettingsDto? Google { get; set; }
+    }
+
+    private class AzureTranslationSettingsDto
+    {
+        public string ApiKey { get; set; } = "";
+        public string Region { get; set; } = "global";
+        public string Endpoint { get; set; } = "https://api.cognitive.microsofttranslator.com";
+    }
+
+    private class GoogleTranslationSettingsDto
+    {
+        public string ApiKey { get; set; } = "";
+    }
+}

@@ -20,24 +20,41 @@ export default function ForgotPasswordPage() {
     setIsLoading(true)
 
     try {
+      // Add timeout to prevent hanging
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
       const response = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ correo: email })
+        body: JSON.stringify({ correo: email }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        setError(errorData.message || 'Error al enviar el email de recuperación')
+        return
+      }
 
       const data = await response.json()
 
-      if (response.ok && data.success) {
+      if (data.success) {
         setSuccess(true)
       } else {
         setError(data.message || 'Error al enviar el email de recuperación')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Forgot password error:', error)
-      setError('Error al enviar el email de recuperación. Por favor, intenta de nuevo.')
+      if (error.name === 'AbortError') {
+        setError('La solicitud tardó demasiado. Por favor, intenta de nuevo.')
+      } else {
+        setError('Error al enviar el email de recuperación. Por favor, intenta de nuevo.')
+      }
     } finally {
       setIsLoading(false)
     }

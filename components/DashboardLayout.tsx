@@ -161,13 +161,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       if (!token) return
 
       // Load notifications and bookings in parallel
+      // Use relative URLs when API_BASE_URL is empty (same origin)
+      const notificationsUrl = API_BASE_URL 
+        ? `${API_BASE_URL.replace(/\/$/, '')}/api/users/${user.id}/notifications`
+        : `/api/users/${user.id}/notifications`
+      const bookingsUrl = API_BASE_URL
+        ? `${API_BASE_URL.replace(/\/$/, '')}/api/users/${user.id}/bookings`
+        : `/api/users/${user.id}/bookings`
+      
       const [notificationsRes, bookingsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/users/${user.id}/notifications`, {
+        fetch(notificationsUrl, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }),
-        fetch(`${API_BASE_URL}/api/users/${user.id}/bookings`, {
+        fetch(bookingsUrl, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

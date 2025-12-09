@@ -1,0 +1,135 @@
+@using Microsoft.AspNetCore.Localization
+@using Microsoft.AspNetCore.Http
+@using System.Globalization
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager Nav
+@inject IStringLocalizer<Index> Localizer
+@inject IJSRuntime JSRuntime
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="card-title m-0">@Localizer["language-section-heading"]</h5>
+    </div>
+    <div class="card-body">
+        <p>@Localizer["language-section-description"]</p>
+        <fieldset>
+            <legend class="form-label mb-2">@Localizer["language-section-preferred-language-label"]</legend>
+            <InputSelect 
+                id="language-dropdown"
+                class="form-select"
+                @bind-Value="selectedCulture"
+                @bind-Value:after="HandleLanguageChange"
+            >
+                <option value="en-US">English (US)</option>
+                <option value="en-GB">English (UK)</option>
+                <option value="es-CR">Español (Costa Rica)</option>
+            </InputSelect>
+            <p class="form-text mb-0">@Localizer["language-section-preferred-language-caption"]</p>
+        </fieldset>
+    </div>
+</div>
+
+@code {
+    private string selectedCulture = "en-US";
+
+    protected override void OnInitialized()
+    {
+        // Get current culture from request
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext != null)
+        {
+            var requestCulture = httpContext.Features.Get<IRequestCultureFeature>();
+            if (requestCulture?.RequestCulture?.Culture != null)
+            {
+                var cultureName = requestCulture.RequestCulture.Culture.Name;
+                // Map to supported cultures
+                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
+                {
+                    selectedCulture = cultureName;
+                }
+                else if (cultureName.StartsWith("en"))
+                {
+                    selectedCulture = "en-US";
+                }
+                else if (cultureName.StartsWith("es"))
+                {
+                    selectedCulture = "es-CR";
+                }
+            }
+        }
+    }
+
+    private async Task HandleLanguageChange()
+    {
+        if (!string.IsNullOrWhiteSpace(selectedCulture))
+        {
+            // Validate culture
+            if (selectedCulture == "en-US" || selectedCulture == "en-GB" || selectedCulture == "es-CR")
+            {
+                var httpContext = HttpContextAccessor.HttpContext;
+                if (httpContext != null)
+                {
+                    try
+                    {
+                        // Set cookie server-side if possible (more reliable)
+                        var culture = CultureInfo.CreateSpecificCulture(selectedCulture);
+                        var requestCulture = new RequestCulture(culture, culture);
+                        
+                        if (!httpContext.Response.HasStarted)
+                        {
+                            // Set cookie server-side
+                            httpContext.Response.Cookies.Append(
+                                CookieRequestCultureProvider.DefaultCookieName,
+                                CookieRequestCultureProvider.MakeCookieValue(requestCulture),
+                                new CookieOptions 
+                                { 
+                                    Expires = DateTimeOffset.UtcNow.AddYears(1), 
+                                    IsEssential = true,
+                                    Path = "/",
+                                    SameSite = SameSiteMode.Lax
+                                });
+                            
+                            // Navigate to apply the new culture (following the pattern from the example)
+                            Nav.NavigateTo("/application/settings", true);
+                        }
+                        else
+                        {
+                            // Fallback: Set cookie via JavaScript if response has started
+                            var cookieValue = CookieRequestCultureProvider.MakeCookieValue(requestCulture);
+                            var cookieName = CookieRequestCultureProvider.DefaultCookieName;
+                            var expiresDate = DateTimeOffset.UtcNow.AddYears(1).ToString("R");
+                            
+                            // Escape the cookie value for JavaScript (don't URL encode, just escape quotes)
+                            var escapedCookieValue = cookieValue.Replace("'", "\\'").Replace("\"", "\\\"").Replace("\\", "\\\\");
+                            
+                            await JSRuntime.InvokeVoidAsync("eval", 
+                                $"document.cookie = '{cookieName}={escapedCookieValue}; expires={expiresDate}; path=/; SameSite=Lax'");
+                            
+                            // Small delay to ensure cookie is set
+                            await Task.Delay(50);
+                            
+                            // Navigate to apply the new culture
+                            Nav.NavigateTo("/application/settings", true);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // If setting cookie fails, try JavaScript fallback
+                        var culture = CultureInfo.CreateSpecificCulture(selectedCulture);
+                        var requestCulture = new RequestCulture(culture, culture);
+                        var cookieValue = CookieRequestCultureProvider.MakeCookieValue(requestCulture);
+                        var cookieName = CookieRequestCultureProvider.DefaultCookieName;
+                        var expiresDate = DateTimeOffset.UtcNow.AddYears(1).ToString("R");
+                        var escapedCookieValue = cookieValue.Replace("'", "\\'").Replace("\"", "\\\"").Replace("\\", "\\\\");
+                        
+                        await JSRuntime.InvokeVoidAsync("eval", 
+                            $"document.cookie = '{cookieName}={escapedCookieValue}; expires={expiresDate}; path=/; SameSite=Lax'");
+                        await Task.Delay(50);
+                        Nav.NavigateTo("/application/settings", true);
+                    }
+                }
+            }
+        }
+    }
+}
+

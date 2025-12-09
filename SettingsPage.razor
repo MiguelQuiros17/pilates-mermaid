@@ -1,0 +1,111 @@
+@page "/application/settings"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Microsoft.AspNetCore.Localization
+@using Microsoft.AspNetCore.Http
+@using System.Globalization
+@using Aloha.Customer.Web.Components.Features.Applications.Settings
+@inject IJSRuntime js
+@inject IAppVisualStateProvider visualStateProvider
+@inject IStringLocalizer<Index> l
+@inject NavigationManager Nav
+@inject IHttpContextAccessor HttpContextAccessor
+
+<h1>@l["page-heading"]</h1>
+<p>@l["page-description"]</p>
+
+<LanguageSelector />
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="card-title m-0">@l["appearance-section-heading"]</h5>
+    </div>
+    <div class="card-body">
+        <p>@l["appearance-section-description"]</p>
+        <div class="form-check form-switch">
+            <InputCheckbox 
+                Value="visualStateProvider.IsDarkMode"
+                ValueExpression="() => visualStateProvider.IsDarkMode"
+                ValueChanged="(value) => { visualStateProvider.SetIsDarkMode(value); }"
+                class="form-check-input" 
+                role="switch" 
+                id="dark-mode-settings-switch"
+            />
+            <label class="form-check-label" for="dark-mode-settings-switch">
+                @l["appearance-section-color-mode-label"]
+            </label>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="card-title m-0">@l["font-section-heading"]</h5>
+    </div>
+    <div class="card-body">
+        <p>@l["font-section-description"]</p>
+        <fieldset>
+            <legend class="form-label mb-2">@l["font-section-preferred-font-label"]</legend>
+            <InputRadioGroup 
+                id="font-dropdown"
+                class="form-select"
+                disabled=@(preferredFont is null)
+                Name="preferred-font"
+                @bind-Value="preferredFont"
+                @bind-Value:after="async () => { await HandleFontChange(preferredFont); }"
+            >
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-dmsans" Value=@("dmsans")/>
+                    <label for="font-radio-dmsans" class="form-check-label" style="font-family: 'DM Sans'">Default</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-arial" Value=@("arial")/>
+                    <label for="font-radio-arial" class="form-check-label" style="font-family: 'Arial'">Arial</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-times" Value=@("times")/>
+                    <label for="font-radio-times" class="form-check-label" style="font-family: 'Times New Roman'">Times New Roman</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-verdana" Value=@("verdana")/>
+                    <label for="font-radio-verdana" class="form-check-label" style="font-family: 'Verdana'">Verdana</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-opendyslexic" Value=@("opendyslexic")/>
+                    <label for="font-radio-opendyslexic" class="form-check-label" style="font-family: OpenDyslexic">OpenDyslexic</label>
+                </div>    
+            </InputRadioGroup>
+            <p class="form-text mb-0">@l["font-section-preferred-font-caption"]</p>
+        </fieldset>
+    </div>
+</div>
+
+@code {
+    private string? preferredFont = null;
+
+    protected override void OnInitialized()
+    {
+        visualStateProvider.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            preferredFont = await js.InvokeAsync<string>("AlohaThemeManager.getPreferredFont");
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        visualStateProvider.OnChange -= StateHasChanged;
+    }
+
+
+    private async Task HandleFontChange(string? font)
+    {
+        await js.InvokeVoidAsync("AlohaThemeManager.changeFont", font);
+    }
+}
+

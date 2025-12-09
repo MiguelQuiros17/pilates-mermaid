@@ -1,0 +1,191 @@
+@* Example of how to use MultiLanguageInput component *@
+@* This shows how to integrate MultiLanguageInput into the Application Type edit page *@
+
+@page "/ApplicationConfiguration/applicationtypes/edit/{id:int}"
+
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Products
+@using Aloha.Domain.Vendors.Core
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Core.Services
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
+
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject UserManager<AdminUser> UserManager
+@inject AuthenticationStateProvider authStateProvider
+@inject IAdminActivityService adminActivityService
+@inject ITranslationHelper TranslationHelper
+
+@rendermode InteractiveServer
+
+<h3>Edit Application Type</h3>
+
+<EditForm class="pb-3"
+          Context="editContext"
+          disabled="@isReadOnly"
+          EditContext="editContext"
+          FormName="AddApplicationType"
+          OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator/>
+    <ValidationSummary/>
+
+    @* Bulk translate button at the top *@
+    <BulkTranslateButton SelectedCulture="@bulkSelectedCulture"
+                        SelectedCultureChanged="@OnBulkCultureChanged"
+                        OnBulkTranslate="@OnBulkTranslateAll"
+                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
+                        HasEnglishTextFunc="@HasEnglishText" />
+
+    @* Multi-language input for Display Name *@
+    <MultiLanguageInput Label="Display Name"
+                       FieldId="displayName"
+                       Placeholder="Enter display name"
+                       Rows="1"
+                       IsDisabled="@isReadOnly"
+                       EnglishValue="@input.ApplicationDisplayName"
+                       EnglishValueChanged="@((string value) => input.ApplicationDisplayName = value)"
+                       Translations="@input.DisplayNameTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DisplayNameTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+
+    @* Multi-language input for Display Description *@
+    <MultiLanguageInput Label="Display Description"
+                       FieldId="displayDescription"
+                       Placeholder="Enter display description"
+                       Rows="3"
+                       IsDisabled="@isReadOnly"
+                       EnglishValue="@input.ApplicationDisplayDescription"
+                       EnglishValueChanged="@((string value) => input.ApplicationDisplayDescription = value)"
+                       Translations="@input.DisplayDescriptionTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DisplayDescriptionTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+
+    @* Rest of your form fields here... *@
+    @* (Core Identifier, Core Channel, etc. - unchanged) *@
+
+    @if (!isReadOnly)
+    {
+        <div class="mb-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Application Type"
+                                     RouteAfterSaved="/ApplicationConfiguration/applicationtypes"/>
+        </div>
+    }
+</EditForm>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private CoreSystemType? currentCoreSystemType;
+    private bool isReadOnly = true;
+    private string bulkSelectedCulture = "en-US";
+    private List<MultiLanguageInput> multiLanguageInputs = new();
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    private async Task OnBulkCultureChanged(string culture)
+    {
+        bulkSelectedCulture = culture;
+        StateHasChanged();
+    }
+
+    private bool HasEnglishText()
+    {
+        return !string.IsNullOrWhiteSpace(input.ApplicationDisplayName) ||
+               !string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription);
+    }
+
+    private List<string> GetFieldsWithExistingText()
+    {
+        var fields = new List<string>();
+        if (input.DisplayNameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
+        {
+            fields.Add("Display Name");
+        }
+        if (input.DisplayDescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
+        {
+            fields.Add("Display Description");
+        }
+        return fields;
+    }
+
+    private async Task OnBulkTranslateAll()
+    {
+        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == "en-US")
+        {
+            return;
+        }
+
+        // Translate Display Name
+        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayName))
+        {
+            var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayName, bulkSelectedCulture);
+            if (translated != null)
+            {
+                input.DisplayNameTranslations[bulkSelectedCulture] = translated;
+            }
+        }
+
+        // Translate Display Description
+        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription))
+        {
+            var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayDescription, bulkSelectedCulture);
+            if (translated != null)
+            {
+                input.DisplayDescriptionTranslations[bulkSelectedCulture] = translated;
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SubmitForm()
+    {
+        // In your actual implementation, you'll need to:
+        // 1. Save the English values (ApplicationDisplayName, ApplicationDisplayDescription) as before
+        // 2. Save the translations to a separate table or as JSON, depending on your data model
+        
+        // Example: If you have a ProductApplicationTypeTranslations table:
+        // foreach (var translation in input.DisplayNameTranslations)
+        // {
+        //     // Save translation for DisplayName in the specified language
+        // }
+        
+        messageRef?.Notify(new(ToastType.Success, string.Empty));
+    }
+
+    private class Input
+    {
+        [Required]
+        [MaxLength(50)]
+        public string? ApplicationDisplayName { get; set; }
+
+        [Required]
+        [MaxLength(800)]
+        public string? ApplicationDisplayDescription { get; set; }
+
+        // Store translations separately
+        public Dictionary<string, string> DisplayNameTranslations { get; set; } = new();
+        public Dictionary<string, string> DisplayDescriptionTranslations { get; set; } = new();
+
+        // ... rest of your Input class properties
+    }
+}
+

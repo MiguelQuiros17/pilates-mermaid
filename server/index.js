@@ -30,7 +30,10 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", API_BASE_URL, "http://localhost:3001", "http://127.0.0.1:3001"],
+      // Allow connections to same origin (includes custom domains when served from same port)
+      // Allow connections to same origin (includes HTTPS same-origin requests)
+      // 'self' includes the current origin (protocol, host, port)
+      connectSrc: ["'self'", API_BASE_URL || "'self'", "http://localhost:3001", "http://127.0.0.1:3001"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -85,13 +88,21 @@ app.use(cors({
             return callback(null, true)
         }
 
+        // In production, if CORS_ORIGIN is not set, be more permissive
+        // This allows custom domains to work without explicit configuration
+        // Since Express serves both frontend and API on the same port, same-origin requests should always work
+        if (process.env.NODE_ENV === 'production' && !allowedFromEnv) {
+            console.warn('[CORS] Allowing origin in production (CORS_ORIGIN not set):', origin)
+            return callback(null, true)
+        }
+
         // In non-prod, be permissive so you don't lock yourself out while testing
         if (process.env.NODE_ENV !== 'production') {
             console.warn('[CORS] Temporarily allowing unknown origin in non-prod:', origin)
             return callback(null, true)
         }
 
-        // Prod: log and reject
+        // Prod with explicit CORS_ORIGIN: log and reject
         SecurityService.logSecurityEvent('UNAUTHORIZED_ORIGIN', {
             origin,
             ip: SecurityService.getClientIP({ headers: { origin }, ip: origin })
@@ -928,9 +939,28 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
       VALUES (?, ?, ?, ?, 0, datetime('now'))
     `, [tokenId, user.id, resetToken, expiresAt.toISOString()])
 
-    // Send password reset email
+      // Send password reset email
     try {
-      await emailService.sendPasswordReset(user.correo, user.nombre, resetToken)
+      const emailResult = await emailService.sendPasswordReset(user.correo, user.nombre, resetToken)
+      
+      if (!emailResult.success) {
+        console.error('Email service returned failure:', emailResult.error)
+        // Delete token if email fails
+        await database.run('DELETE FROM password_reset_tokens WHERE id = ?', [tokenId])
+        
+        // Log email failure
+        SecurityService.logSecurityEvent('PASSWORD_RESET_EMAIL_FAILED', {
+          userId: user.id,
+          email: user.correo,
+          error: emailResult.error,
+          ip: clientIP
+        })
+        
+        return res.status(500).json({
+          success: false,
+          message: 'Error al enviar el email de recuperación. Por favor, verifica la configuración del servidor de correo.'
+        })
+      }
       
       // Log successful password reset request
       SecurityService.logSecurityEvent('PASSWORD_RESET_REQUESTED', {
@@ -948,9 +978,17 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
       // Delete token if email fails
       await database.run('DELETE FROM password_reset_tokens WHERE id = ?', [tokenId])
       
+      // Log email error
+      SecurityService.logSecurityEvent('PASSWORD_RESET_EMAIL_ERROR', {
+        userId: user.id,
+        email: user.correo,
+        error: emailError.message,
+        ip: clientIP
+      })
+      
       res.status(500).json({
         success: false,
-        message: 'Error al enviar el email de recuperación'
+        message: 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
       })
     }
   } catch (error) {

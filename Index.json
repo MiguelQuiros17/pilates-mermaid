@@ -1,0 +1,68 @@
+[
+  {
+    "key": "page-heading",
+    "value": "Application Preferences",
+    "context": "Heading of the Application Preferences screen"
+  },
+  {
+    "key": "page-description",
+    "value": "Customize your application experience using the settings below.",
+    "context": "Helper text for the Application Preferences screen"
+  },
+  {
+    "key": "appearance-section-heading",
+    "value": "Appearance",
+    "context": "Title of the Appearance section of the Application Preferences screen"
+  },
+  {
+    "key": "appearance-section-description",
+    "value": "Select your preferred color mode below.",
+    "context": "Helper text for the Appearance section of the Application Preferences screen"
+  },
+  {
+    "key": "appearance-section-color-mode-label",
+    "value": "Enable Dark Mode",
+    "context": "Label for switch to enable dark mode within the Application Preferences screen"
+  },
+  {
+    "key": "font-section-heading",
+    "value": "Font",
+    "context": "Title of the Font section of the Application Preferences screen"
+  },
+  {
+    "key": "font-section-description",
+    "value": "Select your preferred font below.",
+    "context": "Helper text for the Font section of the Application Preferences screen"
+  },
+  {
+    "key": "font-section-preferred-font-label",
+    "value": "Preferred Font",
+    "context": "Label for Preferred Font dropdown within the Application Preferences screen"
+  },
+  {
+    "key": "font-section-preferred-font-caption",
+    "value": "Please note that font size will need to be changed in your browser settings",
+    "context": "Helper text for preferred font input to denote font size must be change in browser"
+  },
+  {
+    "key": "language-section-heading",
+    "value": "Language",
+    "context": "Title of the Language section in the Application Preferences screen"
+  },
+  {
+    "key": "language-section-description",
+    "value": "Choose your preferred language for the application.",
+    "context": "Helper text for the Language section in the Application Preferences screen"
+  },
+  {
+    "key": "language-section-preferred-language-label",
+    "value": "Preferred Language",
+    "context": "Label for the Preferred Language dropdown in the Application Preferences screen"
+  },
+  {
+    "key": "language-section-preferred-language-caption",
+    "value": "This will change the language for all text in the application.",
+    "context": "Helper text for the Preferred Language dropdown explaining that it changes all application text"
+  }
+]
+

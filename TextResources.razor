@@ -1,0 +1,566 @@
+@page "/customization/textresources"
+
+@using Aloha.Domain.Services.Localization
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, ContentManager, Audit")]
+
+@inject AuthenticationStateProvider authStateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject ILocalizationImportExportService localizationImportExportService
+@inject IJSRuntime js
+@rendermode InteractiveServer
+
+<h3>Text Resources</h3>
+
+<EditForm class="pb-3"
+          Context="editContext"
+          disabled="@isReadOnly"
+          EditContext="editContext"
+          FormName="AddDisclosure"
+          OnValidSubmit="SubmitForm">
+
+    <DataAnnotationsValidator />
+
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label" for="culture">Culture</label>
+        <InputSelect @bind-Value="input.SelectedCulture"
+                     @bind-Value:after="CultureSelected"
+                     class="form-select"
+                     id="culture">
+            <option value="en-US">English (US)</option>
+            <option value="es-CR">Español (Costa Rica)</option>
+        </InputSelect>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="resourceKey">Text Resource</label>
+        @if (!isReadOnly)
+        {
+            <div class="pb-3">
+                <Button @onclick="OpenFileDialog" Disabled="@exportLoading" Loading="@importLoading" Color="ButtonColor.Dark" Outline="true">Import Changes</Button>
+                <InputFile @ref="inputFile" style="display:none" OnChange="@ConfirmImportFileAsync" />
+                <Button @onclick="GetExportFileAsync" Disabled="@importLoading" Loading="@exportLoading" Color="ButtonColor.Dark" Outline="true">Export Changes</Button>
+            </div>
+        }
+        
+        <div class="position-relative">
+            <input type="text"
+                   value="@resourceKeySearch"
+                   @oninput="OnResourceKeySearchInput"
+                   @onfocus="OnSearchFocus"
+                   @onblur="OnSearchBlur"
+                   @onkeydown="OnSearchKeyDown"
+                   class="form-control"
+                   placeholder="Search by key, resource key, or text content..."
+                   id="resourceKeySearch" />
+            
+            @if (showDropdown && filteredResourceKeyOptions.Any())
+            {
+                <div class="position-absolute top-100 start-0 end-0 mt-1 shadow-sm border rounded bg-white" 
+                     style="max-height: 400px; overflow-y: auto; z-index: 1050;"
+                     @onmouseenter="OnDropdownMouseEnter"
+                     @onmouseleave="OnDropdownMouseLeave">
+                    <div class="list-group">
+                        @foreach (var option in filteredResourceKeyOptions.Take(2000))
+                        {
+                            <button type="button" 
+                                    class="list-group-item list-group-item-action @(option.ResourceKey == input.SelectedResourceKey && option.Key == selectedKey ? "active" : "")"
+                                    @onclick="() => SelectResourceKey(option.ResourceKey, option.Key)"
+                                    @onmousedown:preventDefault="true">
+                                <div class="fw-bold">@option.Key</div>
+                                <div class="small text-muted">@option.ResourceKey</div>
+                                @if (!string.IsNullOrWhiteSpace(option.SampleText))
+                                {
+                                    <div class="small text-muted mt-1">@option.SampleText</div>
+                                }
+                            </button>
+                        }
+                        @if (filteredResourceKeyOptions.Count > 2000)
+                        {
+                            <div class="list-group-item text-muted small text-center">
+                                Showing first 2000 of @filteredResourceKeyOptions.Count results
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+        
+        @if (!string.IsNullOrWhiteSpace(resourceKeySearch))
+        {
+            <div class="mt-2 d-flex align-items-center gap-2">
+                <span class="small text-muted">Filtering by: <strong>@resourceKeySearch</strong></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearSearch">
+                    Clear
+                </button>
+            </div>
+        }
+    </div>
+
+    @foreach (var resource in filteredLocalizationStrings)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="@($"stringResource-{resource.Id}")">
+                <div class="fw-bold">@resource.Key</div>
+                @if (string.IsNullOrWhiteSpace(input.SelectedResourceKey))
+                {
+                    <div class="small">@resource.ResourceKey</div>
+                }
+            </label>
+            <div class="mb-2">
+                <div class="small">
+                    <em>Default text</em>
+                </div>
+                @resource.DefaultText
+            </div>
+            <InputTextArea @bind-Value="resource.CurrentText"
+            class="form-control"
+            disabled="@isReadOnly"
+            id="@($"stringResource-{resource.Id}")"
+            rows="1"
+            type="text" />
+            <ValidationMessage For="() => resource.CurrentText" />
+        </div>
+    }
+
+    <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, ContentManager">
+        <div class="my-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Text Resources" RouteAfterSaved="/customization" />
+        </div>
+    </AuthorizeView>
+
+</EditForm>
+
+<ConfirmationModal 
+    @ref="importConfirmationModal"
+    YesButtonText="Continue"
+    NoButtonText="Go Back"
+    OnYesButtonPress="ImportFileAsync"
+    OnNoButtonPress="HideImportConfirmationModal"
+    ModalTitle="Are you sure you want to make this change?" />
+
+<script>
+    window.bb_click = (element) => element.click();
+</script>
+
+@code {
+    private SaveConfirmationMessage? messageRef;
+    private EditContext editContext = default!;
+    private IList<ResourceKeyOption> resourceKeyOptions = [];
+    private IList<ResourceKeyOption> filteredResourceKeyOptions = [];
+    private IList<CustomizableString> allLocalizationStrings = [];
+    private IList<CustomizableString> filteredLocalizationStrings = [];
+    private string resourceKeySearch = string.Empty;
+    private string? selectedKey = null;
+    private bool showDropdown = false;
+    private bool isMouseInDropdown = false;
+    private ValidationMessageStore messageStore = default!;
+    private bool isReadOnly = true;
+    private readonly Input input = new();
+    private AdminUser? AdminUser = default!;
+    private bool importLoading = false;
+    private bool exportLoading = false;
+    private static string JsonFileName => $"text-configuration-{DateTime.UtcNow}.txt";
+    private InputFile? inputFile;
+    private ConfirmationModal importConfirmationModal = null!;
+    private IBrowserFile importFile = default!;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+        
+        // Initialize culture to en-US
+        input.SelectedCulture = "en-US";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+            await LoadData();
+            await LoadResourceKeys(null);
+        }
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") ||
+                       authUser.IsInRole("MasterAdmin") ||
+                       authUser.IsInRole("ContentManager"));
+    }
+
+    private async Task SubmitForm()
+    {
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            var ids = input.LocalizationStrings.Select(x => x.Id);
+
+            var localizationStrings = await db.LocalizationStrings.Where(x => ids.Contains(x.Id)).ToListAsync();
+
+            foreach (var localizedString in localizationStrings)
+            {
+                var inputString = input.LocalizationStrings.First(x => x.Id == localizedString.Id);
+
+                var stringEquals = string.Equals(localizedString.CurrentText, inputString.CurrentText, StringComparison.OrdinalIgnoreCase);
+
+                if (!stringEquals)
+                {
+                    var currentText = string.IsNullOrEmpty(localizedString.CurrentText) ? localizedString.DefaultText : localizedString.CurrentText;
+
+                    var updatedText = string.IsNullOrEmpty(inputString.CurrentText) ? localizedString.DefaultText : inputString.CurrentText;
+
+                    var message = $"{inputString.Key}-{inputString.ResourceKey} text was updated From: \"{currentText}\" To: \"{updatedText}\"";
+
+                    await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.TextResources, message);
+                }
+
+                if (string.IsNullOrEmpty(inputString.CurrentText))
+                {
+                    /*
+                    * Explictly set to null. This allows the user
+                    * to remove the previous customization. Otherwise
+                    * we will display an empty string.
+                    *
+                    */
+                    inputString.CurrentText = null;
+                }
+
+                localizedString.Update(inputString.CurrentText);
+            }
+
+            await db.SaveChangesAsync();
+
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private async Task OpenFileDialog()
+    {
+        await js.InvokeVoidAsync("bb_click", inputFile!.Element);
+    }
+
+    private async Task CultureSelected()
+    {
+        // Reset resource key selection when culture changes
+        input.SelectedResourceKey = null;
+        selectedKey = null;
+        resourceKeySearch = string.Empty;
+        showDropdown = false;
+        await LoadData();
+        await LoadResourceKeys(null);
+        FilterLocalizationStrings();
+    }
+
+    private async Task ResourceSelected()
+    {
+        // This method is no longer needed since we filter client-side
+        // But keeping it for compatibility
+        await Task.CompletedTask;
+    }
+
+    private void OnSearchFocus()
+    {
+        showDropdown = true;
+        FilterResourceKeys();
+    }
+
+    private async Task OnSearchBlur()
+    {
+        // Delay hiding dropdown to allow click events to fire
+        await Task.Delay(200);
+        if (!isMouseInDropdown)
+        {
+            showDropdown = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnDropdownMouseEnter()
+    {
+        isMouseInDropdown = true;
+    }
+
+    private void OnDropdownMouseLeave()
+    {
+        isMouseInDropdown = false;
+    }
+
+    private void OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            showDropdown = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnResourceKeySearchInput(ChangeEventArgs e)
+    {
+        resourceKeySearch = e.Value?.ToString() ?? string.Empty;
+        
+        // Show dropdown immediately when typing
+        if (!showDropdown)
+        {
+            showDropdown = true;
+        }
+        
+        // Filter dropdown options immediately
+        FilterResourceKeys();
+        
+        // Filter displayed cards using the same algorithm
+        FilterLocalizationStrings();
+    }
+
+    private async Task SelectResourceKey(string resourceKey, string key)
+    {
+        input.SelectedResourceKey = resourceKey;
+        selectedKey = key;
+        resourceKeySearch = key; // Show the key name in the search box
+        showDropdown = false;
+        
+        // Filter displayed cards using the same algorithm
+        FilterLocalizationStrings();
+        
+        await Task.CompletedTask;
+    }
+    
+    private void ClearSearch()
+    {
+        resourceKeySearch = string.Empty;
+        input.SelectedResourceKey = null;
+        selectedKey = null;
+        showDropdown = false;
+        
+        // Reload all strings and filter
+        FilterLocalizationStrings();
+    }
+
+    private void FilterResourceKeys()
+    {
+        if (string.IsNullOrWhiteSpace(resourceKeySearch))
+        {
+            // Show all when search is empty
+            filteredResourceKeyOptions = resourceKeyOptions.ToList();
+        }
+        else
+        {
+            var searchLower = resourceKeySearch.ToLowerInvariant();
+            
+            // Prioritize Key matches first, then ResourceKey, then SampleText
+            filteredResourceKeyOptions = resourceKeyOptions
+                .Select(opt => new
+                {
+                    Option = opt,
+                    KeyMatch = !string.IsNullOrWhiteSpace(opt.Key) && opt.Key.ToLowerInvariant().Contains(searchLower),
+                    ResourceKeyMatch = opt.ResourceKey.ToLowerInvariant().Contains(searchLower),
+                    TextMatch = !string.IsNullOrWhiteSpace(opt.SampleText) && opt.SampleText.ToLowerInvariant().Contains(searchLower),
+                    KeyStartsWith = !string.IsNullOrWhiteSpace(opt.Key) && opt.Key.ToLowerInvariant().StartsWith(searchLower),
+                    ResourceKeyStartsWith = opt.ResourceKey.ToLowerInvariant().StartsWith(searchLower)
+                })
+                .Where(x => x.KeyMatch || x.ResourceKeyMatch || x.TextMatch)
+                .OrderByDescending(x => x.KeyStartsWith) // Key starts with search - highest priority
+                .ThenByDescending(x => x.KeyMatch) // Key contains search
+                .ThenByDescending(x => x.ResourceKeyStartsWith) // ResourceKey starts with search
+                .ThenByDescending(x => x.ResourceKeyMatch) // ResourceKey contains search
+                .ThenByDescending(x => x.TextMatch) // Text contains search
+                .ThenBy(x => x.Option.Key) // Then sort by Key alphabetically
+                .ThenBy(x => x.Option.ResourceKey) // Then by ResourceKey
+                .Select(x => x.Option)
+                .ToList();
+        }
+        StateHasChanged();
+    }
+
+    private async Task GetExportFileAsync()
+    {
+        exportLoading = true;
+        var fileContent = await localizationImportExportService.GetLocalizationJsonAsync();
+        await js.InvokeVoidAsync("downloadFile", JsonFileName, "text", "utf-8", fileContent);
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.TextResources, "Export text file was made for environment.");
+        exportLoading = false;
+    }
+
+    private async Task ConfirmImportFileAsync(InputFileChangeEventArgs e)
+    {
+        await ShowImportConfirmationModal();
+        importFile = e.File;
+    }
+
+    private async Task ImportFileAsync()
+    {
+        try
+        {
+            await HideImportConfirmationModal();
+
+            importLoading = true;
+            StateHasChanged();
+
+            using var reader = new StreamReader(importFile.OpenReadStream());
+            var content = await reader.ReadToEndAsync();
+
+            await localizationImportExportService.ImportLocalizationAsync(content);
+
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.TextResources, "Text file was imported into environment.");
+
+            messageRef?.Notify(new(ToastType.Success, "Text file was imported into environment successfully."));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, "An error occured while importing your text file."));
+        }
+        finally
+        {
+            importLoading = false;
+        }
+    }
+
+    private async Task HideImportConfirmationModal()
+    {
+        await importConfirmationModal.HideAsync();
+    }
+
+    private async Task ShowImportConfirmationModal()
+    {
+        await importConfirmationModal.ShowAsync();
+    }
+
+    private async Task LoadResourceKeys(string? resourceKey)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var culture = input.SelectedCulture ?? "en-US";
+
+        // Load ALL strings for the culture (up to 2000)
+        allLocalizationStrings = await db.LocalizationStrings
+            .Where(x => x.LocalizationCulture!.Culture == culture)
+            .OrderBy(x => x.ResourceKey)
+            .ThenBy(x => x.Key)
+            .Take(2000)
+            .Select(x => new CustomizableString
+            {
+                CurrentText = x.CurrentText,
+                DefaultText = x.DefaultText,
+                ResourceKey = x.ResourceKey,
+                Key = x.Key,
+                Id = x.Id,
+            })
+            .ToListAsync();
+
+        // Filter using the same algorithm as dropdown
+        FilterLocalizationStrings();
+        
+        StateHasChanged();
+    }
+    
+    private void FilterLocalizationStrings()
+    {
+        if (string.IsNullOrWhiteSpace(resourceKeySearch))
+        {
+            // Show all when search is empty
+            filteredLocalizationStrings = allLocalizationStrings.ToList();
+        }
+        else
+        {
+            var searchLower = resourceKeySearch.ToLowerInvariant();
+            
+            // Use the same prioritization algorithm as dropdown
+            filteredLocalizationStrings = allLocalizationStrings
+                .Select(str => new
+                {
+                    String = str,
+                    KeyMatch = !string.IsNullOrWhiteSpace(str.Key) && str.Key.ToLowerInvariant().Contains(searchLower),
+                    ResourceKeyMatch = str.ResourceKey.ToLowerInvariant().Contains(searchLower),
+                    TextMatch = !string.IsNullOrWhiteSpace(str.DefaultText) && str.DefaultText.ToLowerInvariant().Contains(searchLower),
+                    KeyStartsWith = !string.IsNullOrWhiteSpace(str.Key) && str.Key.ToLowerInvariant().StartsWith(searchLower),
+                    ResourceKeyStartsWith = str.ResourceKey.ToLowerInvariant().StartsWith(searchLower)
+                })
+                .Where(x => x.KeyMatch || x.ResourceKeyMatch || x.TextMatch)
+                .OrderByDescending(x => x.KeyStartsWith) // Key starts with search - highest priority
+                .ThenByDescending(x => x.KeyMatch) // Key contains search
+                .ThenByDescending(x => x.ResourceKeyStartsWith) // ResourceKey starts with search
+                .ThenByDescending(x => x.ResourceKeyMatch) // ResourceKey contains search
+                .ThenByDescending(x => x.TextMatch) // Text contains search
+                .ThenBy(x => x.String.Key) // Then sort by Key alphabetically
+                .ThenBy(x => x.String.ResourceKey) // Then by ResourceKey
+                .Select(x => x.String)
+                .ToList();
+        }
+        
+        // Keep input.LocalizationStrings in sync for form binding
+        input.LocalizationStrings = filteredLocalizationStrings.ToList();
+        
+        StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var culture = input.SelectedCulture ?? "en-US";
+
+        // Load ALL individual entries (not just unique resource keys) - up to 2000
+        // This allows searching by both key name and actual text content
+        var allEntries = await db.LocalizationStrings
+            .Where(x => x.LocalizationCulture!.Culture == culture)
+            .OrderBy(x => x.ResourceKey)
+            .ThenBy(x => x.Key)
+            .Take(2000)
+            .Select(x => new ResourceKeyOption
+            {
+                ResourceKey = x.ResourceKey,
+                SampleText = x.DefaultText ?? x.CurrentText ?? string.Empty,
+                Key = x.Key
+            })
+            .ToListAsync();
+
+        resourceKeyOptions = allEntries;
+        FilterResourceKeys();
+        StateHasChanged();
+    }
+
+    private record Input
+    {
+        public string? SelectedCulture { get; set; } = "en-US";
+        public string? SelectedResourceKey { get; set; }
+        public IList<CustomizableString> LocalizationStrings { get; set; } = [];
+    }
+
+    private record CustomizableString
+    {
+        public int Id { get; set; }
+        public string Key { get; set; } = default!;
+        public string ResourceKey { get; set; } = default!;
+        public string? DefaultText { get; set; }
+        public string? CurrentText { get; set; }
+    }
+
+    private record ResourceKeyOption
+    {
+        public string ResourceKey { get; set; } = default!;
+        public string SampleText { get; set; } = string.Empty;
+        public string Key { get; set; } = string.Empty;
+    }
+}
+

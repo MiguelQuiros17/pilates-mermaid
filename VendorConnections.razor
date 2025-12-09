@@ -1,0 +1,256 @@
+@page "/VendorConnections"
+
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Infrastructure
+@using Microsoft.EntityFrameworkCore
+
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin")]
+
+@rendermode InteractiveServer
+
+@inject IDbContextFactory<AlohaDb> dbFactory
+
+
+
+<h3>Vendor Connections</h3>
+
+
+
+<Accordion>
+
+    <AccordionItem Title="Core">
+
+        <Content>
+
+            <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                <div class="py-2 row">
+
+                    <div class="col">
+
+                        <p>Core configuration</p>
+
+                        <a class="btn btn-primary" href="/VendorConnections/core" role="button">Core</a>
+
+                    </div>
+
+                </div>
+
+            </AuthorizeView>
+
+        </Content>
+
+    </AccordionItem>
+
+    <AccordionItem Title="Messaging">
+
+        <Content>
+
+            <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                <div class="py-2 row">
+
+                    <div class="col">
+
+                        <p>Messaging configuration</p>
+
+                        <a class="btn btn-primary" href="/VendorConnections/messaging" role="button">Messaging</a>
+
+                    </div>
+
+                </div>
+
+            </AuthorizeView>
+
+        </Content>
+
+    </AccordionItem>
+
+    <AccordionItem Title="Translation">
+
+        <Content>
+
+            <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                <div class="py-2 row">
+
+                    <div class="col">
+
+                        <p>Configure translation API keys for automatic translation of Spanish strings</p>
+
+                        <a class="btn btn-primary" href="/VendorConnections/translation" role="button">Translation</a>
+
+                    </div>
+
+                </div>
+
+            </AuthorizeView>
+
+        </Content>
+
+    </AccordionItem>
+
+    @if (!isCoreOfflineMode)
+
+    {
+
+        <AccordionItem Title="eSign">
+
+            <Content>
+
+                    <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                        <div class="py-2 row">
+
+                            <div class="col">
+
+                                <p>Docusign</p>
+
+                                <a class="btn btn-primary" href="/VendorConnections/docusign" role="button">Docusign</a>
+
+                            </div>
+
+                        </div>
+
+                    </AuthorizeView>
+
+
+
+                    <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                        <div class="py-2 row">
+
+                            <div class="col">
+
+                                <p>Kinective Sign</p>
+
+                                <a class="btn btn-primary" href="/VendorConnections/kinective" role="button">Kinective Sign</a>
+
+                            </div>
+
+                        </div>
+
+                    </AuthorizeView>
+
+            </Content>
+
+        </AccordionItem>
+
+        <AccordionItem Title="Card Funding">
+
+            <Content>
+
+                    <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                        <div class="py-2 row">
+
+                            <div class="col">
+
+                                <p>Repay configuration</p>
+
+                                <a class="btn btn-primary" href="/VendorConnections/repay" role="button">Repay</a>
+
+                            </div>
+
+                        </div>
+
+                    </AuthorizeView>
+
+            </Content>
+
+        </AccordionItem>
+
+        <AccordionItem Title="Multi-Feature">
+
+            <Content>
+
+                    <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                        <div class="py-2 row">
+
+                            <div class="col">
+
+                                <p>Plaid configuration</p>
+
+                                <a class="btn btn-primary" href="/VendorConnections/plaid" role="button">Plaid</a>
+
+                            </div>
+
+                        </div>
+
+                    </AuthorizeView>
+
+            </Content>
+
+        </AccordionItem>
+
+    }
+
+    <AccordionItem Title="Other">
+
+        <Content>
+
+            <AuthorizeView Context="_" Roles="MahaloAdmin">
+
+                <div class="py-2 row">
+
+                    <div class="col">
+
+                        <p>Smarty</p>
+
+                        <a class="btn btn-primary" href="/VendorConnections/smarty" role="button">Smarty</a>
+
+                    </div>
+
+                </div>
+
+            </AuthorizeView>
+
+        </Content>
+
+    </AccordionItem>
+
+</Accordion>
+
+
+
+@code {
+
+    bool isCoreOfflineMode = false;
+
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+
+    {
+
+        if (firstRender)
+
+        {
+
+            await LoadData();
+
+        }
+
+    }
+
+
+
+    private async Task LoadData()
+
+    {
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+
+        isCoreOfflineMode = feature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+
+
+
+        StateHasChanged();
+
+    }
+
+}
+

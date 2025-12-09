@@ -1,0 +1,430 @@
+@using Aloha.Domain.Services.Translations
+@using System.Globalization
+@inject ITranslationHelper TranslationHelper
+
+<div class="mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <label class="form-label mb-0" for="@($"{FieldId}-{SelectedCulture}")">@Label</label>
+        <div class="d-flex gap-2 align-items-center">
+            @if (SelectedCulture != "en-US")
+            {
+                <button type="button" 
+                        class="btn btn-sm btn-outline-primary"
+                        @onclick="OnTranslateClick"
+                        disabled="@(string.IsNullOrWhiteSpace(EnglishValue) || isTranslating)">
+                    @if (isTranslating)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    }
+                    Auto Translate
+                </button>
+            }
+            else
+            {
+                <button type="button" 
+                        class="btn btn-sm btn-outline-primary"
+                        @onclick="OnGenerateTranslationsClick"
+                        disabled="@(string.IsNullOrWhiteSpace(EnglishValue) || isTranslating)">
+                    @if (isTranslating)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    }
+                    Generate Translations
+                </button>
+            }
+        </div>
+    </div>
+    
+    @if (SelectedCulture == "en-US")
+    {
+        <InputTextArea @bind-Value="EnglishValue"
+                       @bind-Value:after="HandleValueChanged"
+                       class="form-control"
+                       disabled="@IsDisabled"
+                       id="@($"{FieldId}-{SelectedCulture}")"
+                       rows="@Rows"
+                       placeholder="@Placeholder" />
+        <ValidationMessage For="@(() => EnglishValue)" />
+    }
+    else
+    {
+        <InputTextArea @bind-Value="CurrentValue"
+                       @bind-Value:after="HandleValueChanged"
+                       class="form-control"
+                       disabled="@IsDisabled"
+                       id="@($"{FieldId}-{SelectedCulture}")"
+                       rows="@Rows"
+                       placeholder="@Placeholder" />
+        <ValidationMessage For="@(() => CurrentValue)" />
+        
+        @if (!string.IsNullOrWhiteSpace(TranslationError))
+        {
+            <div class="alert alert-danger mt-2" role="alert">
+                <strong>Translation Error:</strong> @TranslationError
+            </div>
+        }
+        else if (ShowTranslationError)
+        {
+            <div class="alert alert-warning mt-2" role="alert">
+                <strong>Warning:</strong> English text is required to generate translations.
+            </div>
+        }
+    }
+</div>
+
+<!-- Modal for overwrite warning -->
+@if (showOverwriteModal)
+{
+    <div class="modal fade show" style="display: block;" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Overwrite Translation?</h5>
+                    <button type="button" class="btn-close" @onclick="CancelOverwrite"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This field already contains text. Translating will replace the existing content.</p>
+                    <p class="mb-0"><strong>Are you sure you want to continue?</strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelOverwrite">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmOverwrite">Yes, Translate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+<!-- Modal for generate translations -->
+@if (showGenerateModal)
+{
+    <div class="modal fade show" style="display: block;" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Generate Translations</h5>
+                    <button type="button" class="btn-close" @onclick="CancelGenerate"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This will generate translations for all available languages (@string.Join(", ", AvailableLanguages)).</p>
+                    @if (LanguagesWithExistingText.Any())
+                    {
+                        <div class="alert alert-warning mt-2">
+                            <strong>Warning:</strong> The following languages already have text that will be overwritten:
+                            <ul class="mb-0 mt-1">
+                                @foreach (var lang in LanguagesWithExistingText)
+                                {
+                                    <li>@CultureInfo.GetCultureInfo(lang).DisplayName</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    <p class="mb-0"><strong>Are you sure you want to continue?</strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelGenerate">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmGenerate">Yes, Generate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string FieldId { get; set; } = string.Empty;
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public int Rows { get; set; } = 1;
+    [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public string EnglishValue { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> EnglishValueChanged { get; set; }
+    [Parameter] public Dictionary<string, string> Translations { get; set; } = new();
+    [Parameter] public EventCallback<Dictionary<string, string>> TranslationsChanged { get; set; }
+    [Parameter] public EventCallback OnValueChanged { get; set; }
+    [Parameter] public string? SelectedCultureOverride { get; set; }
+    [Parameter] public EventCallback<string> SelectedCultureOverrideChanged { get; set; }
+
+    private string SelectedCulture => SelectedCultureOverride ?? "en-US";
+    private List<string> AvailableLanguages { get; set; } = new();
+    private bool isTranslating = false;
+    private bool showOverwriteModal = false;
+    private bool showGenerateModal = false;
+    private string? pendingTargetLanguage = null;
+    private List<string> LanguagesWithExistingText { get; set; } = new();
+    private bool ShowTranslationError { get; set; } = false;
+    private string? TranslationError { get; set; }
+
+    private string CurrentValue
+    {
+        get => Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
+        set
+        {
+            if (Translations.ContainsKey(SelectedCulture))
+            {
+                Translations[SelectedCulture] = value;
+            }
+            else
+            {
+                Translations[SelectedCulture] = value;
+            }
+            TranslationsChanged.InvokeAsync(Translations);
+            OnValueChanged.InvokeAsync();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AvailableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
+        StateHasChanged();
+    }
+
+    private async Task OnCultureChanged()
+    {
+        ShowTranslationError = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleValueChanged()
+    {
+        await OnValueChanged.InvokeAsync();
+    }
+
+    private void OnTranslateClick()
+    {
+        TranslationError = null;
+        if (string.IsNullOrWhiteSpace(EnglishValue))
+        {
+            ShowTranslationError = true;
+            StateHasChanged();
+            return;
+        }
+
+        ShowTranslationError = false;
+
+        if (!string.IsNullOrWhiteSpace(CurrentValue))
+        {
+            pendingTargetLanguage = SelectedCulture;
+            showOverwriteModal = true;
+        }
+        else
+        {
+            _ = TranslateCurrentLanguage();
+        }
+    }
+
+    private void OnGenerateTranslationsClick()
+    {
+        TranslationError = null;
+        if (string.IsNullOrWhiteSpace(EnglishValue))
+        {
+            ShowTranslationError = true;
+            StateHasChanged();
+            return;
+        }
+
+        ShowTranslationError = false;
+
+        // Check which languages already have text
+        LanguagesWithExistingText = AvailableLanguages
+            .Where(lang => Translations.TryGetValue(lang, out var value) && !string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+        showGenerateModal = true;
+    }
+
+    private async Task ConfirmOverwrite()
+    {
+        showOverwriteModal = false;
+        if (pendingTargetLanguage != null)
+        {
+            // Translate to the pending target language
+            var targetLang = pendingTargetLanguage;
+            pendingTargetLanguage = null;
+            
+            if (string.IsNullOrWhiteSpace(EnglishValue))
+            {
+                ShowTranslationError = true;
+                TranslationError = "English text is required to generate translations.";
+                return;
+            }
+
+            isTranslating = true;
+            ShowTranslationError = false;
+            TranslationError = null;
+            StateHasChanged();
+
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(EnglishValue, targetLang);
+                if (translated != null)
+                {
+                    Translations[targetLang] = translated;
+                    await TranslationsChanged.InvokeAsync(Translations);
+                    TranslationError = null;
+                }
+                else
+                {
+                    var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+                    if (!isApiConfigured)
+                    {
+                        TranslationError = "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+                    }
+                    else
+                    {
+                        TranslationError = $"Failed to translate text to {CultureInfo.GetCultureInfo(targetLang).DisplayName}. The translation service returned no result. Please check your API configuration and try again.";
+                    }
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                TranslationError = $"Network error during translation: {ex.Message}. Please check your internet connection and API endpoint configuration.";
+            }
+            catch (Exception ex)
+            {
+                TranslationError = $"Translation failed: {ex.Message}. Please check your API configuration and try again.";
+            }
+            finally
+            {
+                isTranslating = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void CancelOverwrite()
+    {
+        showOverwriteModal = false;
+        pendingTargetLanguage = null;
+    }
+
+    private async Task ConfirmGenerate()
+    {
+        showGenerateModal = false;
+        await GenerateAllTranslations();
+    }
+
+    private void CancelGenerate()
+    {
+        showGenerateModal = false;
+    }
+
+    private async Task TranslateCurrentLanguage()
+    {
+        if (string.IsNullOrWhiteSpace(EnglishValue))
+        {
+            ShowTranslationError = true;
+            TranslationError = "English text is required to generate translations.";
+            return;
+        }
+
+        isTranslating = true;
+        ShowTranslationError = false;
+        TranslationError = null;
+        StateHasChanged();
+
+        try
+        {
+            var translated = await TranslationHelper.TranslateAsync(EnglishValue, SelectedCulture);
+            if (translated != null)
+            {
+                CurrentValue = translated;
+                TranslationError = null;
+            }
+            else
+            {
+                var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+                if (!isApiConfigured)
+                {
+                    TranslationError = "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+                }
+                else
+                {
+                    TranslationError = $"Failed to translate text to {CultureInfo.GetCultureInfo(SelectedCulture).DisplayName}. The translation service returned no result. Please check your API configuration and try again.";
+                }
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            TranslationError = $"Network error during translation: {ex.Message}. Please check your internet connection and API endpoint configuration.";
+        }
+        catch (Exception ex)
+        {
+            TranslationError = $"Translation failed: {ex.Message}. Please check your API configuration and try again.";
+        }
+        finally
+        {
+            isTranslating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateAllTranslations()
+    {
+        if (string.IsNullOrWhiteSpace(EnglishValue))
+        {
+            ShowTranslationError = true;
+            TranslationError = "English text is required to generate translations.";
+            return;
+        }
+
+        isTranslating = true;
+        ShowTranslationError = false;
+        TranslationError = null;
+        StateHasChanged();
+
+        try
+        {
+            var failedLanguages = new List<string>();
+            foreach (var lang in AvailableLanguages)
+            {
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(EnglishValue, lang);
+                    if (translated != null)
+                    {
+                        Translations[lang] = translated;
+                    }
+                    else
+                    {
+                        failedLanguages.Add(CultureInfo.GetCultureInfo(lang).DisplayName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failedLanguages.Add($"{CultureInfo.GetCultureInfo(lang).DisplayName} ({ex.Message})");
+                }
+            }
+            
+            await TranslationsChanged.InvokeAsync(Translations);
+            
+            if (failedLanguages.Any())
+            {
+                var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+                if (!isApiConfigured)
+                {
+                    TranslationError = "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+                }
+                else
+                {
+                    TranslationError = $"Some translations failed: {string.Join(", ", failedLanguages)}. Please check your API configuration.";
+                }
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            TranslationError = $"Network error during translation: {ex.Message}. Please check your internet connection and API endpoint configuration.";
+        }
+        catch (Exception ex)
+        {
+            TranslationError = $"Translation failed: {ex.Message}. Please check your API configuration and try again.";
+        }
+        finally
+        {
+            isTranslating = false;
+            StateHasChanged();
+        }
+    }
+}
+

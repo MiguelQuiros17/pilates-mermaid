@@ -126,9 +126,9 @@ export default function RegisterPage() {
       if (response.ok && data.success && data.token) {
         // Store token and user data immediately - ensure synchronous write
         try {
-          localStorage.setItem('token', data.token)
+        localStorage.setItem('token', data.token)
           if (data.user) {
-            localStorage.setItem('user', JSON.stringify(data.user))
+        localStorage.setItem('user', JSON.stringify(data.user))
           }
         } catch (storageError) {
           console.error('Error storing auth data:', storageError)

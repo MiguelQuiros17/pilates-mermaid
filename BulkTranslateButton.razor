@@ -1,0 +1,237 @@
+@using Aloha.Domain.Services.Translations
+@using System.Globalization
+@inject ITranslationHelper TranslationHelper
+
+<div class="mb-3">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <label class="form-label mb-0 fw-bold">Editing Culture:</label>
+            <InputSelect @bind-Value="SelectedCulture" 
+                        @bind-Value:after="OnCultureChanged"
+                        class="form-select" 
+                        style="width: auto; min-width: 200px;"
+                        id="bulk-culture-select">
+                <option value="en-US">English (US)</option>
+                @foreach (var lang in AvailableLanguages)
+                {
+                    var culture = CultureInfo.GetCultureInfo(lang);
+                    <option value="@lang">@culture.DisplayName</option>
+                }
+            </InputSelect>
+        </div>
+        @if (SelectedCulture == "en-US")
+        {
+            <button type="button" 
+                    class="btn btn-primary"
+                    @onclick="OnBulkTranslateAllLanguagesClick"
+                    disabled="@(isTranslating || !HasEnglishText)">
+                @if (isTranslating)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                Bulk Translate All Languages
+            </button>
+        }
+        else
+        {
+            <button type="button" 
+                    class="btn btn-primary"
+                    @onclick="OnBulkTranslateClick"
+                    disabled="@(isTranslating || !HasEnglishText)">
+                @if (isTranslating)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                Auto-Translate to fill all @CultureInfo.GetCultureInfo(SelectedCulture).DisplayName fields
+            </button>
+        }
+    </div>
+    
+    @if (!string.IsNullOrWhiteSpace(TranslationError))
+    {
+        <div class="alert alert-danger mt-2" role="alert">
+            <strong>Translation Error:</strong> @TranslationError
+        </div>
+    }
+</div>
+
+<!-- Modal for bulk translate warning (single language) -->
+@if (showBulkModal && SelectedCulture != "en-US")
+{
+    <div class="modal fade show" style="display: block;" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bulk Translate All Fields</h5>
+                    <button type="button" class="btn-close" @onclick="CancelBulkTranslate"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This will translate all English text fields to <strong>@CultureInfo.GetCultureInfo(SelectedCulture).DisplayName</strong>.</p>
+                    @if (FieldsWithExistingText.Any())
+                    {
+                        <div class="alert alert-warning mt-2">
+                            <strong>Warning:</strong> The following fields already have @CultureInfo.GetCultureInfo(SelectedCulture).DisplayName text that will be overwritten:
+                            <ul class="mb-0 mt-2">
+                                @foreach (var field in FieldsWithExistingText)
+                                {
+                                    <li><strong>@field</strong></li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    <p class="mb-0"><strong>Are you sure you want to continue?</strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelBulkTranslate">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmBulkTranslate">
+                        @if (isTranslating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        }
+                        Yes, Translate All
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+<!-- Modal for bulk translate all languages warning -->
+@if (showBulkModal && SelectedCulture == "en-US")
+{
+    <div class="modal fade show" style="display: block;" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bulk Translate All Languages</h5>
+                    <button type="button" class="btn-close" @onclick="CancelBulkTranslate"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This will translate all English text fields to <strong>all available languages</strong> (@string.Join(", ", AvailableLanguages.Select(l => CultureInfo.GetCultureInfo(l).DisplayName))).</p>
+                    @if (FieldsWithExistingText.Any())
+                    {
+                        <div class="alert alert-warning mt-2">
+                            <strong>Warning:</strong> Some fields already have translations that will be overwritten.
+                        </div>
+                    }
+                    <p class="mb-0"><strong>Are you sure you want to continue?</strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelBulkTranslate">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="ConfirmBulkTranslateAllLanguages">
+                        @if (isTranslating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        }
+                        Yes, Translate All Languages
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter] public string SelectedCulture { get; set; } = "en-US";
+    [Parameter] public EventCallback<string> SelectedCultureChanged { get; set; }
+    [Parameter] public EventCallback OnBulkTranslate { get; set; }
+    [Parameter] public EventCallback OnBulkTranslateAllLanguages { get; set; }
+    [Parameter] public Func<List<string>>? GetFieldsWithExistingText { get; set; }
+    [Parameter] public Func<bool>? HasEnglishTextFunc { get; set; }
+
+    private List<string> AvailableLanguages { get; set; } = new();
+    private bool isTranslating = false;
+    private bool showBulkModal = false;
+    private List<string> FieldsWithExistingText { get; set; } = new();
+    private string? TranslationError { get; set; }
+
+    private bool HasEnglishText => HasEnglishTextFunc?.Invoke() ?? true;
+    
+    private async Task OnCultureChanged()
+    {
+        TranslationError = null;
+        await SelectedCultureChanged.InvokeAsync(SelectedCulture);
+    }
+    
+    private void OnBulkTranslateAllLanguagesClick()
+    {
+        FieldsWithExistingText = GetFieldsWithExistingText?.Invoke() ?? new List<string>();
+        showBulkModal = true;
+    }
+    
+    private async Task ConfirmBulkTranslateAllLanguages()
+    {
+        showBulkModal = false;
+        isTranslating = true;
+        TranslationError = null;
+        StateHasChanged();
+
+        try
+        {
+            await OnBulkTranslateAllLanguages.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            TranslationError = $"Failed to translate: {ex.Message}";
+        }
+        finally
+        {
+            isTranslating = false;
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AvailableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
+        StateHasChanged();
+    }
+
+    private void OnBulkTranslateClick()
+    {
+        TranslationError = null;
+        FieldsWithExistingText = GetFieldsWithExistingText?.Invoke() ?? new List<string>();
+        showBulkModal = true;
+    }
+
+    private async Task ConfirmBulkTranslate()
+    {
+        showBulkModal = false;
+        isTranslating = true;
+        TranslationError = null;
+        StateHasChanged();
+
+        try
+        {
+            await OnBulkTranslate.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            TranslationError = $"Failed to translate: {ex.Message}";
+        }
+        finally
+        {
+            isTranslating = false;
+            StateHasChanged();
+        }
+    }
+    
+    public void SetError(string error)
+    {
+        TranslationError = error;
+        StateHasChanged();
+    }
+    
+    public void ClearError()
+    {
+        TranslationError = null;
+        StateHasChanged();
+    }
+
+    private void CancelBulkTranslate()
+    {
+        showBulkModal = false;
+    }
+}

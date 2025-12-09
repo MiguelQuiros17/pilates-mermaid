@@ -1,0 +1,943 @@
+@page "/ApplicationConfiguration/applicationtypes/edit/{id:int}"
+
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Products
+@using Aloha.Domain.Vendors.Core
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Core.Services
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@using System.Globalization
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
+
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject UserManager<AdminUser> UserManager
+@inject AuthenticationStateProvider authStateProvider
+@inject IAdminActivityService adminActivityService
+@inject ITranslationHelper TranslationHelper
+@rendermode InteractiveServer
+
+<h3>Edit Application Type</h3>
+
+<EditForm class="pb-3"
+          Context="editContext"
+          disabled="@isReadOnly"
+          EditContext="editContext"
+          FormName="AddApplicationType"
+          OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator/>
+    <ValidationSummary/>
+
+    @* Bulk translate button at the top *@
+    <BulkTranslateButton @ref="bulkTranslateButton"
+                        SelectedCulture="@bulkSelectedCulture"
+                        SelectedCultureChanged="@OnBulkCultureChanged"
+                        OnBulkTranslate="@OnBulkTranslateAll"
+                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
+                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
+                        HasEnglishTextFunc="@HasEnglishText" />
+
+    @* Multi-language input for Display Name *@
+    <MultiLanguageInput Label="Display Name"
+                       FieldId="displayName"
+                       Placeholder="Enter display name"
+                       Rows="1"
+                       IsDisabled="@isReadOnly"
+                       EnglishValue="@input.ApplicationDisplayName"
+                       EnglishValueChanged="@((string value) => input.ApplicationDisplayName = value)"
+                       Translations="@input.DisplayNameTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DisplayNameTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+
+    @* Multi-language input for Display Description *@
+    <MultiLanguageInput Label="Display Description"
+                       FieldId="displayDescription"
+                       Placeholder="Enter display description"
+                       Rows="3"
+                       IsDisabled="@isReadOnly"
+                       EnglishValue="@input.ApplicationDisplayDescription"
+                       EnglishValueChanged="@((string value) => input.ApplicationDisplayDescription = value)"
+                       Translations="@input.DisplayDescriptionTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DisplayDescriptionTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+
+    @if (!isCoreOfflineMode)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="coreIdentifier">Core Identifier</label>
+            <InputText @bind-Value="input.CoreTypeIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreIdentifier"
+                       type="text"/>
+            <ValidationMessage For="() => input.CoreTypeIdentifier"/>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="coreChannel">Core Channel</label>
+            <InputText @bind-Value="input.CoreChannelIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreChannel"
+                       type="text"/>
+            <ValidationMessage For="() => input.CoreChannelIdentifier"/>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="coreAccountType">Core Account Type</label>
+            <InputText @bind-Value="input.CoreAccountTypeIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreAccountType"
+                       type="text"/>
+            <ValidationMessage For="() => input.CoreAccountTypeIdentifier"/>
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" for="applicationType">Application Type</label>
+        <InputSelect @bind-Value="input.ApplicationType"
+        class="form-select"
+        disabled="@isReadOnly"
+        id="applicationType">
+            <option value="">Select...</option>
+            @foreach (var option in Enum.GetValues<ApplicationType>())
+            {
+                <option value="@option">@option.ToString()</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => input.ApplicationType"/>
+    </div>
+
+    @if (currentCoreSystemType == CoreSystemType.Symitar && input.ApplicationType == ApplicationType.Member)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="coreApplicationAccountType">Core Application Account Type</label>
+            <InputText @bind-Value="input.CoreApplicationAccountTypeIndentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreApplicationAccountType"
+                       type="text"/>
+            <ValidationMessage For="() => input.CoreApplicationAccountTypeIndentifier"/>
+        </div>
+    }
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsExpressType"
+                       class="form-check-input"
+                       disabled="@(isExpressAppInputReadOnly || isCoreOfflineMode)"
+                       id="isExpressType"/>
+        <label class="form-check-label" for="isExpressType">Is Express Application Type</label>
+        <ValidationMessage For="() => input.IsExpressType"/>
+    </div>
+
+    @if (input.IsExpressType)
+    {
+        <div class="ms-4">
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="input.IsExpressPlusType"
+                               class="form-check-input"
+                               disabled="@isExpressAppInputReadOnly"
+                               id="isExpressPlus"/>
+                <label class="form-check-label" for="isExpressPlus">Express Plus</label>
+                <ValidationMessage For="() => input.IsExpressPlusType"/>
+            </div>
+        </div>
+    }
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="isEnabled"/>
+        <label class="form-check-label" for="isEnabled">Is Enabled</label>
+        <ValidationMessage For="() => input.IsEnabled"/>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="app-type-sort-order-input">Sort Order</label>
+        <InputNumber @bind-Value="input.SortOrder"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="app-type-sort-order-input"/>
+        <ValidationMessage For="() => input.SortOrder"/>
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.DisableAppStatusSync" class="form-check-input" id="disableAppStatusSync"/>
+        <label class="form-check-label" for="disableAppStatusSync">
+            Disable App Status Sync
+        </label>
+        <ValidationMessage For="() => input.DisableAppStatusSync"/>
+    </div>
+    @if (input.DisableAppStatusSync)
+    {
+        <div class="alert alert-warning" role="alert">
+            If you disable App Status Sync, Mahalo won't read status updates from the core. Applications will only be
+            decisioned if an Admin User sets the decision manually or if they're auto-decisioned by the decision engine
+            or RepGen.
+        </div>
+    }
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.AutoSubmitApplication"
+                       class="form-check-input"
+                       disabled="@(isReadOnly || isCoreOfflineMode)"
+                       id="autoSubmit"/>
+        <label class="form-check-label" for="autoSubmit">Auto Submit Application To Core</label>
+        <ValidationMessage For="() => input.AutoSubmitApplication"/>
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.AutoApproveApplication"
+                       class="form-check-input"
+                       disabled="@(isReadOnly || isCoreOfflineMode)"
+                       id="autoApprove"/>
+        <label class="form-check-label" for="autoApprove">Auto Approve Application</label>
+        <ValidationMessage For="() => input.AutoApproveApplication"/>
+    </div>
+
+    @if (currentCoreSystemType == CoreSystemType.Corelation && input.AutoApproveApplication)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="autoApproveNoteSerial">Auto Approve Note Core Identifier</label>
+            <InputText @bind-Value="input.AutoApproveApplicationNoteSerial"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="autoApproveNoteSerial"
+                       type="text"/>
+            <ValidationMessage For="() => input.AutoApproveApplicationNoteSerial"/>
+        </div>
+    }
+
+    @if (currentCoreSystemType == CoreSystemType.Symitar && input.AutoApproveApplication)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="symitarAutoApprovalCode">Approval Code</label>
+            <InputNumber @bind-Value="input.SymitarAutoApprovalCode"
+                         class="form-control"
+                         disabled="@isReadOnly"
+                         id="symitarAutoApprovalCode"
+                         type="text"/>
+            <ValidationMessage For="() => input.SymitarAutoApprovalCode"/>
+        </div>
+    }
+
+    @if (currentCoreSystemType == CoreSystemType.Corelation)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="approvalIdentifier">App Approval Identifier</label>
+            <InputText @bind-Value="input.CorelationAppApprovalIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="approvalIdentifier"
+                       type="text"/>
+            <ValidationMessage For="() => input.CorelationAppApprovalIdentifier"/>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="declinedIdentifier">App Declined Identifier</label>
+            <InputText @bind-Value="input.CorelationAppDeclinedIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="declinedIdentifier"
+                       type="text"/>
+            <ValidationMessage For="() => input.CorelationAppDeclinedIdentifier"/>
+        </div>
+    }
+
+    @if (
+     input.ApplicationType == ApplicationType.Member &&
+     input.ShareLinks.Any())
+    {
+        <hr class="border border-1 opacity-50">
+        <h5>Share Product Links</h5>
+        <div class="list-group my-3">
+            @foreach (var option in input.ShareLinks)
+            {
+                <div class="list-group-item">
+                    <label>
+                        <InputCheckbox @bind-Value="option.Checked"
+                                       class="form-check-input me-1"
+                                       disabled="@isReadOnly"
+                                       type="checkbox"/>
+                        @option.DisplayName
+                    </label>
+                    <ValidationMessage For="() => option.Checked"/>
+                </div>
+            }
+        </div>
+    }
+
+    @if (
+     input.ApplicationType == ApplicationType.Loan &&
+     input.LoanLinks.Any())
+    {
+        <hr class="border border-1 opacity-50">
+        <h5>Loan Product Links</h5>
+        <div class="list-group my-3">
+            @foreach (var option in input.LoanLinks)
+            {
+                <div class="list-group-item">
+                    <label>
+                        <InputCheckbox @bind-Value="option.Checked"
+                                       class="form-check-input me-1"
+                                       disabled="@isReadOnly"
+                                       type="checkbox"/>
+                        @option.DisplayName
+                    </label>
+                    <ValidationMessage For="() => option.Checked"/>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label mb-0">Upload App Image</label>
+        <p class="form-text m-0 mb-2">Please provide an image with a 16/9 aspect ratio (width/height)</p>
+        <InputFile
+            accept="image/jpeg, image/png"
+            class="form-control"
+            disabled="@isReadOnly"
+            OnChange="HandleAppTypeImageFileChangeAsync"
+        />
+        <div class="form-text mb-0">Supported file types: PNG, JPG, JPEG</div>
+        <div class="form-text">Max file size: @(MAX_IMAGE_FILE_BYTES / 1024 / 1000)MB</div>
+        <ValidationMessage For="() => input.AppImageFile"/>
+        @if (currentImageUrl is not null)
+        {
+            <div class="mb-2" style="max-width: 420px; width: 100%">
+                <p class="form-text mb-1 mt-2">Current App Image:</p>
+                <img alt="app image preview" class="img-fluid" src="@currentImageUrl"/>
+            </div>
+            <div>
+                <button type="button" class="btn btn-outline-primary" @onclick="HandleRemoveAppImageAsync">
+                    Remove Image
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (!isReadOnly)
+    {
+        <div class="mb-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Application Type"
+                                     RouteAfterSaved="/ApplicationConfiguration/applicationtypes"/>
+        </div>
+    }
+</EditForm>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private CoreSystemType? currentCoreSystemType;
+    private bool isReadOnly = true;
+    private bool isExpressAppInputReadOnly = true;
+    private IList<CardProductCategory> categories = [];
+    private string? currentImageUrl;
+    private const long MAX_IMAGE_FILE_BYTES = 1024000L;
+    bool isCoreOfflineMode = false;
+    private AdminUser? AdminUser = default!;
+    private string bulkSelectedCulture = "en-US";
+    private BulkTranslateButton? bulkTranslateButton;
+
+    protected override async Task OnInitializedAsync()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var coreSettings = await db.CoreSettings
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync();
+        currentCoreSystemType = coreSettings?.CoreSystemType;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+            await LoadData();
+        }
+    }
+
+    private static async Task<(byte[] bytes, string contentType)> ExtractContentFromFileAsync(IBrowserFile file)
+    {
+        using var memoryStream = new MemoryStream();
+        await file.OpenReadStream(MAX_IMAGE_FILE_BYTES).CopyToAsync(memoryStream);
+        var contentType = file.ContentType;
+        var bytes = memoryStream.ToArray();
+        return (bytes, contentType);
+    }
+
+    private static string CreateBase64ImageUrl(byte[] bytes, string contentType) =>
+        $"data:{contentType};base64, {Convert.ToBase64String(bytes)}";
+
+    private async Task HandleAppTypeImageFileChangeAsync(InputFileChangeEventArgs e)
+    {
+        if (e.File.ContentType is not "image/jpeg" and not "image/png")
+        {
+            messageStore.Add(
+                () => input.AppImageFile!,
+                "Unsupported image file type provided. Supported file types: JPG, JPEG, PNG");
+            return;
+        }
+
+        if (e.File.Size > MAX_IMAGE_FILE_BYTES)
+        {
+            messageStore.Add(
+                () => input.AppImageFile!,
+                $"Image file must be smaller than {MAX_IMAGE_FILE_BYTES / 1024 / 1000}MB");
+            return;
+        }
+
+        messageStore.Clear(editContext.Field("AppImageFile"));
+        editContext.NotifyValidationStateChanged();
+        input.AppImageFile = e.File;
+        var (bytes, contentType) = await ExtractContentFromFileAsync(input.AppImageFile);
+        currentImageUrl = CreateBase64ImageUrl(bytes, contentType);
+    }
+
+    private void HandleRemoveAppImageAsync()
+    {
+        input.AppImageFile = null;
+        currentImageUrl = null;
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") || authUser.IsInRole("MasterAdmin"));
+        isExpressAppInputReadOnly = !authUser.IsInRole("MahaloAdmin");
+    }
+
+    private async Task OnBulkCultureChanged(string culture)
+    {
+        bulkSelectedCulture = culture;
+        StateHasChanged();
+    }
+
+    private bool HasEnglishText()
+    {
+        return !string.IsNullOrWhiteSpace(input.ApplicationDisplayName) ||
+               !string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription);
+    }
+
+    private List<string> GetFieldsWithExistingText()
+    {
+        var fields = new List<string>();
+        if (input.DisplayNameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
+        {
+            fields.Add("Display Name");
+        }
+        if (input.DisplayDescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
+        {
+            fields.Add("Display Description");
+        }
+        return fields;
+    }
+
+    private async Task OnBulkTranslateAll()
+    {
+        bulkTranslateButton?.ClearError();
+        
+        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == "en-US")
+        {
+            return;
+        }
+
+        var errors = new List<string>();
+
+        // Translate Display Name
+        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayName))
+        {
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayName, bulkSelectedCulture);
+                if (translated != null)
+                {
+                    input.DisplayNameTranslations[bulkSelectedCulture] = translated;
+                }
+                else
+                {
+                    errors.Add($"Display Name: Translation failed (no result returned)");
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Display Name: {ex.Message}");
+            }
+        }
+
+        // Translate Display Description
+        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription))
+        {
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayDescription, bulkSelectedCulture);
+                if (translated != null)
+                {
+                    input.DisplayDescriptionTranslations[bulkSelectedCulture] = translated;
+                }
+                else
+                {
+                    errors.Add($"Display Description: Translation failed (no result returned)");
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Display Description: {ex.Message}");
+            }
+        }
+
+        if (errors.Any())
+        {
+            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+            var errorMessage = isApiConfigured 
+                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
+                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+            bulkTranslateButton?.SetError(errorMessage);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnBulkTranslateAllLanguages()
+    {
+        bulkTranslateButton?.ClearError();
+        
+        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
+        var errors = new List<string>();
+
+        // Translate Display Name to all languages
+        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayName))
+        {
+            foreach (var lang in availableLanguages)
+            {
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayName, lang);
+                    if (translated != null)
+                    {
+                        input.DisplayNameTranslations[lang] = translated;
+                    }
+                    else
+                    {
+                        errors.Add($"Display Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Display Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
+                }
+            }
+        }
+
+        // Translate Display Description to all languages
+        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription))
+        {
+            foreach (var lang in availableLanguages)
+            {
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayDescription, lang);
+                    if (translated != null)
+                    {
+                        input.DisplayDescriptionTranslations[lang] = translated;
+                    }
+                    else
+                    {
+                        errors.Add($"Display Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Display Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
+                }
+            }
+        }
+
+        if (errors.Any())
+        {
+            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+            var errorMessage = isApiConfigured 
+                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
+                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+            bulkTranslateButton?.SetError(errorMessage);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SubmitForm()
+    {
+        if (currentCoreSystemType is null && !isCoreOfflineMode)
+        {
+            messageStore.Clear();
+            messageStore.Add(() => input.CoreTypeIdentifier!,
+                "You must configure Core Settings before adding an application type.");
+            editContext.NotifyValidationStateChanged();
+            return;
+        }
+
+        if (currentCoreSystemType == CoreSystemType.Corelation
+            && input.AutoApproveApplication && string.IsNullOrWhiteSpace(input.AutoApproveApplicationNoteSerial))
+        {
+            messageStore.Add(
+                () => input.AutoApproveApplicationNoteSerial!,
+                "Auto Approval Application Note Serial is required");
+            return;
+        }
+
+        if (currentCoreSystemType == CoreSystemType.Corelation
+            && input.ApplicationType == ApplicationType.Member)
+        {
+            if (string.IsNullOrWhiteSpace(input.CorelationAppApprovalIdentifier))
+            {
+                messageStore.Add(
+                    () => input.CorelationAppApprovalIdentifier!,
+                    "Membership App Approval Identifier is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(input.CorelationAppDeclinedIdentifier))
+            {
+                messageStore.Add(
+                    () => input.CorelationAppDeclinedIdentifier!,
+                    "Membership App Declined Identifier is required");
+            }
+        }
+
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            var applicationType = await db.ProductApplicationTypes
+                .AsSplitQuery()
+                .Include(x => x.ApplicationLoanLinks)
+                .Include(x => x.ApplicationShareLinks)
+                .Include(x => x.ProductApplicationTypeImage)
+                .FirstAsync(x => x.Id == Id);
+            var originalConfig = db.Entry(applicationType).CurrentValues.Clone().ToObject();
+
+            applicationType.Update(
+                input.ApplicationDisplayName!,
+                input.ApplicationDisplayDescription!,
+                input.CoreTypeIdentifier,
+                input.CoreChannelIdentifier,
+                input.CoreAccountTypeIdentifier,
+                input.ApplicationType,
+                input.IsExpressType,
+                input.IsExpressPlusType,
+                input.DisableAppStatusSync,
+                input.AutoSubmitApplication,
+                input.AutoApproveApplication,
+                input.AutoApproveApplicationNoteSerial ?? string.Empty,
+                input.IsEnabled,
+                input.SortOrder,
+                input.SymitarAutoApprovalCode,
+                null,
+                input.CorelationAppApprovalIdentifier,
+                input.CorelationAppDeclinedIdentifier,
+                input.CoreApplicationAccountTypeIndentifier!);
+
+            // TODO: Save translations to database
+            // You'll need to implement this based on your data model.
+            // Options:
+            // 1. Store as JSON in a new column on ProductApplicationType
+            // 2. Store in a separate ProductApplicationTypeTranslations table
+            // 3. Store in the LocalizationStrings table with a specific ResourceKey pattern
+            // Example for option 3:
+            // foreach (var translation in input.DisplayNameTranslations)
+            // {
+            //     // Save to LocalizationStrings with ResourceKey like "ProductApplicationType.{Id}.DisplayName"
+            // }
+
+            foreach (var link in input.LoanLinks)
+            {
+                var exists = applicationType.ApplicationLoanLinks!.Any(x => x.LoanProductId == link.OptionId);
+
+                if (input.ApplicationType != ApplicationType.Loan && exists)
+                {
+                    var existingLink = applicationType.ApplicationLoanLinks!.First(x => x.LoanProductId == link.OptionId);
+                    db.Remove(existingLink);
+                }
+                else if (link.Checked && !exists)
+                {
+                    db.Add(ApplicationLoanLink.Create(link.OptionId, applicationType.Id));
+                }
+                else if (!link.Checked && exists)
+                {
+                    var existingLink = applicationType.ApplicationLoanLinks!.First(x => x.LoanProductId == link.OptionId);
+                    db.Remove(existingLink);
+                }
+            }
+
+            foreach (var link in input.ShareLinks)
+            {
+                var exists = applicationType.ApplicationShareLinks!.Any(x => x.ShareProductId == link.OptionId);
+
+                if (input.ApplicationType != ApplicationType.Member && exists)
+                {
+                    var existingLink = applicationType.ApplicationShareLinks!.First(x => x.ShareProductId == link.OptionId);
+                    db.Remove(existingLink);
+                }
+                else if (link.Checked && !exists)
+                {
+                    db.Add(ApplicationShareLink.Create(link.OptionId, applicationType.Id));
+                }
+                else if (!link.Checked && exists)
+                {
+                    var existingLink = applicationType.ApplicationShareLinks!.First(x => x.ShareProductId == link.OptionId);
+                    db.Remove(existingLink);
+                }
+            }
+
+            if (input.AppImageFile is not null)
+            {
+                var (bytes, contentType) = await ExtractContentFromFileAsync(input.AppImageFile);
+
+                if (applicationType.ProductApplicationTypeImage is null)
+                {
+                    var newImage = ProductApplicationTypeImage.Create(Id, contentType, bytes);
+                    db.Add(newImage);
+                    await db.SaveChangesAsync();
+                    applicationType.UpdateImageId(newImage.Id);
+                }
+                else
+                {
+                    applicationType.ProductApplicationTypeImage.Update(contentType, bytes);
+                }
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(currentImageUrl) &&
+                    applicationType.ProductApplicationTypeImage is not null)
+                {
+                    db.Remove(applicationType.ProductApplicationTypeImage!);
+                    applicationType.UpdateImageId(null);
+                }
+            }
+
+            await db.SaveChangesAsync();
+
+            var excludedProperties = new List<string> { nameof(applicationType.DeleteDateUtc), nameof(applicationType.ApplicationLoanLinks), nameof(applicationType.ApplicationShareLinks),
+                nameof(applicationType.ProductApplicationTypeImageId), nameof(applicationType.DisclosureApplicationTypeLinks), nameof(applicationType.QuestionnaireApplicationTypeLinks) };
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Application, $"Application type Id: {applicationType.Id} was edited: ", originalConfig, applicationType, excludedProperties);
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+        isCoreOfflineMode = feature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+        if (isCoreOfflineMode)
+        {
+            input.IsExpressType = true;
+        }
+
+        var applicationType = await db.ProductApplicationTypes
+            .Include(x => x.ProductApplicationTypeImage)
+            .FirstOrDefaultAsync(x => x.Id == Id);
+
+        if (applicationType is null)
+        {
+            nav.NavigateTo("/ApplicationConfiguration/applicationtypes");
+            return;
+        }
+
+        input.ApplicationDisplayName = applicationType.ApplicationDisplayName;
+        input.ApplicationDisplayDescription = applicationType.ApplicationDisplayDescription;
+        input.CoreTypeIdentifier = applicationType.CoreTypeIdentifier;
+        input.CoreChannelIdentifier = applicationType.CoreChannelIdentifier;
+        input.CoreAccountTypeIdentifier = applicationType.CoreAccountTypeIdentifier;
+        input.CoreApplicationAccountTypeIndentifier = applicationType.CoreApplicationAccountTypeIndentifier;
+        input.ApplicationType = applicationType.ApplicationType;
+        input.IsExpressType = applicationType.IsExpressType;
+        input.IsExpressPlusType = applicationType.IsExpressPlusType;
+        input.IsEnabled = applicationType.IsEnabled;
+        input.AutoSubmitApplication = applicationType.AutoSubmitApplication;
+        input.AutoApproveApplication = applicationType.AutoApproveApplication;
+        input.AutoApproveApplicationNoteSerial = applicationType.AutoApproveApplicationNoteSerial;
+        input.SortOrder = applicationType.SortOrder;
+        input.DisableAppStatusSync = applicationType.DisableAppStatusSync;
+        input.SymitarAutoApprovalCode = applicationType.SymitarAutoApprovalCode;
+        input.CorelationAppApprovalIdentifier = applicationType.CorelationAppApprovalIdentifier;
+        input.CorelationAppDeclinedIdentifier = applicationType.CorelationAppDeclinedIdentifier;
+
+        // TODO: Load existing translations from database
+        // You'll need to implement this based on your data model.
+        // Example:
+        // var translations = await db.ProductApplicationTypeTranslations
+        //     .Where(t => t.ProductApplicationTypeId == Id)
+        //     .ToListAsync();
+        // foreach (var trans in translations)
+        // {
+        //     if (trans.FieldName == "DisplayName")
+        //         input.DisplayNameTranslations[trans.LanguageCode] = trans.TranslatedText;
+        //     else if (trans.FieldName == "DisplayDescription")
+        //         input.DisplayDescriptionTranslations[trans.LanguageCode] = trans.TranslatedText;
+        // }
+
+        var loanProducts = await db.LoanProducts.Where(x => !x.IsDeleted).ToListAsync();
+        var shareProducts = await db.ShareProducts.Where(x => !x.IsDeleted).ToListAsync();
+
+        var loanLinks = await db.ApplicationLoanLinks
+            .Include(x => x.LoanProduct)
+            .Where(x => x.ProductApplicationTypeId == applicationType.Id)
+            .Where(x => !x.LoanProduct!.IsDeleted)
+            .ToListAsync();
+
+        var shareLinks = await db.ApplicationShareLinks
+            .Include(x => x.ShareProduct)
+            .Where(x => x.ProductApplicationTypeId == applicationType.Id)
+            .Where(x => !x.ShareProduct!.IsDeleted)
+            .ToListAsync();
+
+        foreach (var link in loanLinks)
+        {
+            input.LoanLinks.Add(new CheckBoxOption
+            {
+                Checked = true,
+                DisplayName = link.LoanProduct!.ProductDisplayName,
+                OptionId = link.LoanProductId
+            });
+        }
+
+        foreach (var link in shareLinks)
+        {
+            input.ShareLinks.Add(new CheckBoxOption
+            {
+                Checked = true,
+                DisplayName = link.ShareProduct!.ProductDisplayName,
+                OptionId = link.ShareProductId
+            });
+        }
+
+        foreach (var product in loanProducts.Where(x => !loanLinks.Any(y => y.LoanProductId == x.Id)))
+        {
+            input.LoanLinks.Add(new CheckBoxOption
+            {
+                Checked = false,
+                DisplayName = product.ProductDisplayName,
+                OptionId = product.Id,
+            });
+        }
+
+        foreach (var product in shareProducts.Where(x => !shareLinks.Any(y => y.ShareProductId == x.Id)))
+        {
+            input.ShareLinks.Add(new CheckBoxOption
+            {
+                Checked = false,
+                DisplayName = product.ProductDisplayName,
+                OptionId = product.Id,
+            });
+        }
+
+        input.LoanLinks = input.LoanLinks.OrderBy(x => x.OptionId).ToList();
+        input.ShareLinks = input.ShareLinks.OrderBy(x => x.OptionId).ToList();
+
+        if (applicationType.ProductApplicationTypeImage is not null)
+        {
+            currentImageUrl = CreateBase64ImageUrl(
+                applicationType.ProductApplicationTypeImage.FileContent,
+                applicationType.ProductApplicationTypeImage.ContentType);
+        }
+
+        StateHasChanged();
+    }
+
+    private class Input
+    {
+        [Required]
+        [MaxLength(50)]
+        public string? ApplicationDisplayName { get; set; }
+
+        [Required]
+        [MaxLength(800)]
+        public string? ApplicationDisplayDescription { get; set; }
+
+        // Translation dictionaries - key is language code (e.g., "es-CR"), value is translated text
+        public Dictionary<string, string> DisplayNameTranslations { get; set; } = new();
+        public Dictionary<string, string> DisplayDescriptionTranslations { get; set; } = new();
+
+        [MaxLength(20)]
+        public string? CoreTypeIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? CoreChannelIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? CoreAccountTypeIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? CoreApplicationAccountTypeIndentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? AutoApproveApplicationNoteSerial { get; set; }
+
+        [Range(0, 9999, ErrorMessage = "Symitar code must be between 0 and 9999.")]
+        public int SymitarAutoApprovalCode { get; set; }
+
+        [MaxLength(20)]
+        public string? CorelationAppApprovalIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? CorelationAppDeclinedIdentifier { get; set; }
+
+        [Required]
+        public bool IsExpressType { get; set; }
+
+        [Required]
+        public bool IsExpressPlusType { get; set; }
+
+        [Required]
+        public bool AutoSubmitApplication { get; set; }
+
+        [Required]
+        public bool AutoApproveApplication { get; set; }
+
+        [Required]
+        public bool IsEnabled { get; set; }
+
+        [Required]
+        public int SortOrder { get; set; }
+
+        [Required]
+        public ApplicationType ApplicationType { get; set; }
+
+        public IList<CheckBoxOption> LoanLinks { get; set; } = [];
+        public IList<CheckBoxOption> ShareLinks { get; set; } = [];
+        public IBrowserFile? AppImageFile { get; set; }
+
+        [Required]
+        public bool DisableAppStatusSync { get; set; }
+    }
+
+    private class CheckBoxOption
+    {
+        public bool Checked { get; set; }
+        public string DisplayName { get; set; } = default!;
+        public int OptionId { get; set; }
+    }
+}
+
