@@ -1320,26 +1320,46 @@ app.get('/api/users/clients', requireAuth, requireRole(['admin', 'coach']), asyn
     
     console.log(`📋 [GET /api/users/clients] Found ${clients.length} clients out of ${allUsers.length} total users`)
     
-    // Remove sensitive data
-    const safeClients = clients.map(client => ({
-      id: client.id,
-      nombre: client.nombre,
-      correo: client.correo,
-      numero_de_telefono: client.numero_de_telefono,
-      instagram: client.instagram,
-      role: client.role,
-      type_of_class: client.type_of_class,
-      expiration_date: client.expiration_date,
-      cumpleanos: client.cumpleanos,
-      lesion_o_limitacion_fisica: client.lesion_o_limitacion_fisica,
-      genero: client.genero,
-      created_at: client.created_at,
-      updated_at: client.updated_at
+    // Fetch active packages for each client
+    const clientsWithPackages = await Promise.all(clients.map(async (client) => {
+      // Get active group package
+      const activeGroupPackage = await database.getActivePackageByUser(client.id, 'Grupal')
+      // Get active private package
+      const activePrivatePackage = await database.getActivePackageByUser(client.id, 'Privada')
+      
+      // Remove sensitive data
+      return {
+        id: client.id,
+        nombre: client.nombre,
+        correo: client.correo,
+        numero_de_telefono: client.numero_de_telefono,
+        instagram: client.instagram,
+        role: client.role,
+        type_of_class: client.type_of_class,
+        expiration_date: client.expiration_date,
+        cumpleanos: client.cumpleanos,
+        lesion_o_limitacion_fisica: client.lesion_o_limitacion_fisica,
+        genero: client.genero,
+        created_at: client.created_at,
+        updated_at: client.updated_at,
+        activeGroupPackage: activeGroupPackage ? {
+          id: activeGroupPackage.id,
+          package_name: activeGroupPackage.package_name,
+          end_date: activeGroupPackage.end_date,
+          status: activeGroupPackage.status
+        } : null,
+        activePrivatePackage: activePrivatePackage ? {
+          id: activePrivatePackage.id,
+          package_name: activePrivatePackage.package_name,
+          end_date: activePrivatePackage.end_date,
+          status: activePrivatePackage.status
+        } : null
+      }
     }))
 
     res.json({
       success: true,
-      clients: safeClients
+      clients: clientsWithPackages
     })
   } catch (error) {
     console.error('Error fetching clients:', error)

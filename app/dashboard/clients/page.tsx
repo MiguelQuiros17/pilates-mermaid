@@ -32,6 +32,18 @@ interface Client {
   genero?: string | null
   created_at: string
   updated_at?: string
+  activeGroupPackage?: {
+    id: string
+    package_name: string
+    end_date: string
+    status: string
+  } | null
+  activePrivatePackage?: {
+    id: string
+    package_name: string
+    end_date: string
+    status: string
+  } | null
 }
 
 // Package Assignment Component
@@ -766,15 +778,43 @@ export default function ClientsPage() {
                         <div className="text-sm text-gray-500">@{client.instagram}</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="status-badge bg-blue-100 text-blue-800">
-                        {getPackageDisplayName(client.type_of_class)}
-                      </span>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1">
+                        {client.activeGroupPackage ? (
+                          <span className="status-badge bg-emerald-100 text-emerald-800 text-xs">
+                            Grupal: {client.activeGroupPackage.package_name}
+                          </span>
+                        ) : null}
+                        {client.activePrivatePackage ? (
+                          <span className="status-badge bg-violet-100 text-violet-800 text-xs">
+                            Privado: {client.activePrivatePackage.package_name}
+                          </span>
+                        ) : null}
+                        {!client.activeGroupPackage && !client.activePrivatePackage && (
+                          <span className="status-badge bg-gray-100 text-gray-600 text-xs">
+                            Sin paquete
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`status-badge ${getStatusColor(client.expiration_date || undefined)}`}>
-                        {getStatusText(client.expiration_date || undefined)}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        {client.activeGroupPackage && (
+                          <span className={`status-badge text-xs ${getStatusColor(client.activeGroupPackage.end_date || undefined)}`}>
+                            Grupal: {getStatusText(client.activeGroupPackage.end_date || undefined)}
+                          </span>
+                        )}
+                        {client.activePrivatePackage && (
+                          <span className={`status-badge text-xs ${getStatusColor(client.activePrivatePackage.end_date || undefined)}`}>
+                            Privado: {getStatusText(client.activePrivatePackage.end_date || undefined)}
+                          </span>
+                        )}
+                        {!client.activeGroupPackage && !client.activePrivatePackage && (
+                          <span className="status-badge bg-gray-100 text-gray-600 text-xs">
+                            -
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {client.cumpleanos ? new Date(client.cumpleanos).toLocaleDateString('es-ES') : '-'}
