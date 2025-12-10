@@ -241,20 +241,39 @@ export default function DashboardPage() {
     const groupExpired = !activeGroupPackage && packageHistory.some(p => p.package_category === 'Grupal')
     const privateExpired = !activePrivatePackage && packageHistory.some(p => p.package_category === 'Privada')
     const noPackages = !activeGroupPackage && !activePrivatePackage && packageHistory.length === 0
-    const lowGroupMonths = activeGroupPackage?.renewal_months === 1
-    const lowPrivateMonths = activePrivatePackage?.renewal_months === 1
     const outOfGroupClasses = classCounts.group === 0 && activeGroupPackage
     const outOfPrivateClasses = classCounts.private === 0 && activePrivatePackage
+    
+    // Check if packages are expiring within 7 days (1 week)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    let groupExpiringSoon = false
+    let privateExpiringSoon = false
+    
+    if (activeGroupPackage?.end_date) {
+      const endDate = new Date(activeGroupPackage.end_date)
+      endDate.setHours(0, 0, 0, 0)
+      const daysUntilExpiration = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      groupExpiringSoon = daysUntilExpiration >= 0 && daysUntilExpiration <= 7
+    }
+    
+    if (activePrivatePackage?.end_date) {
+      const endDate = new Date(activePrivatePackage.end_date)
+      endDate.setHours(0, 0, 0, 0)
+      const daysUntilExpiration = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      privateExpiringSoon = daysUntilExpiration >= 0 && daysUntilExpiration <= 7
+    }
     
     return {
       groupExpired,
       privateExpired,
       noPackages,
-      lowGroupMonths,
-      lowPrivateMonths,
+      groupExpiringSoon,
+      privateExpiringSoon,
       outOfGroupClasses,
       outOfPrivateClasses,
-      hasWarning: groupExpired || privateExpired || noPackages || lowGroupMonths || lowPrivateMonths || outOfGroupClasses || outOfPrivateClasses
+      hasWarning: groupExpired || privateExpired || noPackages || groupExpiringSoon || privateExpiringSoon || outOfGroupClasses || outOfPrivateClasses
     }
   }, [activeGroupPackage, activePrivatePackage, packageHistory, classCounts])
 
@@ -330,9 +349,9 @@ export default function DashboardPage() {
                       <span className="font-semibold">Paquete agotado.</span> Contacta a un instructor para renovar tu membresía.
                     </p>
                   )}
-                  {(packageStatus.lowGroupMonths || packageStatus.lowPrivateMonths) && !packageStatus.groupExpired && !packageStatus.privateExpired && (
+                  {(packageStatus.groupExpiringSoon || packageStatus.privateExpiringSoon) && !packageStatus.groupExpired && !packageStatus.privateExpired && (
                     <p className="text-amber-800">
-                      <span className="font-semibold">¡Último mes!</span> Tu membresía está por expirar. Considera renovar pronto.
+                      <span className="font-semibold">¡Expira pronto!</span> Tu paquete expira en menos de una semana. Considera renovar pronto.
                     </p>
                   )}
                   {(packageStatus.outOfGroupClasses || packageStatus.outOfPrivateClasses) && !packageStatus.groupExpired && !packageStatus.privateExpired && (
