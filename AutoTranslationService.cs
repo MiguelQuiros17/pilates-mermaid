@@ -121,8 +121,10 @@ namespace Aloha.Domain.Services.Translations
                     await db.SaveChangesAsync(cancellationToken);
                 }
 
-                // Get all English (en-US) strings
-                var englishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == englishCulture.Id);
+                // Get all English (en-US) strings, EXCLUDING entity-specific translations (e.g., ProductApplicationType.*)
+                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                var englishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == englishCulture.Id
+                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
                 var englishStrings = await englishQuery.ToListAsync(cancellationToken);
 
                 if (!englishStrings.Any())
@@ -131,8 +133,10 @@ namespace Aloha.Domain.Services.Translations
                     return 0;
                 }
 
-                // Get all existing Spanish (es-CR) strings AFTER import
-                var spanishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id);
+                // Get all existing Spanish (es-CR) strings AFTER import, EXCLUDING entity-specific translations
+                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                var spanishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id
+                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
                 var spanishStringsList = await spanishQuery.ToListAsync(cancellationToken);
                 
                 // Note: Duplicate keys in the database are fine - IStringLocalizer matches by both Key AND ResourceKey
@@ -271,6 +275,14 @@ namespace Aloha.Domain.Services.Translations
                             db.Set<LocalizationString>().Add(blankSpanishString);
                             spanishStrings[key] = blankSpanishString; // Add to dictionary so it's included in processing
                             createdCount++;
+                            
+                            // Update cache immediately
+                            var culture = spanishCulture.Culture;
+                            if (!string.IsNullOrWhiteSpace(culture))
+                            {
+                                TranslationHelper.UpdateCacheEntry(culture, correctResourceKey, englishString.Key, "");
+                            }
+                            
                             _logger.LogDebug("AutoTranslationService: Created blank entry for key: {Key} with ResourceKey: {ResourceKey}", 
                                 key, correctResourceKey);
                         }
@@ -435,11 +447,25 @@ namespace Aloha.Domain.Services.Translations
                                 db.Set<LocalizationString>().Add(newSpanishString);
                                 spanishStrings[englishString.Key] = newSpanishString; // Update dictionary
                                 createdCount++;
+                                
+                                // Update cache immediately
+                                var culture = spanishCulture.Culture;
+                                if (!string.IsNullOrWhiteSpace(culture))
+                                {
+                                    TranslationHelper.UpdateCacheEntry(culture, expectedResourceKey, englishString.Key, finalText);
+                                }
                             }
                             else
                             {
                                 existingSpanish.UpdateDefault(finalText);
                                 updatedCount++;
+                                
+                                // Update cache immediately
+                                var culture = spanishCulture.Culture;
+                                if (!string.IsNullOrWhiteSpace(culture))
+                                {
+                                    TranslationHelper.UpdateCacheEntry(culture, correctResourceKey, englishString.Key, finalText);
+                                }
                             }
                         }
                         else
@@ -454,6 +480,14 @@ namespace Aloha.Domain.Services.Translations
 
                             db.Set<LocalizationString>().Add(spanishString);
                             createdCount++;
+                            
+                            // Update cache immediately
+                            var culture = spanishCulture.Culture;
+                            if (!string.IsNullOrWhiteSpace(culture))
+                            {
+                                TranslationHelper.UpdateCacheEntry(culture, correctResourceKey, englishString.Key, finalText);
+                            }
+                            
                             _logger.LogDebug("AutoTranslationService: Created new translation for key: {Key} with ResourceKey: {ResourceKey}", 
                                 englishString.Key, correctResourceKey);
                         }
@@ -501,7 +535,9 @@ namespace Aloha.Domain.Services.Translations
 
                 // Always create/update JSON and text files with all English strings
                 // Build lookup of existing Spanish DB translations keyed by (baseKey, resourceKey)
-                var spanishQueryForFiles = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id);
+                // EXCLUDE entity-specific translations (they're managed separately)
+                var spanishQueryForFiles = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id
+                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
                 var spanishStringsListForFiles = await spanishQueryForFiles.ToListAsync(cancellationToken);
 
                 var spanishByKeyAndResource = spanishStringsListForFiles
@@ -704,8 +740,10 @@ namespace Aloha.Domain.Services.Translations
             {
                 var localizationSet = db.Set<LocalizationString>();
 
-                // Load existing Spanish strings for this culture
-                var spanishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id);
+                // Load existing Spanish strings for this culture, EXCLUDING entity-specific translations
+                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                var spanishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id
+                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
                 var spanishStringsList = await spanishQuery.ToListAsync(cancellationToken);
 
                 // Find English culture
@@ -718,9 +756,11 @@ namespace Aloha.Domain.Services.Translations
                     return;
                 }
 
-                // Load all English strings
+                // Load all English strings, EXCLUDING entity-specific translations
+                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
                 var englishStringsAll = await localizationSet
-                    .Where(s => s.LocalizationCultureId == englishCulture.Id)
+                    .Where(s => s.LocalizationCultureId == englishCulture.Id
+                        && !s.ResourceKey.StartsWith("ProductApplicationType."))
                     .ToListAsync(cancellationToken);
 
                 // Group and order English by key, build (key, index) → EnglishString map
@@ -819,6 +859,13 @@ namespace Aloha.Domain.Services.Translations
                             existingString.UpdateDefault(translationValue);
                             updatedCount++;
                             
+                            // Update cache immediately
+                            var culture = spanishCulture.Culture;
+                            if (!string.IsNullOrWhiteSpace(culture))
+                            {
+                                TranslationHelper.UpdateCacheEntry(culture, correctResourceKey, baseKey, translationValue);
+                            }
+                            
                             var changeDescription = string.IsNullOrWhiteSpace(currentText) && !string.IsNullOrWhiteSpace(translationValue)
                                 ? "filled empty field with"
                                 : !string.IsNullOrWhiteSpace(currentText) && string.IsNullOrWhiteSpace(translationValue)
@@ -849,6 +896,13 @@ namespace Aloha.Domain.Services.Translations
                         db.Set<LocalizationString>().Add(spanishString);
                         spanishStringsList.Add(spanishString); // keep in local list for subsequent matches
                         importedCount++;
+                        
+                        // Update cache immediately
+                        var culture = spanishCulture.Culture;
+                        if (!string.IsNullOrWhiteSpace(culture))
+                        {
+                            TranslationHelper.UpdateCacheEntry(culture, correctResourceKey, baseKey, translationValue);
+                        }
 
                         _logger.LogInformation(
                             "AutoTranslationService: Created database entry for key: {Key} (Resource: {ResourceKey}) with value: {Value}",

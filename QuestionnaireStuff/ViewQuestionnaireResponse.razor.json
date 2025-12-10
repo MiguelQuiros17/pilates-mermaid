@@ -1,0 +1,37 @@
+[
+    {
+      "key": "page-title",
+      "value": "View Questionnaire Response",
+      "context": "Browser tab title for 'View Questionnaire Response' page"
+    },
+    {
+      "key": "page-heading",
+      "value": "View Questionnaire Response",
+      "context": "Primary heading at top of 'View Questionnaire Response' page"
+    },
+    {
+      "key": "button-edit-response",
+      "value": "Edit Responses",
+      "context": "Text within button to visit 'Edit Questionnaire Response' page"
+    },
+    {
+      "key": "label-selected-answers-are-marked-in-bold",
+      "value": "Text marked in bold underneath each question indicate your provided answers.",
+      "context": "Helper text to explain that in the 'View Questionnaire Response' page, bold text marks answers collected from the applicant's response"
+    },
+    {
+      "key": "modal-heading-questionnaire-modified-notice",
+      "value": "Notice",
+      "context": "Heading of the popup which displays when an applicant attempts to edit a questionnaire response for a questionnaire which was modified by the Credit Union since the last time the applicant submitted their initial response"
+    },
+    {
+      "key": "modal-description-questionnaire-modified-notice",
+      "value": "The questionnaire associated with your previous responses has been modified by the Credit Union since you last responded. As a consequence of this, your individual responses cannot be restored, and you will be required to re-submit answers to all questions it contains.",
+      "context": "Body text of the popup which displays when an applicant attempts to edit a questionnaire response for a questionnaire which was modified by the Credit Union since the last time the applicant submitted their initial response"
+    },
+    {
+      "key": "modal-confirmation-questionnaire-modified-notice",
+      "value": "Do you want to proceed?",
+      "context": "Final line of confirmation text within the popup which displays when an applicant attempts to edit a questionnaire response for a questionnaire which was modified by the Credit Union since the last time the applicant submitted their initial response"
+    }
+  ]

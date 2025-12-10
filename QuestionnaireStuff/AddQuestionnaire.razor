@@ -1,0 +1,255 @@
+@page "/customization/questionnaires/add"
+@using Aloha.Domain.Questionnaires
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, FormManager")]
+@rendermode InteractiveServer
+@inject IDbContextFactory<AlohaDb> DbFactory
+@inject NavigationManager Nav
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject AuthenticationStateProvider authStateProvider
+
+<h3>Add Questionnaire</h3>
+<p>Create questionnaires within New Membership and Loan app.</p>
+<p class="form-text">* Indicate Required Fields</p>
+<QuestionnaireForm @ref="qForm" OnCancel="HandleCancel" OnSubmit="HandleSubmit" />
+
+@code {
+    private QuestionnaireForm? qForm;
+
+    private void HandleCancel()
+    {
+        Nav.NavigateTo("/customization/questionnaires");
+    }
+
+    private async Task HandleSubmit(QuestionnaireForm.Input values)
+    {
+        try
+        {
+            qForm?.SetSaving(true);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+            var adminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+
+            // Create Questionnaire
+            var questionnaire = Questionnaire.Create(
+                values.Name!,
+                values.IsEnabled,
+                values.IsRequired,
+                values.Level,
+                values.Description);
+
+            db.Add(questionnaire);
+            await db.SaveChangesAsync();
+
+            var excludedProperties = new List<string> { nameof(questionnaire.Questions), nameof(questionnaire.QuestionGroups), nameof(questionnaire.QuestionnaireResponses),
+                nameof(questionnaire.QuestionnaireShareProductLinks), nameof(questionnaire.QuestionnaireApplicationTypeLinks), nameof(questionnaire.QuestionnaireLoanProductLinks) };
+            await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, "Questionnaire created: ", questionnaire, excludedProperties);
+
+            // Create Ungrouped Questions
+            foreach (var draftQuestion in values.UngroupedQuestions)
+            {
+                var question = Question.Create(
+                    questionnaire.Id,
+                    draftQuestion.Name,
+                    draftQuestion.IsRequired,
+                    draftQuestion.SortOrder,
+                    draftQuestion.Type,
+                    draftQuestion.Description,
+                    questionGroupId: null);
+
+                db.Add(question);
+                await db.SaveChangesAsync();
+
+                var excludedQuestionProperties = new List<string> { nameof(question.QuestionnaireId), nameof(question.QuestionGroupId), nameof(question.MultipleChoiceOptions), nameof(question.Questionnaire), nameof(question.QuestionGroup) };
+                await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Question created for questionnaire {questionnaire.Name}: ", question, excludedQuestionProperties);
+
+                // Create multiple choice options
+                if (draftQuestion.Type is QuestionType.SingleSelect or QuestionType.MultipleSelect &&
+                    draftQuestion.MultipleChoiceOptions is not null &&
+                    draftQuestion.MultipleChoiceOptions.Any())
+                {
+                    foreach (var draftOption in draftQuestion.MultipleChoiceOptions!)
+                    {
+                        var option = MultipleChoiceOption.Create(
+                            draftOption.Name,
+                            draftOption.SortOrder,
+                            draftOption.DependentQuestionType,
+                            question.Id,
+                            draftOption.DependentQuestionName);
+
+                        db.Add(option);
+                        await db.SaveChangesAsync();
+                        
+                        var excludedOptionProperties = new List<string> { nameof(option.DependentQuestionName), nameof(option.QuestionId), nameof(option.DependentMultipleChoiceOptions) };
+                        await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Option created for question {question.Name}: ", option, excludedOptionProperties);
+
+                        if (draftOption.HasDependentQuestion &&
+                            draftOption.DependentQuestionType is DependentQuestionType.MultipleSelect or DependentQuestionType.SingleSelect &&
+                            draftOption.DependentMultipleChoiceOptions is not null &&
+                            draftOption.DependentMultipleChoiceOptions.Any())
+                        {
+                            foreach (var draftDependentOption in draftOption.DependentMultipleChoiceOptions)
+                            {
+                                var dependentOption = DependentMultipleChoiceOption.Create(
+                                    draftDependentOption.Name,
+                                    draftDependentOption.SortOrder,
+                                    draftDependentOption.HasFreeFormField,
+                                    option.Id,
+                                    draftDependentOption.FreeFormFieldDescription);
+
+                                db.Add(dependentOption);
+                                var excludedDependentOptionProperties = new List<string> { nameof(dependentOption.MultipleChoiceOptionId), nameof(dependentOption.MultipleChoiceOption) };
+                                await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Dependent Option created for option {option.Name}: ", dependentOption, excludedDependentOptionProperties);
+                            }
+
+                            await db.SaveChangesAsync();
+                        }
+                    }
+
+                    await db.SaveChangesAsync();
+                }
+            }
+
+            await db.SaveChangesAsync();
+
+            // Create Question Groups
+            foreach (var draftQuestionGroup in values.QuestionGroups)
+            {
+                var questionGroup = QuestionGroup.Create(
+                    draftQuestionGroup.Name!,
+                    draftQuestionGroup.SortOrder,
+                    questionnaire.Id,
+                    draftQuestionGroup.Description);
+
+                db.Add(questionGroup);
+                await db.SaveChangesAsync();
+                
+                var excludedQuestionGroupProperties = new List<string> { nameof(questionGroup.QuestionnaireId), nameof(questionGroup.Questions), nameof(questionGroup.Questionnaire) };
+                await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Question group created for questionnaire {questionnaire.Name}: ", questionGroup, excludedQuestionGroupProperties);
+
+                // Create Grouped Questions
+                foreach (var draftQuestion in draftQuestionGroup.Questions)
+                {
+                    var question = Question.Create(
+                        questionnaire.Id,
+                        draftQuestion.Name,
+                        draftQuestion.IsRequired,
+                        draftQuestion.SortOrder,
+                        draftQuestion.Type,
+                        draftQuestion.Description,
+                        questionGroup.Id);
+
+                    db.Add(question);
+                    await db.SaveChangesAsync();
+                    
+                    var excludedQuestionProperties = new List<string> { nameof(question.QuestionnaireId), nameof(question.QuestionGroupId), nameof(question.MultipleChoiceOptions), nameof(question.Questionnaire), nameof(question.QuestionGroup) };
+                    await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Grouped Question created for questionnaire {questionnaire.Name}: ", question, excludedQuestionProperties);
+
+                    // Create multiple choice options
+                    if (draftQuestion.Type is QuestionType.SingleSelect or QuestionType.MultipleSelect &&
+                        draftQuestion.MultipleChoiceOptions is not null &&
+                        draftQuestion.MultipleChoiceOptions.Any())
+                    {
+                        foreach (var draftOption in draftQuestion.MultipleChoiceOptions!)
+                        {
+                            var option = MultipleChoiceOption.Create(
+                                draftOption.Name,
+                                draftOption.SortOrder,
+                                draftOption.DependentQuestionType,
+                                question.Id,
+                                draftOption.DependentQuestionName);
+
+                            db.Add(option);
+                            await db.SaveChangesAsync();
+
+                            var excludedOptionProperties = new List<string> { nameof(option.DependentQuestionName), nameof(option.QuestionId), nameof(option.DependentMultipleChoiceOptions) };
+                            await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Option created for question {question.Name}: ", option, excludedOptionProperties);
+
+                            if (draftOption.HasDependentQuestion &&
+                                draftOption.DependentQuestionType is DependentQuestionType.MultipleSelect or DependentQuestionType.SingleSelect &&
+                                draftOption.DependentMultipleChoiceOptions is not null &&
+                                draftOption.DependentMultipleChoiceOptions.Any())
+                            {
+                                foreach (var draftDependentOption in draftOption.DependentMultipleChoiceOptions!)
+                                {
+                                    var dependentOption = DependentMultipleChoiceOption.Create(
+                                        draftDependentOption.Name,
+                                        draftDependentOption.SortOrder,
+                                        draftDependentOption.HasFreeFormField,
+                                        option.Id,
+                                        draftDependentOption.FreeFormFieldDescription);
+
+                                    db.Add(dependentOption);
+                                    var excludedDependentOptionProperties = new List<string> { nameof(dependentOption.MultipleChoiceOptionId), nameof(dependentOption.MultipleChoiceOption) };
+                                    await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Dependent Option created for option {option.Name}: ", dependentOption, excludedDependentOptionProperties);
+                                }
+
+                                await db.SaveChangesAsync();
+                            }
+                        }
+
+                        await db.SaveChangesAsync();
+                    }
+                }
+
+                await db.SaveChangesAsync();
+            }
+
+            // Create Application Type Links
+            foreach (var appTypeCheckbox in values.ApplicationTypes.Where(x => x.IsChecked))
+            {
+                var link = QuestionnaireApplicationTypeLink.Create(
+                    questionnaire.Id,
+                    appTypeCheckbox.Id);
+
+                db.Add(link);
+                await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Application type {appTypeCheckbox.DisplayName} was linked to questionnaire {questionnaire.Id}");
+            }
+
+            await db.SaveChangesAsync();
+
+            if (values.Level == QuestionnaireLevel.Product)
+            {
+                // Create Share Product Links
+                foreach (var productCheckbox in values.Products
+                             .Where(x => x.Type == QuestionnaireForm.ProductType.Share)
+                             .Where(x => x.IsChecked))
+                {
+                    var link = QuestionnaireShareProductLink.Create(
+                        questionnaire.Id,
+                        productCheckbox.Id);
+
+                    db.Add(link);
+                    await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Share product {productCheckbox.DisplayName} was linked to questionnaire {questionnaire.Id}");
+                }
+
+                // Create Loan Product Links
+                foreach (var productCheckbox in values.Products
+                             .Where(x => x.Type == QuestionnaireForm.ProductType.Loan)
+                             .Where(x => x.IsChecked))
+                {
+                    var link = QuestionnaireLoanProductLink.Create(
+                        questionnaire.Id,
+                        productCheckbox.Id);
+
+                    db.Add(link);
+                    await adminActivityService.TrackAdminUserActivityAsync(adminUser!, AdminActivityType.Questionnaires, $"Loan product {productCheckbox.DisplayName} was linked to questionnaire {questionnaire.Id}");
+                }
+
+                await db.SaveChangesAsync();
+            }
+
+            qForm?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            qForm?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+}

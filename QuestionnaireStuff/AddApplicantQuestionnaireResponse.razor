@@ -1,0 +1,55 @@
+@page "/applications/people/{ApplicationPersonId:int}/questionnaires/{QuestionnaireId:int}/respond"
+@using Aloha.Domain.Questionnaires
+@inject IApplicationStateProvider appState
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+<MemberQuestionnaireForm QuestionnaireId="QuestionnaireId" OnSubmit="HandleSubmitAsync"/>
+
+@code {
+
+    [Parameter]
+    public int QuestionnaireId { get; set; }
+
+    [Parameter]
+    public int ApplicationPersonId { get; set; }
+
+    private int userAppId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var appKey = await appState.GetCurrentApplicationKeyAsync();
+
+        var userApp = await db.UserApplications
+            .Include(userApplication => userApplication.ApplicationPeople)
+            .FirstAsync(app => app.ApplicationKey == appKey);
+
+        userAppId = userApp.Id;
+        var appHasTargetPersonId = (userApp.ApplicationPeople ?? []).Any(x => x.Id == ApplicationPersonId);
+
+        if (!appHasTargetPersonId)
+        {
+            nav.NavigateTo("/applications/summary", replace: true);
+        }
+    }
+
+    private async Task HandleSubmitAsync((MemberQuestionnaireForm.Input, Questionnaire) values)
+    {
+        var (input, questionnaire) = values;
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        await QuestionnaireResponseSubmitter.SubmitQuestionnaireResponseAsync(
+            db: db,
+            questionnaire: questionnaire,
+            input: input,
+            userApplicationId: userAppId,
+            applicationPersonId: ApplicationPersonId,
+            applicationShareProductId: null,
+            applicationLoanProductId: null);
+
+        nav.NavigateTo("/applications/people/questionnaires");
+    }
+
+}

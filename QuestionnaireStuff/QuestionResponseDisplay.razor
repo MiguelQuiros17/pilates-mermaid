@@ -1,0 +1,88 @@
+@using Aloha.Domain.Questionnaires
+@rendermode InteractiveServer
+
+<li>
+    <div>
+        <span>@QuestionResponseSnapshot.QuestionName</span>
+        @if (!string.IsNullOrWhiteSpace(QuestionResponseSnapshot.QuestionDescription))
+        {
+            <span> - @QuestionResponseSnapshot.QuestionDescription</span>
+        }
+        @if (QuestionResponseSnapshot.IsRequired)
+        {
+            <span class="text-danger">*</span>
+        }
+    </div>
+    <div>(@QuestionResponseSnapshot.QuestionType.ToDisplayName())</div>
+    <div>
+        @if (QuestionResponseSnapshot.QuestionType == QuestionType.FreeForm)
+        {
+            <div class="fw-bold">@QuestionResponseSnapshot.FreeFormResponse</div>
+        }
+        @if (QuestionResponseSnapshot.QuestionType is QuestionType.SingleSelect or QuestionType.MultipleSelect)
+        {
+            <ul>
+                @foreach (var multipleChoiceResponse in QuestionResponseSnapshot.MultipleChoiceResponses ?? [])
+                {
+                    var isSelected = QuestionResponseSnapshot.QuestionType == QuestionType.SingleSelect
+                        ? QuestionResponseSnapshot.SelectedMultipleChoiceOptionId == multipleChoiceResponse.MultipleChoiceOptionId
+                        : multipleChoiceResponse.IsChecked == true;
+
+                    <li>
+                        <div>
+                            <span class="@(isSelected ? "fw-bold" : "")">@multipleChoiceResponse.Name</span>
+                            @if (!string.IsNullOrWhiteSpace(multipleChoiceResponse.DependentQuestionName))
+                            {
+                                <span> - @multipleChoiceResponse.DependentQuestionName</span>
+                            }
+                            <div>
+                                @if (multipleChoiceResponse.DependentQuestionType == DependentQuestionType.FreeForm)
+                                {
+                                    <div class="fw-bold">@multipleChoiceResponse.FreeFormResponse</div>
+                                }
+                                @if (multipleChoiceResponse.DependentQuestionType is DependentQuestionType.SingleSelect or DependentQuestionType.MultipleSelect)
+                                {
+                                    <ul>
+                                        @foreach (var dependentMultipleChoiceResponse in multipleChoiceResponse.DependentMultipleChoiceResponses ?? [])
+                                        {
+                                            var isDependentSelected = multipleChoiceResponse.DependentQuestionType == DependentQuestionType.SingleSelect
+                                                ? multipleChoiceResponse.SelectedDependentMultipleChoiceOptionId == dependentMultipleChoiceResponse.DependentMultipleChoiceOptionId
+                                                : dependentMultipleChoiceResponse.IsChecked == true;
+
+                                            <li>
+                                                <div>
+                                                    <span class="@(isDependentSelected ? "fw-bold" : "")">
+                                                        @dependentMultipleChoiceResponse.Name
+                                                    </span>
+                                                    @if (!string.IsNullOrWhiteSpace(dependentMultipleChoiceResponse.DependentQuestionName))
+                                                    {
+                                                        <span>
+                                                            - @dependentMultipleChoiceResponse.DependentQuestionName
+                                                        </span>
+                                                    }
+                                                </div>
+                                                @if (dependentMultipleChoiceResponse.HasFreeFormField)
+                                                {
+                                                    <div class="fw-bold">
+                                                        @dependentMultipleChoiceResponse.FreeFormResponse
+                                                    </div>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</li>
+
+@code {
+
+    [Parameter, EditorRequired]
+    public required QuestionResponseSnapshot QuestionResponseSnapshot { get; set; }
+
+}

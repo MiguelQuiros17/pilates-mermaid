@@ -1,0 +1,82 @@
+@page "/applications/products/{ProductType}/{ApplicationProductId:int}/questionnaires/{QuestionnaireId:int}/respond"
+@using Aloha.Domain.Questionnaires
+@inject IApplicationStateProvider appState
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+<MemberQuestionnaireForm QuestionnaireId="QuestionnaireId" OnSubmit="HandleSubmitAsync"/>
+
+@code {
+
+    [Parameter]
+    public int QuestionnaireId { get; set; }
+
+    [Parameter]
+    public required string ProductType { get; set; }
+
+    [Parameter]
+    public int ApplicationProductId { get; set; }
+
+    private int userAppId;
+    private string normalizedProductType => ProductType.ToLower();
+    private List<int> applicationProductIds = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (normalizedProductType is not "loan" and not "share")
+        {
+            throw new ArgumentException(
+                "Product type for product questionnaire route must be 'loan' or 'share'",
+                nameof(ProductType));
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var appKey = await appState.GetCurrentApplicationKeyAsync();
+
+        var userApp = await db.UserApplications
+            .Include(userApplication => userApplication.ApplicationShareProducts!)
+                .ThenInclude(applicationShareProduct => applicationShareProduct.ShareProduct!)
+                .ThenInclude(shareProduct => shareProduct.QuestionnaireShareProductLinks!)
+            .Include(userApplication => userApplication.ApplicationLoanProducts!)
+                .ThenInclude(applicationLoanProduct => applicationLoanProduct.LoanProduct!)
+                .ThenInclude(loanProduct => loanProduct.QuestionnaireLoanProductLinks!)
+            .FirstAsync(app => app.ApplicationKey == appKey);
+
+        userAppId = userApp.Id;
+
+        var appHasTargetProductId = normalizedProductType == "share"
+            ? (userApp.ApplicationShareProducts ?? []).Any(x => x.Id == ApplicationProductId)
+            : (userApp.ApplicationLoanProducts ?? []).Any(x => x.Id == ApplicationProductId);
+
+        if (!appHasTargetProductId)
+        {
+            nav.NavigateTo("/applications/summary");
+        }
+
+        applicationProductIds = normalizedProductType == "share"
+            ? (userApp.ApplicationShareProducts ?? []).Where(x => x.ShareProduct?.QuestionnaireShareProductLinks?.Any(q => q.QuestionnaireId == QuestionnaireId) == true).Select(x => x.Id)!.ToList()!
+            : (userApp.ApplicationLoanProducts ?? []).Where(x => x.LoanProduct?.QuestionnaireLoanProductLinks?.Any(q => q.QuestionnaireId == QuestionnaireId) == true)?.Select(x => x.Id)!.ToList()!;
+    }
+
+    private async Task HandleSubmitAsync((MemberQuestionnaireForm.Input, Questionnaire) values)
+    {
+        var (input, questionnaire) = values;
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        foreach (int id in applicationProductIds)
+        {
+            await QuestionnaireResponseSubmitter.SubmitQuestionnaireResponseAsync(
+                db: db,
+                questionnaire: questionnaire,
+                input: input,
+                userApplicationId: userAppId,
+                applicationPersonId: null,
+                applicationShareProductId: normalizedProductType == "share" ? id : null,
+                applicationLoanProductId: normalizedProductType == "loan" ? id : null);
+        }
+
+        nav.NavigateTo("/applications/products/questionnaires");
+    }
+
+}

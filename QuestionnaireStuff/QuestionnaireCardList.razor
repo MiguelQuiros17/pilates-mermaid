@@ -1,0 +1,58 @@
+@using Aloha.Domain.Questionnaires
+@rendermode InteractiveServer
+
+@if (Questionnaires is not null)
+{
+    <ul class="list-unstyled d-flex flex-column gap-2">
+        @foreach (var (questionnaire, response) in questionnaireWithResponsePairs)
+        {
+            <li>
+                <QuestionnaireCard
+                    ApplicationPersonId="ApplicationPersonId"
+                    IsComplete="CompletedQuestionnaireIdSet.Contains(questionnaire.Id)"
+                    QuestionnaireResponseId="response?.Id"
+                    Questionnaire="questionnaire"
+                    ApplicationLoanProductId="ApplicationLoanProductId"
+                    ApplicationShareProductId="ApplicationShareProductId"
+                    ApplicationProductNames="ApplicationProductNames" />
+            </li>
+        }
+    </ul>
+}
+
+@code {
+
+    [Parameter, EditorRequired]
+    public IList<Questionnaire>? Questionnaires { get; set; }
+
+    [Parameter, EditorRequired]
+    public IList<QuestionnaireResponse>? QuestionnaireResponses { get; set; }
+
+    [Parameter, EditorRequired]
+    public HashSet<int> CompletedQuestionnaireIdSet { get; set; } = [];
+
+    [Parameter]
+    public int? ApplicationPersonId { get; set; }
+
+    [Parameter]
+    public int? ApplicationShareProductId { get; set; }
+
+    [Parameter]
+    public int? ApplicationLoanProductId { get; set; }
+
+    [Parameter]
+    public IList<string>? ApplicationProductNames { get; set; }
+
+    private IList<(Questionnaire q, QuestionnaireResponse?)> questionnaireWithResponsePairs = [];
+
+    protected override void OnInitialized()
+    {
+        if (Questionnaires != null)
+        {
+            questionnaireWithResponsePairs = Questionnaires
+                .Select(q => (q, QuestionnaireResponses?.FirstOrDefault(r => r.QuestionnaireId == q.Id)))
+                .ToArray();
+        }
+    }
+
+}

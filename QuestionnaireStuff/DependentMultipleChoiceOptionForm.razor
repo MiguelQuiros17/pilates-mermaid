@@ -1,0 +1,419 @@
+@using Aloha.Domain.Questionnaires
+@using FluentValidation
+@using Blazored.FluentValidation
+@using Aloha.Domain.Services.Translations
+@using System.Globalization
+@inject ITranslationHelper TranslationHelper
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<EditForm novalidate
+          FormName="DependentMultipleChoiceOption"
+          EditContext="editContext"
+          Context="dependentMultipleChoiceOptionFormContext"
+          OnSubmit="HandleSubmitAsync">
+    <FluentValidationValidator/>
+    @* Bulk translate button at the top *@
+    <BulkTranslateButton @ref="bulkTranslateButton"
+                        SelectedCulture="@bulkSelectedCulture"
+                        SelectedCultureChanged="@OnBulkCultureChanged"
+                        OnBulkTranslate="@OnBulkTranslateAll"
+                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
+                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
+                        HasEnglishTextFunc="@HasEnglishText" />
+
+    @* Multi-language input for Option Name *@
+    <MultiLanguageInput Label="Option Name"
+                       FieldId="dependentOptionName"
+                       Placeholder="Enter option name"
+                       Rows="1"
+                       IsDisabled="false"
+                       EnglishValue="@input.Name"
+                       EnglishValueChanged="@((string value) => input.Name = value)"
+                       Translations="@input.NameTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+
+    <div class="mb-2">
+        <InputCheckbox class="form-check-input"
+                       @bind-Value="input.HasFreeFormField"
+                       id="dependent-question-has-free-form"/>
+        <label class="form-check-label" for="dependent-question-has-free-form">
+            Has Free Form Field?
+        </label>
+    </div>
+    @if (input.HasFreeFormField)
+    {
+        @* Multi-language input for Free Form Field Description *@
+        <MultiLanguageInput Label="Free Form Field Helper Text"
+                           FieldId="freeFormFieldDescription"
+                           Placeholder="For example..."
+                           Rows="3"
+                           IsDisabled="false"
+                           EnglishValue="@input.FreeFormFieldDescription"
+                           EnglishValueChanged="@((string value) => input.FreeFormFieldDescription = value)"
+                           Translations="@input.FreeFormFieldDescriptionTranslations"
+                           TranslationsChanged="@((Dictionary<string, string> trans) => input.FreeFormFieldDescriptionTranslations = trans)"
+                           SelectedCultureOverride="@bulkSelectedCulture"
+                           SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+    }
+    <div class="d-flex flex-column">
+        @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
+        {
+            <Alert Color="AlertColor.Danger">
+                <Icon class="me-2" Name="IconName.ExclamationTriangleFill"></Icon>
+                Some information is missing and/or invalid. Please review your responses.
+            </Alert>
+        }
+        <div class="mt-2 d-flex gap-2">
+            @if (IsEditing)
+            {
+                <button class="btn btn-outline-primary">Save Dependent Option Edits</button>
+                <button class="btn btn-outline-secondary" type="button" @onclick="OnClose.InvokeAsync">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-outline-primary">Add Dependent Option</button>
+            }
+        </div>
+    </div>
+</EditForm>
+
+@code {
+
+    private DraftInput? initialValues;
+    private Input input = default!;
+    private ValidationMessageStore messageStore = default!;
+    private EditContext editContext = default!;
+    private string bulkSelectedCulture = "en-US";
+    private string primaryLanguage = "en-US";
+    private BulkTranslateButton? bulkTranslateButton;
+
+    [Parameter]
+    public bool IsEditing { get; set; }
+
+    [Parameter]
+    public DraftInput? InitialValues { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<Input> OnSubmit { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<Input> OnClose { get; set; }
+
+    protected override void OnInitialized()
+    {
+        initialValues = InitialValues;
+        input = Input.CreateFromDraft(initialValues);
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (_, _) => messageStore.Clear();
+        editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+        bulkSelectedCulture = primaryLanguage;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            bulkSelectedCulture = primaryLanguage;
+            StateHasChanged();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (InitialValues == initialValues)
+        {
+            return;
+        }
+
+        // If initial values change...
+        initialValues = InitialValues;
+
+        // Clear the form if new values are null...
+        if (initialValues is null)
+        {
+            input.Clear();
+            messageStore.Clear();
+            editContext.MarkAsUnmodified();
+            editContext.NotifyValidationStateChanged();
+        }
+        // Otherwise, replace form values with initial values
+        else
+        {
+            input.UpdateFromDraft(initialValues);
+            editContext.Validate();
+        }
+    }
+
+    private async Task HandleSubmitAsync()
+    {
+        input.HasSubmitted = true;
+        if (!editContext.Validate())
+        {
+            StateHasChanged();
+            return;
+        }
+        input.Trim();
+        await OnSubmit.InvokeAsync(input);
+        await OnClose.InvokeAsync();
+        input.Clear();
+    }
+
+    public class DraftInput
+    {
+        public required Guid DraftId { get; set; }
+        public required string Name { get; set; }
+        public bool HasFreeFormField { get; set; }
+        public string? FreeFormFieldDescription { get; set; }
+        public int SortOrder { get; set; }
+        public Dictionary<string, string> NameTranslations { get; set; } = new();
+        public Dictionary<string, string> FreeFormFieldDescriptionTranslations { get; set; } = new();
+
+        public static DraftInput CreateFromDependentOption(DependentMultipleChoiceOption depOption, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? freeFormFieldDescriptionTranslations = null)
+        {
+            return new DraftInput
+            {
+                DraftId = Guid.NewGuid(),
+                Name = depOption.Name,
+                SortOrder = depOption.SortOrder,
+                FreeFormFieldDescription = depOption.FreeFormFieldDescription,
+                HasFreeFormField = depOption.HasFreeFormField,
+                NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
+                FreeFormFieldDescriptionTranslations = freeFormFieldDescriptionTranslations ?? new Dictionary<string, string>()
+            };
+        }
+    }
+
+    public class Input
+    {
+        public bool HasSubmitted { get; set; }
+
+        public string? Name { get; set; }
+        public bool HasFreeFormField { get; set; }
+        public string? FreeFormFieldDescription { get; set; }
+        public Dictionary<string, string> NameTranslations { get; set; } = new();
+        public Dictionary<string, string> FreeFormFieldDescriptionTranslations { get; set; } = new();
+
+        public static Input CreateFromDraft(DraftInput? draft)
+        {
+            var newInput = new Input();
+
+            if (draft is not null)
+            {
+                newInput.UpdateFromDraft(draft);
+            }
+
+            return newInput;
+        }
+
+        public void UpdateFromDraft(DraftInput draft)
+        {
+            Name = draft.Name;
+            HasFreeFormField = draft.HasFreeFormField;
+            FreeFormFieldDescription = draft.FreeFormFieldDescription;
+            NameTranslations = new Dictionary<string, string>(draft.NameTranslations);
+            FreeFormFieldDescriptionTranslations = new Dictionary<string, string>(draft.FreeFormFieldDescriptionTranslations);
+        }
+
+        public void Trim()
+        {
+            Name = Name?.Trim();
+
+            FreeFormFieldDescription = string.IsNullOrWhiteSpace(FreeFormFieldDescription)
+                ? null
+                : FreeFormFieldDescription.Trim();
+        }
+
+        public void Clear()
+        {
+            Name = null;
+            HasFreeFormField = false;
+            FreeFormFieldDescription = null;
+            NameTranslations.Clear();
+            FreeFormFieldDescriptionTranslations.Clear();
+        }
+    }
+
+    public class FormValidator : AbstractValidator<Input>
+    {
+        public FormValidator()
+        {
+            When(input => input.HasSubmitted, () =>
+            {
+                RuleFor(p => p.Name).NotEmpty().WithMessage("Dependent option name is required");
+            });
+        }
+    }
+
+    private async Task OnBulkCultureChanged(string culture)
+    {
+        bulkSelectedCulture = culture;
+        StateHasChanged();
+    }
+
+    private bool HasEnglishText()
+    {
+        return !string.IsNullOrWhiteSpace(input.Name) ||
+               !string.IsNullOrWhiteSpace(input.FreeFormFieldDescription);
+    }
+
+    private List<string> GetFieldsWithExistingText()
+    {
+        var fields = new List<string>();
+        if (input.NameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
+        {
+            fields.Add("Option Name");
+        }
+        if (input.FreeFormFieldDescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
+        {
+            fields.Add("Free Form Field Helper Text");
+        }
+        return fields;
+    }
+
+    private async Task OnBulkTranslateAll()
+    {
+        bulkTranslateButton?.ClearError();
+        
+        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == primaryLanguage)
+        {
+            return;
+        }
+
+        var errors = new List<string>();
+
+        // Translate Name
+        if (!string.IsNullOrWhiteSpace(input.Name))
+        {
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(input.Name, bulkSelectedCulture);
+                if (translated != null)
+                {
+                    input.NameTranslations[bulkSelectedCulture] = translated;
+                }
+                else
+                {
+                    errors.Add($"Option Name: Translation failed (no result returned)");
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Option Name: {ex.Message}");
+            }
+        }
+
+        // Translate FreeFormFieldDescription
+        if (!string.IsNullOrWhiteSpace(input.FreeFormFieldDescription))
+        {
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(input.FreeFormFieldDescription, bulkSelectedCulture);
+                if (translated != null)
+                {
+                    input.FreeFormFieldDescriptionTranslations[bulkSelectedCulture] = translated;
+                }
+                else
+                {
+                    errors.Add($"Free Form Field Helper Text: Translation failed (no result returned)");
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Free Form Field Helper Text: {ex.Message}");
+            }
+        }
+
+        if (errors.Any())
+        {
+            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+            var errorMessage = isApiConfigured 
+                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
+                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+            bulkTranslateButton?.SetError(errorMessage);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnBulkTranslateAllLanguages()
+    {
+        bulkTranslateButton?.ClearError();
+        
+        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
+        var errors = new List<string>();
+
+        // Translate Name to all languages
+        if (!string.IsNullOrWhiteSpace(input.Name))
+        {
+            foreach (var lang in availableLanguages)
+            {
+                if (lang == primaryLanguage) continue;
+                
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(input.Name, lang);
+                    if (translated != null)
+                    {
+                        input.NameTranslations[lang] = translated;
+                    }
+                    else
+                    {
+                        errors.Add($"Option Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Option Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
+                }
+            }
+        }
+
+        // Translate FreeFormFieldDescription to all languages
+        if (!string.IsNullOrWhiteSpace(input.FreeFormFieldDescription))
+        {
+            foreach (var lang in availableLanguages)
+            {
+                if (lang == primaryLanguage) continue;
+                
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(input.FreeFormFieldDescription, lang);
+                    if (translated != null)
+                    {
+                        input.FreeFormFieldDescriptionTranslations[lang] = translated;
+                    }
+                    else
+                    {
+                        errors.Add($"Free Form Field Helper Text ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Free Form Field Helper Text ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
+                }
+            }
+        }
+
+        if (errors.Any())
+        {
+            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+            var errorMessage = isApiConfigured 
+                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
+                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+            bulkTranslateButton?.SetError(errorMessage);
+        }
+
+        StateHasChanged();
+    }
+
+}

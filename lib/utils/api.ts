@@ -1,6 +1,7 @@
 /**
  * Utility function to construct API URLs correctly
  * Handles cases where API_BASE_URL might already include /api
+ * Works in both development (Next.js rewrites) and production (Express serves both)
  */
 
 export const getApiUrl = (path: string): string => {
@@ -11,8 +12,13 @@ export const getApiUrl = (path: string): string => {
     return path
   }
   
-  // Si API_BASE_URL está vacío, usar URL relativa (mismo origen)
-  if (!API_BASE_URL || API_BASE_URL.trim() === '') {
+  // En desarrollo, siempre usar URL relativa para que Next.js rewrites funcionen
+  // En producción, si API_BASE_URL está vacío, usar URL relativa (Express maneja /api/*)
+  const isDevelopment = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  
+  if (isDevelopment || !API_BASE_URL || API_BASE_URL.trim() === '') {
+    // URL relativa - Next.js rewrite en dev, Express en prod
     return path.startsWith('/') ? path : `/${path}`
   }
   
@@ -27,4 +33,3 @@ export const getApiUrl = (path: string): string => {
   
   return `${baseUrl}${normalizedPath}`
 }
-

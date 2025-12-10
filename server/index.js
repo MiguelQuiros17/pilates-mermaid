@@ -19,6 +19,24 @@ const { EmailService } = require('../lib/email.js')
 const app = express()
 const PORT = process.env.PORT || 3001
 
+// Add unhandled error handlers to prevent silent crashes
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error)
+  console.error('Stack:', error.stack)
+  // Don't exit in development - allow debugging
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1)
+  }
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason)
+  // Don't exit in development - allow debugging
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1)
+  }
+})
+
 // Initialize email service
 const emailService = new EmailService()
 
@@ -115,6 +133,26 @@ app.use(cors({
     exposedHeaders: [],
     maxAge: 86400 // 24 hours
 }))
+
+// Request logging middleware (development only)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    // Log all API requests in development
+    if (req.path.startsWith('/api')) {
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`)
+      console.log('  Headers:', {
+        'content-type': req.get('content-type'),
+        'origin': req.get('origin'),
+        'referer': req.get('referer'),
+        'user-agent': req.get('user-agent')?.substring(0, 50)
+      })
+      if (req.method === 'POST' || req.method === 'PUT') {
+        console.log('  Body keys:', Object.keys(req.body || {}))
+      }
+    }
+    next()
+  })
+}
 
 // Rate limiting por IP
 const createRateLimit = require('express-rate-limit')
@@ -461,6 +499,18 @@ app.post('/api/auth/register', preserveOriginalEmail, [
   body('lesion_o_limitacion_fisica').optional().isLength({ max: 500 }).withMessage('Texto demasiado largo')
 ], async (req, res) => {
   try {
+    // Log request details for debugging (development only)
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Register] Request received:', {
+        method: req.method,
+        path: req.path,
+        bodyKeys: Object.keys(req.body || {}),
+        contentType: req.get('content-type'),
+        origin: req.get('origin'),
+        referer: req.get('referer')
+      })
+    }
+    
     const clientIP = SecurityService.getClientIP(req)
     
     // Validate inputs with express-validator
@@ -652,11 +702,37 @@ app.post('/api/auth/register', preserveOriginalEmail, [
     })
 
   } catch (error) {
-    console.error('Registration error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Error interno del servidor'
+    console.error('[Register] Registration error:', error)
+    console.error('[Register] Error stack:', error.stack)
+    console.error('[Register] Request body:', JSON.stringify(req.body, null, 2))
+    console.error('[Register] Request headers:', {
+      'content-type': req.get('content-type'),
+      'origin': req.get('origin'),
+      'referer': req.get('referer'),
+      'user-agent': req.get('user-agent')
     })
+    
+    const clientIP = SecurityService.getClientIP(req)
+    SecurityService.logSecurityEvent('REGISTRATION_ERROR', {
+      error: error.message,
+      stack: error.stack,
+      ip: clientIP,
+      path: req.path,
+      method: req.method
+    })
+    
+    // In development, return more detailed error information
+    const errorResponse = {
+      success: false,
+      message: 'Error interno del servidor al registrar el usuario'
+    }
+    
+    if (process.env.NODE_ENV !== 'production') {
+      errorResponse.error = error.message
+      errorResponse.stack = error.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines of stack
+    }
+    
+    res.status(500).json(errorResponse)
   }
 })
 
@@ -941,6 +1017,17 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
 
       // Send password reset email with timeout
     try {
+      // Log email configuration status (without exposing sensitive data)
+      const emailProvider = process.env.EMAIL_PROVIDER || 'gmail'
+      const hasEmailUser = !!process.env.EMAIL_USER
+      const hasEmailPassword = !!process.env.EMAIL_PASSWORD
+      console.log('[Password Reset] Email configuration check:', {
+        provider: emailProvider,
+        hasEmailUser,
+        hasEmailPassword: hasEmailPassword,
+        emailUserLength: process.env.EMAIL_USER?.length || 0
+      })
+
       // Add overall timeout for the email operation (25 seconds to be under the 30s frontend timeout)
       const emailPromise = emailService.sendPasswordReset(user.correo, user.nombre, resetToken)
       const timeoutPromise = new Promise((_, reject) => 
@@ -950,7 +1037,14 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
       const emailResult = await Promise.race([emailPromise, timeoutPromise])
       
       if (!emailResult || !emailResult.success) {
-        console.error('Email service returned failure:', emailResult?.error || 'Unknown error')
+        const errorMessage = emailResult?.error || 'Unknown error'
+        console.error('[Password Reset] Email service returned failure:', errorMessage)
+        console.error('[Password Reset] Full error details:', {
+          success: emailResult?.success,
+          error: errorMessage,
+          hasResult: !!emailResult
+        })
+        
         // Delete token if email fails
         await database.run('DELETE FROM password_reset_tokens WHERE id = ?', [tokenId])
         
@@ -958,13 +1052,25 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         SecurityService.logSecurityEvent('PASSWORD_RESET_EMAIL_FAILED', {
           userId: user.id,
           email: user.correo,
-          error: emailResult?.error || 'Unknown error',
+          error: errorMessage,
           ip: clientIP
         })
         
+        // Return more specific error message
+        let userFacingMessage = 'Error al enviar el email de recuperación.'
+        if (errorMessage.includes('not configured') || errorMessage.includes('environment variables')) {
+          userFacingMessage = 'El servicio de correo no está configurado correctamente. Por favor, contacta al administrador.'
+        } else if (errorMessage.includes('timeout')) {
+          userFacingMessage = 'El envío de email está tardando demasiado. Por favor, intenta más tarde.'
+        } else if (errorMessage.includes('authentication') || errorMessage.includes('Invalid login')) {
+          userFacingMessage = 'Error de autenticación con el servidor de correo. Verifica las credenciales configuradas.'
+        } else if (errorMessage.includes('connection') || errorMessage.includes('ECONNREFUSED')) {
+          userFacingMessage = 'No se pudo conectar al servidor de correo. Verifica la configuración de red.'
+        }
+        
         return res.status(500).json({
           success: false,
-          message: 'Error al enviar el email de recuperación. Por favor, verifica la configuración del servidor de correo.'
+          message: userFacingMessage
         })
       }
       
@@ -992,14 +1098,23 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         ip: clientIP
       })
       
-      // Check if it's a timeout error
-      const isTimeout = emailError.message && emailError.message.includes('timeout')
-      res.status(500).json({
-        success: false,
-        message: isTimeout 
-          ? 'El envío de email está tardando demasiado. Por favor, verifica la configuración de email o intenta más tarde.'
-          : 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
-      })
+        // Check if it's a timeout or connection error
+        const isTimeout = emailError.message && (emailError.message.includes('timeout') || emailError.message.includes('ETIMEDOUT') || emailError.message.includes('ECONNREFUSED'))
+        const isConnectionError = emailError.code === 'ETIMEDOUT' || emailError.code === 'ECONNREFUSED' || emailError.code === 'ECONNRESET'
+        
+        console.error('[Password Reset] Connection error details:', {
+          code: emailError.code,
+          message: emailError.message,
+          isTimeout,
+          isConnectionError
+        })
+        
+        res.status(500).json({
+          success: false,
+          message: isTimeout || isConnectionError
+            ? 'No se pudo conectar al servidor de correo. Railway puede estar bloqueando conexiones SMTP. Considera usar SendGrid o Mailgun en su lugar.'
+            : 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
+        })
     }
   } catch (error) {
     console.error('Forgot password error:', error)
@@ -6963,9 +7078,19 @@ if (process.env.NODE_ENV === 'production') {
   })
   
   // Development: Only start API server
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 PilatesMermaid API server running on port ${PORT}`)
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`)
+    console.log(`✅ Server is ready to accept connections`)
+  }).on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use. Please kill the process using that port.`)
+      console.error(`   On Windows, run: netstat -ano | findstr :${PORT}`)
+      console.error(`   Then kill the process with: taskkill /F /PID <PID>`)
+    } else {
+      console.error(`❌ Error starting server:`, err)
+    }
+    process.exit(1)
   })
 }
 

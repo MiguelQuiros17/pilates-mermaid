@@ -100,11 +100,14 @@ export default function RegisterPage() {
       // Preparar datos para enviar al backend (excluir apellidos y confirmPassword)
       const { apellidos, confirmPassword, ...dataToSend } = formData
       
-      // Build register URL with runtime fallback to current origin (production proxy safety)
-      const baseUrl = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
-      const registerUrl = baseUrl
-        ? `${baseUrl.replace(/\/$/, '')}/api/auth/register`
-        : '/api/auth/register'
+      // In development, use relative URL so Next.js rewrites work
+      // In production, use API_BASE_URL if set, otherwise use relative URL
+      const isDevelopment = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost'
+      const registerUrl = isDevelopment || !API_BASE_URL
+        ? '/api/auth/register'  // Relative URL - Next.js will rewrite in dev, Express handles in prod
+        : `${API_BASE_URL.replace(/\/$/, '')}/api/auth/register`
+
+      console.log('[Register] Making request to:', registerUrl, 'Development:', isDevelopment, 'API_BASE_URL:', API_BASE_URL)
 
       const response = await fetch(registerUrl, {
         method: 'POST',
@@ -118,10 +121,40 @@ export default function RegisterPage() {
         }),
       })
 
-      const data = await response.json().catch(() => {
-        // If JSON parsing fails, return empty object
-        return {}
-      })
+      console.log('[Register] Response status:', response.status, response.statusText)
+      
+      // Handle 500 errors that might be from proxy failures
+      if (response.status === 500) {
+        let text = 'Internal Server Error'
+        try {
+          text = await response.text()
+        } catch {
+          // If we can't read the text, it's likely a connection error
+        }
+        console.error('[Register] Server error response:', text)
+        
+        // Check if it's a connection refused error (Express server not running)
+        // Next.js proxy errors show "Internal Server Error" when connection is refused
+        if (text === 'Internal Server Error' || text.includes('ECONNREFUSED') || text.includes('Failed to proxy')) {
+          setError('❌ El servidor Express no está corriendo en el puerto 3001.\n\nPor favor, abre otra terminal y ejecuta:\n\n  npm run server\n\nO ejecuta ambos servidores juntos:\n\n  npm run dev:full')
+        } else {
+          setError(`Error del servidor: ${text.substring(0, 200)}. Verifica la consola del servidor Express para más detalles.`)
+        }
+        setIsLoading(false)
+        return
+      }
+      
+      let data
+      try {
+        const text = await response.text()
+        console.log('[Register] Response text (first 200 chars):', text.substring(0, 200))
+        data = text ? JSON.parse(text) : {}
+      } catch (parseError) {
+        console.error('[Register] Failed to parse response:', parseError)
+        setError('Error al procesar la respuesta del servidor. Por favor, verifica que el servidor Express esté corriendo en el puerto 3001.')
+        setIsLoading(false)
+        return
+      }
 
       if (response.ok && data.success && data.token) {
         // Store token and user data immediately - ensure synchronous write
@@ -157,13 +190,18 @@ export default function RegisterPage() {
           setError(errorMessages)
         } else if (data.message) {
           setError(data.message)
+        } else if (data.error && process.env.NODE_ENV === 'development') {
+          // Show detailed error in development
+          setError(`Error: ${data.error}`)
         } else if (!response.ok) {
-          setError(`Error del servidor (${response.status}). Intenta de nuevo.`)
+          setError(`Error del servidor (${response.status}). ${response.status === 500 ? 'Verifica que el servidor Express esté corriendo en el puerto 3001.' : 'Intenta de nuevo.'}`)
         } else {
           setError('Error al crear la cuenta. Por favor, verifica los datos ingresados.')
         }
       }
     } catch (error: any) {
+      console.error('[Register] Network/request error:', error)
+      setError(`Error de conexión: ${error instanceof Error ? error.message : 'Error desconocido'}. Asegúrate de que el servidor Express esté corriendo en el puerto 3001.`)
       console.error('Registration error:', error)
       setIsLoading(false)
       setError('Error de conexión. Intenta de nuevo.')

@@ -1,0 +1,192 @@
+@page "/ApplicationConfiguration/KinectiveSignPackets"
+
+@using Aloha.Domain.Vendors.DocumentSigning
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Services
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin")]
+
+@inject AuthenticationStateProvider authStateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IHttpContextAccessor HttpContextAccessor
+@inject Aloha.Domain.Services.Translations.ITranslationHelper TranslationHelper
+@rendermode InteractiveServer
+
+<h3>Kinective Sign Form Packets</h3>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, FormManager">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/KinectiveSignPackets/add">
+            <Icon Name="IconName.Plus"/>
+            Add Form Packet
+        </a>
+    </p>
+</AuthorizeView>
+
+@if (isLoading)
+{
+    <LoadingContent/>
+}
+else
+{
+    <Grid Class="table table-bordered table-hover table-striped"
+          Data="packets"
+          EmptyText="No existing form packets"
+          Responsive="true"
+          TItem="KinectiveFormPacket">
+
+        <GridColumn HeaderText="Id"
+                    PropertyName="Id"
+                    SortKeySelector="item => item.Id"
+                    TItem="KinectiveFormPacket">
+            @context.Id
+        </GridColumn>
+        <GridColumn HeaderText="Application Type"
+                    PropertyName="ApplicationType"
+                    SortKeySelector="item => item.ProductApplicationTypeId"
+                    TItem="KinectiveFormPacket">
+            @(displayNameTranslations.TryGetValue(context.ProductApplicationType.Id, out var translatedName) ? translatedName : context.ProductApplicationType.ApplicationDisplayName)
+        </GridColumn>
+        <GridColumn HeaderText="Forms Included"
+                    PropertyName="Files"
+                    TItem="KinectiveFormPacket">
+            @string.Join(", ", @context.Files.Select(f => f.FriendlyLabel ?? f.FileName).ToArray())
+        </GridColumn>
+        <GridColumn Filterable="false"
+                    HeaderText="@(isReadOnly ? "View" : "Edit")"
+                    TextAlignment="Alignment.Center"
+                    TItem="KinectiveFormPacket">
+            <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/KinectiveSignPackets/edit/@context.Id">
+                <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)"/>
+            </a>
+            <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, FormManager">
+                <Button Color="ButtonColor.Danger"
+                        @onclick="() => OpenDeletePacketConfirmationDialog(context.Id)"
+                        Outline="true"
+                        Type="@ButtonType.Button">
+                    <Icon Name="IconName.Trash"></Icon>
+                </Button>
+            </AuthorizeView>
+        </GridColumn>
+    </Grid>
+
+    <ConfirmDialog @ref="confirmDeleteDialog"/>
+}
+
+@code {
+    private ConfirmDialog confirmDeleteDialog = default!;
+    private IList<KinectiveFormPacket> packets = [];
+    private bool isLoading = true;
+    private bool isReadOnly = true;
+    private Dictionary<int, string> displayNameTranslations = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+            await LoadData();
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        packets = await db.KinectiveFormPackets
+            .Include(p => p.Files)
+            .Include(p => p.ProductApplicationType)
+            .Where(p => !p.IsDeleted)
+            .ToArrayAsync();
+        
+        // Load translations for all application types
+        displayNameTranslations.Clear();
+        var currentCulture = GetCurrentCulture();
+        System.Diagnostics.Debug.WriteLine($"[KinectiveSignPackets] Current culture: {currentCulture ?? "null (will default to en-US)"}");
+        foreach (var packet in packets)
+        {
+            if (packet.ProductApplicationType != null && !displayNameTranslations.ContainsKey(packet.ProductApplicationType.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(packet.ProductApplicationType, "ApplicationDisplayName", currentCulture);
+                System.Diagnostics.Debug.WriteLine($"[KinectiveSignPackets] AppType ID {packet.ProductApplicationType.Id}: '{packet.ProductApplicationType.ApplicationDisplayName}' -> '{translatedName}' (culture: {currentCulture ?? "null"})");
+                displayNameTranslations[packet.ProductApplicationType.Id] = translatedName;
+            }
+        }
+    }
+
+    private async Task OpenDeletePacketConfirmationDialog(int packetId)
+    {
+        var isConfirmed = await confirmDeleteDialog.ShowAsync(
+            "Confirm Form Packet Deletion",
+            "You are about to delete a form packet. This form packet will be permanently removed and will no longer be accessible.",
+            "Are you sure you want to proceed?",
+            new ConfirmDialogOptions
+            {
+                IsVerticallyCentered = true,
+                Dismissable = true,
+                AutoFocusYesButton = false,
+                YesButtonColor = ButtonColor.Secondary,
+                NoButtonColor = ButtonColor.Primary
+            });
+
+        if (isConfirmed)
+        {
+            await DeletePacket(packetId);
+        }
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") ||
+                       authUser.IsInRole("MasterAdmin") ||
+                       authUser.IsInRole("FormManager"));
+    }
+
+    private async Task DeletePacket(int packetId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var packet = await db.KinectiveFormPackets.FirstAsync(p => p.Id == packetId);
+        packet.SoftDelete();
+        await db.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private string? GetCurrentCulture()
+    {
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext != null)
+        {
+            var requestCulture = httpContext.Features.Get<Microsoft.AspNetCore.Localization.IRequestCultureFeature>();
+            if (requestCulture?.RequestCulture?.Culture != null)
+            {
+                var cultureName = requestCulture.RequestCulture.Culture.Name;
+                System.Diagnostics.Debug.WriteLine($"[KinectiveSignPackets] GetCurrentCulture: Detected culture from HttpContext: {cultureName}");
+                // Map to supported cultures
+                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
+                {
+                    return cultureName;
+                }
+                else if (cultureName.StartsWith("en"))
+                {
+                    return "en-US";
+                }
+                else if (cultureName.StartsWith("es"))
+                {
+                    return "es-CR";
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("[KinectiveSignPackets] GetCurrentCulture: IRequestCultureFeature is null or culture is null");
+            }
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine("[KinectiveSignPackets] GetCurrentCulture: HttpContext is null");
+        }
+        return null;
+    }
+}

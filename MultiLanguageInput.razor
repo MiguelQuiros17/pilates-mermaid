@@ -1,12 +1,13 @@
 @using Aloha.Domain.Services.Translations
 @using System.Globalization
 @inject ITranslationHelper TranslationHelper
+@inject ILanguageConfigurationService LanguageConfigService
 
 <div class="mb-3">
     <div class="d-flex justify-content-between align-items-center mb-2">
         <label class="form-label mb-0" for="@($"{FieldId}-{SelectedCulture}")">@Label</label>
         <div class="d-flex gap-2 align-items-center">
-            @if (SelectedCulture != "en-US")
+            @if (isMultiLanguageEnabled && SelectedCulture != primaryLanguage)
             {
                 <button type="button" 
                         class="btn btn-sm btn-outline-primary"
@@ -19,7 +20,7 @@
                     Auto Translate
                 </button>
             }
-            else
+            else if (isMultiLanguageEnabled && SelectedCulture == primaryLanguage)
             {
                 <button type="button" 
                         class="btn btn-sm btn-outline-primary"
@@ -35,28 +36,20 @@
         </div>
     </div>
     
-    @if (SelectedCulture == "en-US")
+    @* Always show the value for the selected culture *@
+    @* If selected culture is primary language, show EnglishValue (primary language value) *@
+    @* Otherwise, show the translation from the Translations dictionary *@
+    <InputTextArea @bind-Value="DisplayValue"
+                   @bind-Value:after="HandleValueChanged"
+                   class="form-control"
+                   disabled="@IsDisabled"
+                   id="@($"{FieldId}-{SelectedCulture}")"
+                   rows="@Rows"
+                   placeholder="@Placeholder" />
+    <ValidationMessage For="@(() => DisplayValue)" />
+    
+    @if (SelectedCulture != primaryLanguage)
     {
-        <InputTextArea @bind-Value="EnglishValue"
-                       @bind-Value:after="HandleValueChanged"
-                       class="form-control"
-                       disabled="@IsDisabled"
-                       id="@($"{FieldId}-{SelectedCulture}")"
-                       rows="@Rows"
-                       placeholder="@Placeholder" />
-        <ValidationMessage For="@(() => EnglishValue)" />
-    }
-    else
-    {
-        <InputTextArea @bind-Value="CurrentValue"
-                       @bind-Value:after="HandleValueChanged"
-                       class="form-control"
-                       disabled="@IsDisabled"
-                       id="@($"{FieldId}-{SelectedCulture}")"
-                       rows="@Rows"
-                       placeholder="@Placeholder" />
-        <ValidationMessage For="@(() => CurrentValue)" />
-        
         @if (!string.IsNullOrWhiteSpace(TranslationError))
         {
             <div class="alert alert-danger mt-2" role="alert">
@@ -66,7 +59,7 @@
         else if (ShowTranslationError)
         {
             <div class="alert alert-warning mt-2" role="alert">
-                <strong>Warning:</strong> English text is required to generate translations.
+                <strong>Warning:</strong> @(primaryLanguage.StartsWith("en") ? "English" : "Primary language") text is required to generate translations.
             </div>
         }
     }
@@ -146,7 +139,7 @@
     [Parameter] public string? SelectedCultureOverride { get; set; }
     [Parameter] public EventCallback<string> SelectedCultureOverrideChanged { get; set; }
 
-    private string SelectedCulture => SelectedCultureOverride ?? "en-US";
+    private string SelectedCulture => SelectedCultureOverride ?? primaryLanguage;
     private List<string> AvailableLanguages { get; set; } = new();
     private bool isTranslating = false;
     private bool showOverwriteModal = false;
@@ -155,7 +148,39 @@
     private List<string> LanguagesWithExistingText { get; set; } = new();
     private bool ShowTranslationError { get; set; } = false;
     private string? TranslationError { get; set; }
+    private bool isMultiLanguageEnabled = false;
+    private string primaryLanguage = "en-US";
 
+    private string DisplayValue
+    {
+        get
+        {
+            // If selected culture is primary language, return the primary language value
+            if (SelectedCulture == primaryLanguage)
+            {
+                return EnglishValue ?? string.Empty;
+            }
+            // Otherwise, return the translation from the dictionary
+            return Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
+        }
+        set
+        {
+            // If selected culture is primary language, update the primary language value
+            if (SelectedCulture == primaryLanguage)
+            {
+                EnglishValue = value;
+                EnglishValueChanged.InvokeAsync(value);
+            }
+            else
+            {
+                // Update the translation in the dictionary
+                Translations[SelectedCulture] = value;
+                TranslationsChanged.InvokeAsync(Translations);
+            }
+            OnValueChanged.InvokeAsync();
+        }
+    }
+    
     private string CurrentValue
     {
         get => Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
@@ -176,7 +201,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        AvailableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
+        isMultiLanguageEnabled = await LanguageConfigService.IsMultiLanguageEnabledAsync();
+        primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+        AvailableLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+        // Remove primary language from available languages list
+        AvailableLanguages = AvailableLanguages.Where(l => l != primaryLanguage).ToList();
         StateHasChanged();
     }
 

@@ -313,7 +313,7 @@ export default function ClientsPage() {
         return
       }
 
-      const response = await fetch('/api/users/clients', {
+      const response = await fetch(getApiUrl('/api/users/clients'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -452,39 +452,56 @@ export default function ClientsPage() {
       const token = localStorage.getItem('token')
       if (!token) return
 
-      const response = await fetch(getApiUrl(`/api/users/${client.id}/package-history`), {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
+      console.log('[Manage Packages] Loading for client:', client.id, client.nombre)
 
-      if (response.ok) {
-        const data = await response.json()
-        setPackageHistory(data.packageHistory || [])
-        setActivePackage(data.activePackage) // For backward compatibility
-        setActiveGroupPackage(data.activeGroupPackage)
-        setActivePrivatePackage(data.activePrivatePackage)
-        setSelectedClient(client)
-        setShowPackageModal(true)
-
-        // Load class counts
-        const countsResponse = await fetch(getApiUrl(`/api/users/${client.id}/class-counts`), {
+      // Set selected client first to ensure it's correct
+      setSelectedClient(client)
+      
+      // Load package history and class counts in parallel
+      const [packageResponse, countsResponse] = await Promise.all([
+        fetch(getApiUrl(`/api/users/${client.id}/package-history`), {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }),
+        fetch(getApiUrl(`/api/users/${client.id}/class-counts`), {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         })
-        if (countsResponse.ok) {
-          const countsData = await countsResponse.json()
-          setClassCounts({
-            private: countsData.private_classes_remaining || 0,
-            group: countsData.group_classes_remaining || 0
-          })
-        }
+      ])
+
+      if (packageResponse.ok) {
+        const data = await packageResponse.json()
+        setPackageHistory(data.packageHistory || [])
+        setActivePackage(data.activePackage) // For backward compatibility
+        setActiveGroupPackage(data.activeGroupPackage)
+        setActivePrivatePackage(data.activePrivatePackage)
+        console.log('[Manage Packages] Package history loaded for client:', client.id)
       } else {
+        console.error('[Manage Packages] Failed to load package history for client:', client.id)
         alert('Error al cargar el historial de paquetes')
+        return
       }
+
+      if (countsResponse.ok) {
+        const countsData = await countsResponse.json()
+        const newCounts = {
+          private: countsData.private_classes_remaining || 0,
+          group: countsData.group_classes_remaining || 0
+        }
+        console.log('[Manage Packages] Class counts loaded for client:', client.id, 'Counts:', newCounts)
+        setClassCounts(newCounts)
+      } else {
+        console.error('[Manage Packages] Failed to load class counts for client:', client.id)
+        // Still show modal but with zero counts
+        setClassCounts({ private: 0, group: 0 })
+      }
+
+      // Show modal after data is loaded
+      setShowPackageModal(true)
     } catch (error) {
-      console.error('Error loading package history:', error)
+      console.error('[Manage Packages] Error loading package history:', error)
       alert('Error al cargar el historial de paquetes')
     }
   }
@@ -1098,7 +1115,13 @@ export default function ClientsPage() {
       )}
 
       {/* Modal para gestionar paquetes */}
-      {showPackageModal && selectedClient && (
+      {showPackageModal && selectedClient && (() => {
+        // Capture client ID at render time to avoid closure issues
+        const modalClientId = selectedClient.id
+        const modalClientName = selectedClient.nombre
+        console.log('[Package Modal] Rendering modal for client:', modalClientId, modalClientName)
+        
+        return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
@@ -1106,7 +1129,7 @@ export default function ClientsPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <h3 className="text-xl font-bold text-white">Gestión de Paquetes</h3>
-                  <p className="text-slate-300 text-sm mt-1">{selectedClient.nombre}</p>
+                  <p className="text-slate-300 text-sm mt-1">{modalClientName}</p>
                 </div>
               <button
                 onClick={() => setShowPackageModal(false)}
@@ -1188,9 +1211,15 @@ export default function ClientsPage() {
                 <button
                   onClick={async () => {
                     const token = localStorage.getItem('token')
-                    if (!token || !selectedClient) return
+                    // Capture client ID at the time of click to avoid closure issues
+                    const clientId = selectedClient?.id
+                    if (!token || !clientId) {
+                      alert('Error: No se pudo identificar al cliente')
+                      return
+                    }
                     try {
-                      const response = await fetch(getApiUrl(`/api/users/${selectedClient.id}/update-class-counts`), {
+                      console.log('[Save Class Counts] Saving for client:', clientId, 'Counts:', classCounts)
+                      const response = await fetch(getApiUrl(`/api/users/${clientId}/update-class-counts`), {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
@@ -1202,12 +1231,29 @@ export default function ClientsPage() {
                         })
                       })
                       if (response.ok) {
+                        const data = await response.json()
+                        console.log('[Save Class Counts] Success:', data)
                         alert('Clases actualizadas exitosamente')
+                        // Reload the class counts to reflect the update
+                        const countsResponse = await fetch(getApiUrl(`/api/users/${clientId}/class-counts`), {
+                          headers: {
+                            'Authorization': `Bearer ${token}`
+                          }
+                        })
+                        if (countsResponse.ok) {
+                          const countsData = await countsResponse.json()
+                          setClassCounts({
+                            private: countsData.private_classes_remaining || 0,
+                            group: countsData.group_classes_remaining || 0
+                          })
+                        }
                       } else {
-                        alert('Error al actualizar clases')
+                        const errorData = await response.json().catch(() => ({ message: 'Error al actualizar clases' }))
+                        console.error('[Save Class Counts] Error response:', errorData)
+                        alert(errorData.message || 'Error al actualizar clases')
                       }
                     } catch (error) {
-                      console.error('Error updating class counts:', error)
+                      console.error('[Save Class Counts] Exception:', error)
                       alert('Error al actualizar clases')
                     }
                   }}
@@ -1291,10 +1337,12 @@ export default function ClientsPage() {
 
               {/* Add New Package */}
               <PackageAssignmentSection 
-                clientId={selectedClient?.id || ''}
+                clientId={modalClientId}
                 onPackageAdded={() => {
-                  if (selectedClient) {
-                    handleManagePackages(selectedClient)
+                  // Reload data for the current client
+                  const currentClient = clients.find(c => c.id === modalClientId)
+                  if (currentClient) {
+                    handleManagePackages(currentClient)
                   }
                 }}
               />
@@ -1392,7 +1440,10 @@ export default function ClientsPage() {
                                             alert('Meses restantes actualizados exitosamente')
                                 setEditingPackageId(null)
                                             setEditingPackageRenewalMonths(0)
-                                            handleManagePackages(selectedClient!)
+                                            const currentClient = clients.find(c => c.id === modalClientId)
+                                            if (currentClient) {
+                                              handleManagePackages(currentClient)
+                                            }
                               } else {
                                             const data = await response.json()
                                             alert(data.message || 'Error al actualizar meses restantes')
@@ -1483,7 +1534,10 @@ export default function ClientsPage() {
                                           })
                                           if (response.ok) {
                                             alert('Paquete renovado exitosamente')
-                                            handleManagePackages(selectedClient!)
+                                            const currentClient = clients.find(c => c.id === modalClientId)
+                                            if (currentClient) {
+                                              handleManagePackages(currentClient)
+                                            }
                                           } else {
                                             const data = await response.json()
                                             alert(data.message || 'Error al renovar el paquete')
@@ -1511,7 +1565,10 @@ export default function ClientsPage() {
                                           })
                                           if (response.ok) {
                                             alert('Paquete eliminado del historial exitosamente')
-                                            handleManagePackages(selectedClient!)
+                                            const currentClient = clients.find(c => c.id === modalClientId)
+                                            if (currentClient) {
+                                              handleManagePackages(currentClient)
+                                            }
                                           } else {
                                             const data = await response.json()
                                             alert(data.message || 'Error al eliminar el paquete')
@@ -1550,7 +1607,8 @@ export default function ClientsPage() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Delete Client Modal */}
       {showDeleteModal && clientToDelete && (

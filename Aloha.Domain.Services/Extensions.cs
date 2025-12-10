@@ -52,6 +52,8 @@ namespace Aloha.Domain.Services
             services.AddScoped<IApplicationPrefillService, ApplicationPrefillService>();
             services.AddScoped<IDeepLinkService, DeepLinkService>();
             services.AddScoped<IEncryptionService, EncyptionService>();
+            services.AddScoped<Aloha.Domain.Services.Translations.ITranslationHelper, Aloha.Domain.Services.Translations.TranslationHelper>();
+            services.AddScoped<Aloha.Domain.Services.Translations.ILanguageConfigurationService, Aloha.Domain.Services.Translations.LanguageConfigurationService>();
 
             return services;
         }
@@ -74,6 +76,7 @@ namespace Aloha.Domain.Services
             services.AddScoped<IEncryptionService, EncyptionService>();
             services.AddScoped<ILocalizationImportExportService, LocalizationImportExportService>();
             services.AddScoped<Aloha.Domain.Services.Translations.ITranslationHelper, Aloha.Domain.Services.Translations.TranslationHelper>();
+            services.AddScoped<Aloha.Domain.Services.Translations.ILanguageConfigurationService, Aloha.Domain.Services.Translations.LanguageConfigurationService>();
 
             return services;
         }

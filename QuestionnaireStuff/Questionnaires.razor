@@ -1,0 +1,157 @@
+@page "/customization/questionnaires"
+@using Aloha.Domain.Questionnaires
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using System.Text.Json
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, FormManager, Audit")]
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDbContextFactory<AlohaDb> DbFactory
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@rendermode InteractiveServer
+
+<h3>Questionnaires</h3>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, FormManager">
+    <p>
+        <a class="btn btn-outline-primary" href="/customization/questionnaires/add">
+            <Icon Name="IconName.Plus"/>
+            Add Questionnaire
+        </a>
+    </p>
+</AuthorizeView>
+
+@if (isLoading)
+{
+    <LoadingContent/>
+}
+else
+{
+    <Grid Class="table table-bordered table-hover table-striped"
+          Data="questionnaires"
+          EmptyText="No existing questionnaires"
+          Responsive="true"
+          TItem="Questionnaire">
+
+        <GridColumn HeaderText="Id"
+                    PropertyName="Id"
+                    SortKeySelector="item => item.Id"
+                    TItem="Questionnaire">
+            @context.Id
+        </GridColumn>
+        <GridColumn HeaderText="Name"
+                    PropertyName="Name"
+                    SortKeySelector="item => item.Name"
+                    TItem="Questionnaire">
+            @context.Name
+        </GridColumn>
+        <GridColumn HeaderText="Enabled"
+                    PropertyName="IsEnabled"
+                    SortKeySelector="item => item.IsEnabled"
+                    TItem="Questionnaire">
+            @context.IsEnabled
+        </GridColumn>
+        <GridColumn HeaderText="Required"
+                    PropertyName="IsRequired"
+                    SortKeySelector="item => item.IsRequired"
+                    TItem="Questionnaire">
+            @context.IsRequired
+        </GridColumn>
+        <GridColumn HeaderText="Level"
+                    PropertyName="Level"
+                    SortKeySelector="item => item.Level"
+                    TItem="Questionnaire">
+            @context.Level
+        </GridColumn>
+        <GridColumn Filterable="false"
+                    HeaderText="@(isReadOnly ? "View" : "Edit")"
+                    TextAlignment="Alignment.Center"
+                    TItem="Questionnaire">
+            <a class="btn btn-outline-secondary" href="/customization/questionnaires/edit/@context.Id">
+                <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)"/>
+            </a>
+            <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, FormManager">
+                <Button Color="ButtonColor.Danger"
+                        @onclick="() => OpenDeleteQuestionnaireConfirmationDialog(context.Id)"
+                        Outline="true"
+                        Type="@ButtonType.Button">
+                    <Icon Name="IconName.Trash"></Icon>
+                </Button>
+            </AuthorizeView>
+        </GridColumn>
+    </Grid>
+
+    <ConfirmDialog @ref="confirmDeleteDialog"/>
+}
+
+@code {
+
+    private ConfirmDialog confirmDeleteDialog = default!;
+    private IList<Questionnaire> questionnaires = [];
+    private bool isLoading = true;
+    private bool isReadOnly = true;
+    private static JsonSerializerOptions options = new() { WriteIndented = true };
+    private AdminUser? AdminUser = default!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+            await LoadData();
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenDeleteQuestionnaireConfirmationDialog(int questionnaireId)
+    {
+        var isConfirmed = await confirmDeleteDialog.ShowAsync(
+            "Confirm Questionnaire Deletion",
+            "You are about to delete a questionnaire. This questionnaire will be permanently removed and will no longer be accessible.",
+            "Are you sure you want to proceed?",
+            new ConfirmDialogOptions
+            {
+                IsVerticallyCentered = true,
+                Dismissable = true,
+                AutoFocusYesButton = false,
+                YesButtonColor = ButtonColor.Secondary,
+                NoButtonColor = ButtonColor.Primary
+            });
+
+        if (isConfirmed)
+        {
+            await DeleteQuestionnaire(questionnaireId);
+        }
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") ||
+            authUser.IsInRole("MasterAdmin") ||
+            authUser.IsInRole("FormManager"));
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        questionnaires = await db.Questionnaires.Where(q => !q.IsDeleted).ToArrayAsync();
+    }
+
+    private async Task DeleteQuestionnaire(int questionnaireId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var questionnaire = await db.Questionnaires.FirstAsync(q => q.Id == questionnaireId);
+        questionnaire.SoftDelete();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Questionnaire: {questionnaire.Name} was deleted.");
+        await db.SaveChangesAsync();
+        await LoadData();
+    }
+
+}

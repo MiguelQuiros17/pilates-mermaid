@@ -1,0 +1,37 @@
+[
+    {
+      "key": "error-form-invalid",
+      "value": "Questionnaire response is missing required information. Please review your answers.",
+      "context": "Error message displayed near submit button of the Questionnaire Response form displayed after invalid form submission"
+    },
+    {
+      "key": "error-free-form-response-required",
+      "value": "Free form response is required for this question",
+      "context": "Validation error message for providing an empty response to a required free-form question"
+    },
+    {
+      "key": "error-option-required",
+      "value": "At least one option is required for selection",
+      "context": "Validation error message for not selecting at least one option from a required single or multi-select question"
+    },
+    {
+      "key": "error-option-free-form-response-required",
+      "value": "Free form response is required for this option",
+      "context": "Validation error message for providing an empty response to a free form field for a selected option"
+    },
+    {
+      "key": "error-dependent-option-required",
+      "value": "At least one dependent option is required for selection",
+      "context": "Validation error message for not selecting at least one dependent option from a selected single or multi-select option"
+    },
+    {
+      "key": "error-dependent-option-free-form-response-required",
+      "value": "Free form response is required for this dependent option",
+      "context": "Validation error message for providing an empty response to a free form field for a selected dependent option"
+    },
+    {
+      "key": "validation-maximum-length",
+      "value": "Maximum {0} characters",
+      "context": "Validation Error Message displayed field exceeds maximum number of characters"
+    }
+  ]

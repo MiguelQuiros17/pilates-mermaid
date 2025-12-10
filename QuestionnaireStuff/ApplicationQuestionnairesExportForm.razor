@@ -1,0 +1,209 @@
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.Questionnaires
+@using Blazored.FluentValidation
+@using FluentValidation
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IJSRuntime js
+@rendermode InteractiveServer
+
+<EditForm novalidate
+          EditContext="editContext"
+          Context="applicationQuestionnaireExportFormContext"
+          FormName="ApplicationQuestionnaireExportForm"
+          OnSubmit="HandleSubmitAsync">
+    <FluentValidationValidator/>
+    @foreach (var option in input.Options)
+    {
+        <div class="mb-1">
+            <InputCheckbox
+                id=@($"questionnaire-download-checkbox-{option.Key}")
+                class="form-check-input"
+                @bind-Value="option.IsChecked"
+                @bind-Value:after="() => { editContext.Validate(); }"
+            />
+            <label
+                for=@($"questionnaire-download-checkbox-{option.Key}")
+                class="form-check-label"
+            >
+                @option.DisplayName
+            </label>
+        </div>
+    }
+    <ValidationMessage For="() => input.Options"/>
+    @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
+    {
+        <Alert Color="AlertColor.Danger">
+            <Icon class="me-2" Name="IconName.ExclamationTriangleFill"></Icon>
+            Some information is missing and/or invalid. Please review your responses.
+        </Alert>
+    }
+    <div class="mt-2">
+        <Button Color="ButtonColor.Primary" Type="@ButtonType.Submit">View Export</Button>
+    </div>
+</EditForm>
+
+@code {
+
+    [Parameter, EditorRequired]
+    public int UserApplicationId { get; set; }
+
+    private EditContext editContext = null!;
+    private readonly Input input = new();
+    private IList<QuestionnaireResponse> questionnaireResponses = [];
+    private ValidationMessageStore messageStore = null!;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        questionnaireResponses = await db.QuestionnaireResponses
+            .Where(x => x.UserApplicationId == UserApplicationId)
+            .Include(x => x.ApplicationPerson)
+            .Include(x => x.ApplicationShareProduct!)
+                .ThenInclude(sp => sp.ShareProduct)
+            .Include(x => x.ApplicationLoanProduct!)
+                .ThenInclude(lp => lp.LoanProduct)
+            .ToArrayAsync();
+
+        input.CreateOptionsFromResponseList(questionnaireResponses);
+    }
+
+    private static string MapInputToQueryString(Input input) =>
+        string.Join('&',
+            input.Options
+                .Where(x => x.IsChecked)
+                .SelectMany(x => x.ResponseIds)
+                .Distinct()
+                .Select(id => $"responseIds={id}"));
+
+    private async Task HandleSubmitAsync()
+    {
+        input.HasSubmitted = true;
+        if (!editContext.Validate())
+        {
+            StateHasChanged();
+            return;
+        }
+        var query = MapInputToQueryString(input);
+
+        await js.InvokeVoidAsync(
+            "open",
+            $"/dashboard/applications/view/{UserApplicationId}/print-questionnaire-responses?{query}",
+            "_blank");
+    }
+
+    public class Input
+    {
+        public bool HasSubmitted { get; set; }
+        public IList<CheckboxOption> Options { get; private set; } = [];
+
+        public void CreateOptionsFromResponseList(IList<QuestionnaireResponse> responseList)
+        {
+            Options = responseList
+                .GroupBy(r => new
+                {
+                    r.QuestionnaireLevel,
+                    r.QuestionnaireId,
+                    r.QuestionnaireVersion,
+                    r.QuestionnaireName
+                })
+                .Select(g =>
+                {
+                    var first = g.First();
+                    var key = $"{first.QuestionnaireLevel}-{first.QuestionnaireId}-{first.QuestionnaireVersion}";
+
+                    var prefix = first.QuestionnaireLevel switch
+                    {
+                        QuestionnaireLevel.Application => "Application",
+                        QuestionnaireLevel.Applicant   => "Applicant",
+                        QuestionnaireLevel.Product     => "Product",
+                        _                              => first.QuestionnaireLevel.ToString()
+                    };
+
+                    var applicantNames = g
+                        .Where(r => r.ApplicationPersonId != null && r.ApplicationPerson != null)
+                        .Select(r => r.ApplicationPerson!.GetFullName())
+                        .Distinct()
+                        .OrderBy(n => n)
+                        .ToList();
+
+                    var shareNames = g
+                        .Where(r => r.ApplicationShareProductId != null && r.ApplicationShareProduct?.ShareProduct != null)
+                        .Select(r => r.ApplicationShareProduct!.ShareProduct!.ProductDisplayName)
+                        .Distinct()
+                        .OrderBy(n => n)
+                        .ToList();
+
+                    var loanNames = g
+                        .Where(r => r.ApplicationLoanProductId != null && r.ApplicationLoanProduct?.LoanProduct != null)
+                        .Select(r => r.ApplicationLoanProduct!.LoanProduct!.ProductDisplayName)
+                        .Distinct()
+                        .OrderBy(n => n)
+                        .ToList();
+
+                    var detailParts = new List<string>();
+
+                    if (applicantNames.Any())
+                    {
+                        detailParts.Add($"Applicants: {string.Join(", ", applicantNames)}");
+                    }
+
+                    if (shareNames.Any())
+                    {
+                        detailParts.Add($"Shares: {string.Join(", ", shareNames)}");
+                    }
+
+                    if (loanNames.Any())
+                    {
+                        detailParts.Add($"Loans: {string.Join(", ", loanNames)}");
+                    }
+
+                    var details = detailParts.Any()
+                        ? $" ({string.Join(" | ", detailParts)})"
+                        : string.Empty;
+
+                    var baseName = first.QuestionnaireName ?? $"Questionnaire {first.QuestionnaireId}";
+
+                    return new CheckboxOption
+                    {
+                        Key = key,
+                        DisplayName =
+                            $"{prefix} - {baseName} (ID {first.QuestionnaireId} v.{first.QuestionnaireVersion}){details}",
+                        ResponseIds = g.Select(r => r.Id).Distinct().ToList(),
+                        IsChecked = false
+                    };
+                })
+                .OrderBy(o => o.DisplayName)
+                .ToList();
+        }
+    }
+
+    public class CheckboxOption
+    {
+        public required string DisplayName { get; init; }
+        public required string Key { get; init; }
+        public required List<int> ResponseIds { get; init; }
+        public bool IsChecked { get; set; }
+    }
+
+    public class FormValidator : AbstractValidator<Input>
+    {
+        public FormValidator()
+        {
+            When(input => input.HasSubmitted, () =>
+            {
+                RuleFor(x => x.Options)
+                    .Must(x => x.Any(o => o.IsChecked))
+                    .WithMessage("At least one response selection is required for export");
+            });
+        }
+    }
+}

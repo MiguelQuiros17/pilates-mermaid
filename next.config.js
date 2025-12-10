@@ -48,6 +48,9 @@ const nextConfig = {
     async rewrites() {
         if (process.env.NODE_ENV === 'development') {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+            console.log('[Next.js Config] API rewrite configured to:', `${apiUrl}/api/:path*`)
+            console.log('[Next.js Config] ⚠️  IMPORTANT: Make sure Express server is running on port 3001')
+            console.log('[Next.js Config]    Run: npm run server (or npm run dev:full to start both)')
             return [
                 {
                     source: '/api/:path*',

@@ -1,0 +1,181 @@
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Questionnaires
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<Index> l
+@inject IStringLocalizer<SharedResources> sl
+@rendermode InteractiveServer
+
+<div class="card">
+    <div class="align-items-center card-header hstack justify-content-between">
+        <h5 class="card-title my-2">@l["questionnaires-section-heading"]</h5>
+    </div>
+    <div class="card-body">
+        @if (!isAnyQuestionnaireResponsePresent)
+        {
+            <p class="m-0">@l["questionnaires-section-empty"]</p>
+        }
+        else
+        {
+            @if (appQuestionnaireResponses.Any())
+            {
+                <p class="fw-bold">@l["questionnaires-section-application-questionnaires-heading"]</p>
+                <ul class="list-unstyled">
+                    @foreach (var response in appQuestionnaireResponses)
+                    {
+                        <li>
+                            <a href=@($"/applications/questionnaires/responses/{response.Id}")>
+                                @response.QuestionnaireName
+                            </a>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (personQuestionnaireResponses.Any())
+            {
+                <p class="fw-bold">@l["questionnaires-section-applicant-questionnaires-heading"]</p>
+                <ul class="list-unstyled">
+                    @foreach (var person in personQuestionnaireResponses)
+                    {
+                        <li>
+                            <p class="mb-1">@person.ApplicantName</p>
+                            <ul class="mb-2">
+                                @foreach (var response in person.Responses)
+                                {
+                                    <li>
+                                        <a href=@($"/applications/questionnaires/responses/{response.Id}")>
+                                            @response.QuestionnaireName
+                                        </a>
+                                    </li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (questionnaireResponseLookup.Any())
+            {
+                <p class="fw-bold">@l["questionnaires-section-product-questionnaires-heading"]</p>
+                <ul class="list-unstyled">
+                    @foreach (var questionnaire in questionnaireResponseLookup)
+                    {
+                        <li>
+                            <a href=@($"/applications/questionnaires/responses/{@questionnaire.Value.First().QuestionnaireResponseId}")>
+                                @questionnaire.Value.First().QuestionnaireName
+                            </a>
+                            <ul class="mb-1">
+                                @foreach (var response in questionnaire.Value)
+                                {
+                                    <li>@response.ProductName</li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+            }
+
+        }
+    </div>
+</div>
+
+@code {
+
+    [Parameter, EditorRequired]
+    public UserApplication UserApp { get; set; } = null!;
+
+    private bool isAnyQuestionnaireResponsePresent;
+    private IList<QuestionnaireResponse> appQuestionnaireResponses = [];
+    private IList<ApplicantQuestionnaireResponses> personQuestionnaireResponses = [];
+    private Dictionary<int, List<AppQuestionnaireResponse>> questionnaireResponseLookup = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var responses = await db.QuestionnaireResponses
+            .Where(x => x.UserApplication!.Id == UserApp.Id)
+            .Include(questionnaireResponse => questionnaireResponse.ApplicationPerson)
+            .Include(questionnaireResponse => questionnaireResponse.ApplicationShareProduct!)
+            .ThenInclude(applicationShareProduct => applicationShareProduct.ShareProduct)
+            .Include(questionnaireResponse => questionnaireResponse.ApplicationLoanProduct!)
+            .ThenInclude(applicationLoanProduct => applicationLoanProduct.LoanProduct)
+            .ToListAsync();
+
+        appQuestionnaireResponses = responses.Where(x => x.QuestionnaireLevel == QuestionnaireLevel.Application).ToList();
+
+        var personResponseLookup = new Dictionary<string, IList<QuestionnaireResponse>>();
+
+        foreach (var response in responses
+                     .Where(x => x.QuestionnaireLevel == QuestionnaireLevel.Applicant)
+                     .OrderBy(x => x.ApplicationPerson!.PersonType)
+                     .ThenBy(x => x.ApplicationPerson!.GetFullName()))
+        {
+            var personName = response.ApplicationPerson!.GetFullName();
+
+            if (!personResponseLookup.ContainsKey(personName))
+            {
+                personResponseLookup[personName] = [];
+            }
+
+            personResponseLookup[personName].Add(response);
+        }
+
+        personQuestionnaireResponses = personResponseLookup
+            .Select(x => new ApplicantQuestionnaireResponses { ApplicantName = x.Key, Responses = x.Value })
+            .ToList();
+
+        var productResponseLookup = new Dictionary<string, IList<QuestionnaireResponse>>();
+
+        foreach (var response in responses
+                     .Where(x => x.QuestionnaireLevel == QuestionnaireLevel.Product)
+                     .OrderBy(x => x.ApplicationShareProduct?.ShareProduct!.ProductDisplayName)
+                     .ThenBy(x => x.ApplicationLoanProduct?.LoanProduct!.ProductDisplayName))
+        {
+            var shareProductName = response.ApplicationShareProduct?.ShareProduct!.ProductDisplayName;
+            var loanProductName = response.ApplicationLoanProduct?.LoanProduct!.ProductDisplayName;
+
+            if (shareProductName is null && loanProductName is null)
+            {
+                continue;
+            }
+
+            var productName = shareProductName ?? loanProductName!;
+            var nickName = response.ApplicationShareProduct?.Nickname ?? response.ApplicationLoanProduct?.Nickname;
+
+            if (!productResponseLookup.ContainsKey(productName))
+            {
+                productResponseLookup[productName] = [];
+            }
+            productResponseLookup[productName].Add(response);
+
+            if (!questionnaireResponseLookup.ContainsKey(response.QuestionnaireId))
+            {
+                questionnaireResponseLookup[response.QuestionnaireId] = []!;
+            }
+            questionnaireResponseLookup[response.QuestionnaireId].Add(new AppQuestionnaireResponse 
+                { QuestionnaireName = response.QuestionnaireName,
+                    ProductName = productName + (nickName is not null ? $" ({nickName})" : string.Empty),
+                    QuestionnaireResponseId = response.Id });
+        }
+
+        isAnyQuestionnaireResponsePresent = appQuestionnaireResponses.Any() ||
+            personQuestionnaireResponses.Any() ||
+            questionnaireResponseLookup.Any();
+    }
+
+    private class ApplicantQuestionnaireResponses
+    {
+        public string ApplicantName { get; set; } = string.Empty;
+        public IList<QuestionnaireResponse> Responses { get; set; } = [];
+    }
+
+    private class AppQuestionnaireResponse
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public int QuestionnaireResponseId { get; set; }
+        public string QuestionnaireName { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,374 @@
+@page "/reports/questionnaires"
+
+@using System.Text
+@using System.Text.RegularExpressions
+@using Aloha.Domain.Applications
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Questionnaires
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Services
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Reporting, Audit")]
+
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IJSRuntime js
+@inject UserManager<AdminUser> UserManager
+@inject IAdminActivityService adminActivityService
+@inject AuthenticationStateProvider authStateProvider
+@inject IHttpContextAccessor HttpContextAccessor
+@inject Aloha.Domain.Services.Translations.ITranslationHelper TranslationHelper
+@rendermode InteractiveServer
+
+<h3>Questionnaire Review</h3>
+
+<div class="mb-2">
+    <div class="d-flex justify-content-between">
+        <div>
+            <button type="button" class="btn btn-outline-primary" @onclick="() => { filterCollapseRef?.ToggleAsync(); }">
+                View Filters
+            </button>
+            <button type="button" class="btn btn-outline-primary" @onclick="DownloadResultsToCsvFileAsync">
+                Export (CSV)
+            </button>
+        </div>
+        <div>
+            <Badge Color="BadgeColor.Secondary">@timezoneName</Badge>
+            <a class="btn btn-outline-secondary" href="/CreditUnionSettings/timezone">
+                <Icon Name="IconName.Gear" />
+            </a>
+        </div>
+    </div>
+</div>
+
+<Collapse @ref="filterCollapseRef">
+    <Card class="mb-3">
+        <CardBody>
+            <div class="mb-2">
+                <label class="form-label">Questionnaire Title</label>
+                <InputText class="form-control" @bind-Value="searchOptions.Title"/>
+            </div>
+            <div class="mb-2">
+                <label class="form-label">User Application ID</label>
+                <InputNumber class="form-control" @bind-Value="searchOptions.AppId"/>
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Application Status</label>
+                <InputSelect class="form-select" @bind-Value="searchOptions.AppStatus">
+                    <option value="">All</option>
+                    @foreach (var status in userApplicationStatusTypes)
+                    {
+                        <option value="@status">@status.ToString()</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="mb-2">
+                <label class="form-label">App Type</label>
+                <InputSelect class="form-select" @bind-Value="searchOptions.ProductApplicationTypeId">
+                    <option value="">All</option>
+                    @foreach (var appType in productAppTypes)
+                    {
+                        <option value="@appType.Id">@(appTypeDisplayNames.TryGetValue(appType.Id, out var name) ? name : appType.ApplicationDisplayName)</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="d-flex gap-2">
+                <div class="mb-2">
+                    <label class="form-label">App Created After Date</label>
+                    <InputDate class="form-control" @bind-Value="searchOptions.AppCreateDateFrom"/>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">App Created Before Date</label>
+                    <InputDate class="form-control" @bind-Value="searchOptions.AppCreateDateTo"/>
+                </div>
+            </div>
+            <div>
+                <button class="btn btn-primary" type="button" @onclick="SearchQuestionnairesAsync">Search</button>
+                <button class="btn btn-outline-primary" type="button" @onclick="ClearSearchFilters">Clear</button>
+            </div>
+        </CardBody>
+    </Card>
+</Collapse>
+
+<Grid
+@ref="gridRef"
+TItem="QuestionnaireResponse"
+Class="table table-hover table-bordered table-striped"
+DataProvider="DataProvider"
+AllowSorting="true"
+Responsive="true"
+>
+    <GridColumns>
+        <GridColumn
+        TItem="QuestionnaireResponse"
+        HeaderText="App ID"
+        PropertyName="UserApplicationId"
+        SortKeySelector="item => item.UserApplicationId"
+        SortDirection="SortDirection.Descending"
+        IsDefaultSortColumn="@true"
+        >
+            <a href=@($"/dashboard/applications/view/{context.UserApplicationId}")>
+                @context.UserApplicationId
+            </a>
+        </GridColumn>
+        <GridColumn
+        TItem="QuestionnaireResponse"
+        HeaderText="App Date"
+        PropertyName="UserApplication.CreateAtUtc"
+        SortKeySelector="item => item.UserApplication!.CreateAtUtc"
+        >
+             @MapDateToDisplayText(context.UserApplication!.CreateAtUtc)
+        </GridColumn>
+        <GridColumn
+        TItem="QuestionnaireResponse"
+        HeaderText="Questionnaire Title"
+        PropertyName="QuestionnaireName"
+        SortKeySelector="item => item.QuestionnaireName"
+        >
+            @context.QuestionnaireName
+        </GridColumn>
+        <GridColumn
+        TItem="QuestionnaireResponse"
+        HeaderText="App Type"
+        PropertyName="UserApplication.ProductApplicationType.ApplicationDisplayName"
+        SortKeySelector="item => item.UserApplication!.ProductApplicationType!.ApplicationDisplayName"
+        >
+            @(context.UserApplication!.ProductApplicationType != null && appTypeDisplayNamesForGrid.TryGetValue(context.UserApplication.ProductApplicationType.Id, out var gridName) ? gridName : context.UserApplication.ProductApplicationType?.ApplicationDisplayName ?? "")
+        </GridColumn>
+        <GridColumn
+        TItem="QuestionnaireResponse"
+        HeaderText="App Status"
+        PropertyName="UserApplication.UserApplicationStatus"
+        SortKeySelector="item => item.UserApplication!.UserApplicationStatus"
+        >
+            @context.UserApplication!.UserApplicationStatus
+        </GridColumn>
+    </GridColumns>
+</Grid>
+
+@code {
+
+    private Grid<QuestionnaireResponse>? gridRef;
+    private readonly QuestionnaireSearchOptions searchOptions = new();
+    private Collapse? filterCollapseRef;
+    private IList<QuestionnaireResponse> questionnaireResponses = [];
+    private readonly Regex asciiPrintableCharactersRegex = new("[^ -~]+");
+    private static string CsvFileName => $"questionnaire-review-{DateTime.UtcNow}.csv";
+    private IList<ProductApplicationType> productAppTypes = [];
+    private Dictionary<int, string> appTypeDisplayNames = new();
+    private Dictionary<int, string> appTypeDisplayNamesForGrid = new();
+    private string? timezoneId = string.Empty;
+    private string? timezoneName = string.Empty;
+    private static readonly IList<UserApplicationStatusType> userApplicationStatusTypes =
+        Enum.GetValues<UserApplicationStatusType>()
+            .Where(status => status != UserApplicationStatusType.Declined)
+            .ToArray();
+    private AdminUser? AdminUser = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        productAppTypes = await db.ProductApplicationTypes.ToArrayAsync();
+
+        questionnaireResponses = await db.QuestionnaireResponses
+            .Include(x => x.UserApplication!)
+            .ThenInclude(x => x.ProductApplicationType)
+            .ToListAsync();
+
+        var selectedTimezone = await db.InstitutionDetails
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefaultAsync();
+        timezoneId = selectedTimezone?.TimezoneId ?? string.Empty;
+        timezoneName = GetTimeZoneName();
+        
+        // Load translations for dropdown
+        await LoadAppTypeTranslations();
+        // Load translations for grid
+        await LoadGridAppTypeTranslations();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+            AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Reporting, $"Admin user viewed the Questionnaire report.");
+        }
+    }
+
+    private async Task SearchQuestionnairesAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        questionnaireResponses = await db.QuestionnaireResponses
+            .Include(x => x.UserApplication!)
+            .ThenInclude(x => x.ProductApplicationType)
+            .Where(x => string.IsNullOrWhiteSpace(searchOptions.Title) ||
+                x.QuestionnaireName.Contains(searchOptions.Title.Trim()))
+            .Where(x => searchOptions.AppId == null || x.UserApplicationId == searchOptions.AppId)
+            .Where(x => searchOptions.AppStatus == null || x.UserApplication!.UserApplicationStatus == searchOptions.AppStatus)
+            .Where(x => searchOptions.ProductApplicationTypeId == null || x.UserApplication!.ProductApplicationTypeId == searchOptions.ProductApplicationTypeId)
+            .Where(x => searchOptions.AppCreateDateFrom == null || x.UserApplication!.CreateAtUtc >= searchOptions.AppCreateDateFrom)
+            .Where(x => searchOptions.AppCreateDateTo == null || x.UserApplication!.CreateAtUtc < searchOptions.AppCreateDateTo!.Value.AddDays(1))
+            .ToListAsync();
+
+        // Reload grid translations after search
+        await LoadGridAppTypeTranslations();
+        await gridRef!.RefreshDataAsync();
+    }
+
+    private async Task ClearSearchFilters()
+    {
+        searchOptions.Clear();
+        await SearchQuestionnairesAsync();
+        await gridRef!.RefreshDataAsync();
+    }
+
+    private async Task LoadAppTypeTranslations()
+    {
+        appTypeDisplayNames.Clear();
+        var currentCulture = GetCurrentCulture();
+        foreach (var appType in productAppTypes)
+        {
+            var translatedName = await TranslationHelper.GetLocalTextAsync(appType, "ApplicationDisplayName", currentCulture);
+            appTypeDisplayNames[appType.Id] = translatedName;
+        }
+    }
+
+    private async Task LoadGridAppTypeTranslations()
+    {
+        appTypeDisplayNamesForGrid.Clear();
+        var currentCulture = GetCurrentCulture();
+        var uniqueAppTypes = questionnaireResponses
+            .Where(r => r.UserApplication?.ProductApplicationType != null)
+            .Select(r => r.UserApplication!.ProductApplicationType!)
+            .DistinctBy(a => a.Id)
+            .ToList();
+        
+        foreach (var appType in uniqueAppTypes)
+        {
+            var translatedName = await TranslationHelper.GetLocalTextAsync(appType, "ApplicationDisplayName", currentCulture);
+            appTypeDisplayNamesForGrid[appType.Id] = translatedName;
+        }
+    }
+
+    private string? GetCurrentCulture()
+    {
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext != null)
+        {
+            var requestCulture = httpContext.Features.Get<Microsoft.AspNetCore.Localization.IRequestCultureFeature>();
+            if (requestCulture?.RequestCulture?.Culture != null)
+            {
+                var cultureName = requestCulture.RequestCulture.Culture.Name;
+                // Map to supported cultures
+                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
+                {
+                    return cultureName;
+                }
+                else if (cultureName.StartsWith("en"))
+                {
+                    return "en-US";
+                }
+                else if (cultureName.StartsWith("es"))
+                {
+                    return "es-CR";
+                }
+            }
+        }
+        return null;
+    }
+
+    private async Task<GridDataProviderResult<QuestionnaireResponse>> DataProvider(
+        GridDataProviderRequest<QuestionnaireResponse> request)
+    {
+        return await Task.FromResult(request.ApplyTo(questionnaireResponses!));
+    }
+
+    private async Task DownloadResultsToCsvFileAsync()
+    {
+        var csvContent = await CreateCsvContentFromResponseList(questionnaireResponses);
+        await js.InvokeVoidAsync("downloadFile", CsvFileName, "text/csv", "utf-8", csvContent);
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Reporting, $"Admin user exported the Questionnaire report.");
+    }
+
+    private async Task<string> CreateCsvContentFromResponseList(IList<QuestionnaireResponse> responses)
+    {
+        var csvContent = new StringBuilder();
+        const string csvHeaderContent = "App ID,App Date,Questionnaire Title,App Type,App Status";
+        csvContent.AppendLine(csvHeaderContent);
+
+        foreach (var response in responses)
+        {
+            var appId = response.UserApplicationId.ToString();
+            var appCreationDate = response.UserApplication!.CreateAtUtc.ToString("O");
+            var questionnaireTitle = asciiPrintableCharactersRegex.Replace(response.QuestionnaireName, string.Empty);
+            questionnaireTitle = questionnaireTitle.Replace("\"", "'");
+            var appType = response.UserApplication.ProductApplicationType != null && appTypeDisplayNamesForGrid.TryGetValue(response.UserApplication.ProductApplicationType.Id, out var csvAppType) 
+                ? csvAppType 
+                : response.UserApplication.ProductApplicationType?.ApplicationDisplayName ?? "";
+            var appStatus = response.UserApplication.UserApplicationStatus.ToString();
+            var row = $"\"{appId}\",\"{appCreationDate}\",\"{questionnaireTitle}\",\"{appType}\",\"{appStatus}\"";
+            csvContent.AppendLine(row);
+        }
+
+        return csvContent.ToString();
+    }
+
+    private string MapDateToDisplayText(DateTimeOffset date)
+    {
+        DateTime timeUtc = date.ToUniversalTime().DateTime;
+        if (!string.IsNullOrEmpty(timezoneId))
+        {
+            TimeZoneInfo selectedZone = TimeZoneInfo.FindSystemTimeZoneById(timezoneId);
+            DateTime selectedTime = TimeZoneInfo.ConvertTimeFromUtc(timeUtc, selectedZone);
+            return selectedTime.ToString("MMMM dd, yyyy @ hh:mm tt");
+        }
+        else
+        {
+            return date.ToLocalTime().ToString("MMMM dd, yyyy @ hh:mm tt (zzz)");
+        }
+    }
+
+    private string GetTimeZoneName()
+    {
+        TimeZoneInfo localTimeZone = TimeZoneInfo.Local;
+        DateTime currentTime = DateTime.Now;
+        DateTime currentUtcTime = currentTime.ToUniversalTime();
+        if (!string.IsNullOrEmpty(timezoneId))
+        {
+            TimeZoneInfo selectedZone = TimeZoneInfo.FindSystemTimeZoneById(timezoneId);
+            DateTime selectedTime = TimeZoneInfo.ConvertTimeFromUtc(currentUtcTime, selectedZone);
+            return (selectedZone.IsDaylightSavingTime(selectedTime) ? selectedZone.DaylightName : selectedZone.StandardName);
+        }
+        else
+        {
+            bool isDaylightSavingTime = localTimeZone.IsDaylightSavingTime(currentTime);
+            return isDaylightSavingTime ? localTimeZone.DaylightName : localTimeZone.StandardName;
+        }
+    }
+
+    private class QuestionnaireSearchOptions
+    {
+        public string? Title { get; set; }
+        public int? AppId { get; set; }
+        public DateTime? AppCreateDateFrom { get; set; }
+        public DateTime? AppCreateDateTo { get; set; }
+        public UserApplicationStatusType? AppStatus { get; set; }
+        public int? ProductApplicationTypeId { get; set; }
+
+        public void Clear()
+        {
+            Title = null;
+            AppId = null;
+            AppCreateDateFrom = null;
+            AppCreateDateTo = null;
+            AppStatus = null;
+            ProductApplicationTypeId = null;
+        }
+    }
+}

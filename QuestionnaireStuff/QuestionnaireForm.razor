@@ -1,0 +1,830 @@
+@using Aloha.Domain.Questionnaires
+@using Blazored.FluentValidation
+@using FluentValidation
+@using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Localization
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@inject IDbContextFactory<AlohaDb> DbFactory
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<EditForm class="pb-3"
+          novalidate
+          EditContext="editContext"
+          FormName="AddQuestionnaire"
+          Context="addQuestionnaireFormContext"
+          OnSubmit="HandleSubmitAsync">
+    <FluentValidationValidator/>
+
+    <div class="mb-2">
+        <label for="questionnaire-title" class="form-label">Title*</label>
+        <InputText placeholder="My Questionnaire"
+                   disabled="@IsReadOnly"
+                   @bind-Value="input.Name"
+                   id="questionnaire-title"
+                   class="form-control"/>
+        <ValidationMessage For="() => input.Name"/>
+    </div>
+    <div class="mb-2">
+        <label for="questionnaire-description" class="form-label">Helper Text</label>
+        <InputText placeholder="Please provide..."
+                   disabled="@IsReadOnly"
+                   @bind-Value="input.Description"
+                   id="questionnaire-description"
+                   class="form-control"/>
+    </div>
+    <div class="mb-2">
+        <InputCheckbox class="form-check-input"
+                       disabled="@IsReadOnly"
+                       @bind-Value="input.IsEnabled"
+                       id="is-questionnaire-enabled"/>
+        <label class="form-check-label" for="is-questionnaire-enabled">Is Enabled?</label>
+    </div>
+    <div class="mb-2">
+        <InputCheckbox class="form-check-input"
+                       disabled="@IsReadOnly"
+                       @bind-Value="input.IsRequired"
+                       id="is-questionnaire-required"/>
+        <label class="form-check-label" for="is-questionnaire-required">Is Required?</label>
+    </div>
+    <fieldset class="mb-2">
+        <legend class="fs-6">Application Types</legend>
+        @if (!input.ApplicationTypes.Any())
+        {
+            <div class="mx-3 form-text">No application types available</div>
+        }
+        else
+        {
+            @foreach (var option in input.ApplicationTypes)
+            {
+                <div class="mx-3 mb-1">
+                    <InputCheckbox @bind-Value="option.IsChecked"
+                                   disabled="@IsReadOnly"
+                                   class="form-check-input"
+                                   id="@($"app-type-{option.Id}")"/>
+                    <label class="form-check-label" for="@($"app-type-{option.Id}")">
+                        @option.DisplayName
+                    </label>
+                </div>
+            }
+        }
+    </fieldset>
+    <div class="mb-2">
+        <label class="form-label">Level*</label>
+        <InputSelect @bind-Value="input.Level" disabled="@IsReadOnly" required class="form-select">
+            @foreach (var level in Enum.GetValues<QuestionnaireLevel>())
+            {
+                <option value="@level">@level.ToString()</option>
+            }
+        </InputSelect>
+    </div>
+    @if (input.Level == QuestionnaireLevel.Product)
+    {
+        <fieldset class="mb-2">
+            <legend class="fs-6">Share Products</legend>
+            @if (input.Products.All(p => p.Type != ProductType.Share))
+            {
+                <div class="mx-3 form-text">No share products available</div>
+            }
+            else
+            {
+                @foreach (var option in input.Products.Where(p => p.Type == ProductType.Share))
+                {
+                    <div class="mx-3 mb-1">
+                        <InputCheckbox @bind-Value="option.IsChecked"
+                                       disabled="@IsReadOnly"
+                                       class="form-check-input"
+                                       id="@($"share-product-{option.Id}")"/>
+                        <label class="form-check-label" for="@($"share-product-{option.Id}")">
+                            @option.DisplayName
+                        </label>
+                    </div>
+                }
+            }
+        </fieldset>
+        <fieldset class="mb-2">
+            <legend class="fs-6">Loan Products</legend>
+            @if (input.Products.All(p => p.Type != ProductType.Loan))
+            {
+                <div class="mx-3 form-text">No loan products available</div>
+            }
+            else
+            {
+                @foreach (var option in input.Products.Where(p => p.Type == ProductType.Loan))
+                {
+                    <div class="mx-3 mb-1">
+                        <InputCheckbox @bind-Value="option.IsChecked"
+                                       disabled="@IsReadOnly"
+                                       class="form-check-input"
+                                       id="@($"loan-product-{option.Id}")"/>
+                        <label class="form-check-label" for="@($"loan-product-{option.Id}")">
+                            @option.DisplayName
+                        </label>
+                    </div>
+                }
+            }
+        </fieldset>
+    }
+
+    @if (!IsReadOnly)
+    {
+        <hr/>
+
+        <div class="card my-3">
+            <div class="card-header">Question Groups</div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0 d-flex flex-column" style="gap: 8px">
+                    @if (!input.QuestionGroups.Any())
+                    {
+                        <li>No question groups have been created</li>
+                    }
+                    else
+                    {
+                        var orderedGroups = input.QuestionGroups.OrderBy(g => g.SortOrder).ToList();
+                        foreach (var group in orderedGroups)
+                        {
+                            var isGroupBeingEdited = groupBeingEdited?.DraftId == group.DraftId;
+                            <li style=@(isGroupBeingEdited ? "border-width: 2px; border-radius: 4px; border-color: var(--bs-primary); border-style: solid; padding: 8px" : string.Empty)>
+                                @if (isGroupBeingEdited)
+                                {
+                                    <p class="text-primary fw-bold mb-0">Currently Editing</p>
+                                    <hr class="my-2"/>
+                                }
+                                <div class="d-flex justify-content-start" style="gap: 8px">
+                                    <div>
+                                        <label for=@($"sort-group-{group.DraftId}")>Sort*</label>
+                                        <InputNumber id=@($"sort-group-{group.DraftId}")
+                                                     min="0"
+                                                     disabled="@IsReadOnly"
+                                                     @bind-Value="group.SortOrder"
+                                                     class="form-control"
+                                                     style="width: 64px"/>
+                                    </div>
+                                    <div class="flex-fill">
+                                        <div class="fw-bold">@group.Name</div>
+                                        <div>@group.Description</div>
+                                    </div>
+                                    <div class="d-flex align-items-baseline gap-2">
+                                        @if (!IsReadOnly)
+                                        {
+                                            <button class="btn btn-outline-secondary"
+                                                    type="button"
+                                                    @onclick=@(() => OpenEditQuestionGroupForm(group))>
+                                                <Icon Name="IconName.PencilFill"/>
+                                            </button>
+                                            <button class="btn btn-outline-danger"
+                                                    type="button"
+                                                    @onclick=@(() => RemoveQuestionGroup(group))>
+                                                <Icon Name="IconName.TrashFill"/>
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            </li>
+                            }
+                        }
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <h5 class="mb-2">@(isEditingQuestionGroup ? "Edit" : "Add") Question Group</h5>
+
+        <QuestionGroupForm
+            OnSubmit="@(isEditingQuestionGroup ? EditQuestionGroup : AddQuestionGroup)"
+            OnClose="@CloseEditQuestionGroupForm"
+            InitialValues="groupBeingEdited"
+            IsEditing="isEditingQuestionGroup"
+        />
+
+        <hr/>
+    }
+
+    <div class="card my-3">
+        <div class="card-header">Questions</div>
+        <div class="card-body">
+            <ul class="list-unstyled mb-0 d-flex flex-column" style="gap: 8px">
+                @if (!input.QuestionGroups.Any() && !input.UngroupedQuestions.Any())
+                {
+                    <li>No questions have been added yet</li>
+                }
+                else
+                {
+                    @foreach (var question in input.UngroupedQuestions.OrderBy(q => q.SortOrder))
+                    {
+                        var isQuestionBeingEdited = question.DraftId == questionBeingEdited?.DraftId;
+
+                        <QuestionPreview
+                            IsReadOnly="IsReadOnly"
+                            @bind-SortOrder="question.SortOrder"
+                            IsEditing="isQuestionBeingEdited"
+                            Question="question"
+                            OnEdit="OpenEditQuestionForm"
+                            OnRemove="RemoveQuestion"
+                        />
+                    }
+
+                    var orderedGroups2 = input.QuestionGroups.OrderBy(g => g.SortOrder).ToList();
+                    @foreach (var group in orderedGroups2)
+                    {
+                        var orderedQuestions = group.Questions.OrderBy(q => q.SortOrder).ToList();
+                        var questionsInGroup = orderedQuestions;
+                        <li>
+                            <p class="mb-1">
+                                <span class="fw-bold">@group.Name</span>
+                                @if (!string.IsNullOrWhiteSpace(group.Description))
+                                {
+                                    <span class="fst-italic">@($" - {group.Description}")</span>
+                                }
+                            </p>
+                            <ul class="list-unstyled d-flex flex-column mb-0" style="gap: 8px">
+                                @if (!questionsInGroup.Any())
+                                {
+                                    <li>No questions present in this group</li>
+                                }
+                                else
+                                {
+                                    @foreach (var question in questionsInGroup)
+                                    {
+                                        var isQuestionBeingEdited = question.DraftId == questionBeingEdited?.DraftId;
+
+                                        <QuestionPreview
+                                            IsReadOnly="IsReadOnly"
+                                            @bind-SortOrder="question.SortOrder"
+                                            IsEditing="isQuestionBeingEdited"
+                                            Question="question"
+                                            OnEdit="OpenEditQuestionForm"
+                                            OnRemove="RemoveQuestion"
+                                        />
+                                    }
+                                }
+                            </ul>
+                        </li>
+                        }
+                    }
+                }
+            </ul>
+        </div>
+    </div>
+
+    @if (!IsReadOnly)
+    {
+        <div class="d-flex mb-4">
+            <div class="d-lg-block d-none"
+                 style="border-width: 0; border-left-width: 1px; border-style: solid; border-color: var(--bs-border-color)">
+                <div class="mx-3"></div>
+            </div>
+            <div class="flex-fill">
+                <h5 class="mb-2">@($"{(isEditingQuestion ? "Edit" : "Add")} ")Question</h5>
+                <QuestionForm
+                    InitialValues="questionBeingEdited"
+                    QuestionGroups="input.QuestionGroups"
+                    IsEditing="isEditingQuestion"
+                    OnClose="CloseEditQuestionForm"
+                    OnSubmit="@(isEditingQuestion ? EditQuestion : AddQuestion)"
+                />
+            </div>
+        </div>
+    }
+
+    <div class="d-flex flex-column">
+        @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
+        {
+            <Alert Color="AlertColor.Danger">
+                <Icon class="me-2" Name="IconName.ExclamationTriangleFill"></Icon>
+                Some information is missing and/or invalid. Please review your responses.
+            </Alert>
+        }
+        <div class="mt-2 d-flex gap-2">
+            @if (!IsReadOnly)
+            {
+                <Button Color="ButtonColor.Primary"
+                        Type="ButtonType.Submit"
+                        Disabled="@isSaving"
+                        Loading="@isSaving"
+                        LoadingText="Updating...">
+                    @(InitialValues is null ? "Add Questionnaire" : "Save Questionnaire Edits")
+                </Button>
+            }
+            <button class="btn btn-secondary" @onclick="OnCancel.InvokeAsync" type="button">Cancel</button>
+            <ConfirmationMessage @ref="messageRef" Title="Questionnaire" RouteAfterSaved="/customization/questionnaires" />
+        </div>
+    </div>
+</EditForm>
+
+@code {
+    private ConfirmationMessage? messageRef;
+    private bool isSaving = false;
+    private bool isEditingQuestionGroup;
+    private QuestionGroupForm.DraftInput? groupBeingEdited;
+
+    private bool isEditingQuestion;
+    private QuestionForm.DraftInput? questionBeingEdited;
+
+    private Input input = default!;
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+
+    private Questionnaire? initialValues;
+
+    [Parameter]
+    public bool IsReadOnly { get; set; }
+
+    [Parameter]
+    public Questionnaire? InitialValues { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<Input> OnSubmit { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<Input> OnCancel { get; set; }
+
+    protected override void OnInitialized()
+    {
+        initialValues = InitialValues;
+        input = Input.CreateFromQuestionnaire(initialValues);
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (_, _) => messageStore.Clear();
+        editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var linkedAppTypeIds = new HashSet<int>();
+
+        if (initialValues?.QuestionnaireApplicationTypeLinks is not null)
+        {
+            foreach (var link in initialValues.QuestionnaireApplicationTypeLinks)
+            {
+                linkedAppTypeIds.Add(link.ProductApplicationTypeId);
+            }
+        }
+
+        input.ApplicationTypes = await db.ProductApplicationTypes
+            .Select(t => new CheckboxOption
+            {
+                Id = t.Id,
+                DisplayName = t.ApplicationDisplayName,
+                IsChecked = linkedAppTypeIds.Contains(t.Id)
+            })
+            .ToListAsync();
+
+        var linkedShareProductIds = new HashSet<int>();
+
+        if (initialValues?.QuestionnaireShareProductLinks is not null)
+        {
+            foreach (var link in initialValues.QuestionnaireShareProductLinks)
+            {
+                linkedShareProductIds.Add(link.ShareProductId);
+            }
+        }
+
+        var shareProducts = await db.ShareProducts
+            .Select(p => new ProductCheckboxOption
+            {
+                Id = p.Id,
+                DisplayName = p.ProductDisplayName,
+                IsChecked = linkedShareProductIds.Contains(p.Id),
+                Type = ProductType.Share
+            })
+            .ToListAsync();
+
+        var linkedLoanProductIds = new HashSet<int>();
+
+        if (initialValues?.QuestionnaireLoanProductLinks is not null)
+        {
+            foreach (var link in initialValues.QuestionnaireLoanProductLinks)
+            {
+                linkedLoanProductIds.Add(link.LoanProductId);
+            }
+        }
+
+        var loanProducts = await db.LoanProducts
+            .Select(p => new ProductCheckboxOption
+            {
+                Id = p.Id,
+                DisplayName = p.ProductDisplayName,
+                IsChecked = linkedLoanProductIds.Contains(p.Id),
+                Type = ProductType.Loan
+            })
+            .ToListAsync();
+
+        input.Products = shareProducts.Concat(loanProducts).ToList();
+
+        // Load translations for all nested entities
+        if (initialValues != null)
+        {
+            await LoadAllTranslations(initialValues);
+        }
+    }
+
+    private async Task LoadAllTranslations(Questionnaire questionnaire)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+        var enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+
+        // Load translations for question groups
+        if (questionnaire.QuestionGroups != null)
+        {
+            foreach (var group in questionnaire.QuestionGroups)
+            {
+                var groupDraft = input.QuestionGroups.FirstOrDefault(g => g.Name == group.Name && g.SortOrder == group.SortOrder);
+                if (groupDraft != null)
+                {
+                    groupDraft.NameTranslations = await LoadTranslationsForEntity(db, $"QuestionGroup.{group.Id}", "Name", primaryLanguage, enabledLanguages);
+                    groupDraft.DescriptionTranslations = await LoadTranslationsForEntity(db, $"QuestionGroup.{group.Id}", "Description", primaryLanguage, enabledLanguages);
+
+                    // Load translations for questions in group
+                    if (group.Questions != null)
+                    {
+                        foreach (var question in group.Questions)
+                        {
+                            var questionDraft = groupDraft.Questions.FirstOrDefault(q => q.Name == question.Name && q.SortOrder == question.SortOrder);
+                            if (questionDraft != null)
+                            {
+                                questionDraft.NameTranslations = await LoadTranslationsForEntity(db, $"Question.{question.Id}", "Name", primaryLanguage, enabledLanguages);
+                                questionDraft.DescriptionTranslations = await LoadTranslationsForEntity(db, $"Question.{question.Id}", "Description", primaryLanguage, enabledLanguages);
+
+                                // Load translations for options
+                                if (question.MultipleChoiceOptions != null && questionDraft.MultipleChoiceOptions != null)
+                                {
+                                    foreach (var option in question.MultipleChoiceOptions)
+                                    {
+                                        var optionDraft = questionDraft.MultipleChoiceOptions.FirstOrDefault(o => o.Name == option.Name && o.SortOrder == option.SortOrder);
+                                        if (optionDraft != null)
+                                        {
+                                            optionDraft.NameTranslations = await LoadTranslationsForEntity(db, $"MultipleChoiceOption.{option.Id}", "Name", primaryLanguage, enabledLanguages);
+                                            optionDraft.DependentQuestionNameTranslations = await LoadTranslationsForEntity(db, $"MultipleChoiceOption.{option.Id}", "DependentQuestionName", primaryLanguage, enabledLanguages);
+
+                                            // Load translations for dependent options
+                                            if (option.DependentMultipleChoiceOptions != null && optionDraft.DependentMultipleChoiceOptions != null)
+                                            {
+                                                foreach (var depOption in option.DependentMultipleChoiceOptions)
+                                                {
+                                                    var depOptionDraft = optionDraft.DependentMultipleChoiceOptions.FirstOrDefault(d => d.Name == depOption.Name && d.SortOrder == depOption.SortOrder);
+                                                    if (depOptionDraft != null)
+                                                    {
+                                                        depOptionDraft.NameTranslations = await LoadTranslationsForEntity(db, $"DependentMultipleChoiceOption.{depOption.Id}", "Name", primaryLanguage, enabledLanguages);
+                                                        depOptionDraft.FreeFormFieldDescriptionTranslations = await LoadTranslationsForEntity(db, $"DependentMultipleChoiceOption.{depOption.Id}", "FreeFormFieldDescription", primaryLanguage, enabledLanguages);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Load translations for ungrouped questions
+        if (questionnaire.Questions != null)
+        {
+            foreach (var question in questionnaire.Questions.Where(q => q.QuestionGroupId == null))
+            {
+                var questionDraft = input.UngroupedQuestions.FirstOrDefault(q => q.Name == question.Name && q.SortOrder == question.SortOrder);
+                if (questionDraft != null)
+                {
+                    questionDraft.NameTranslations = await LoadTranslationsForEntity(db, $"Question.{question.Id}", "Name", primaryLanguage, enabledLanguages);
+                    questionDraft.DescriptionTranslations = await LoadTranslationsForEntity(db, $"Question.{question.Id}", "Description", primaryLanguage, enabledLanguages);
+
+                    // Load translations for options
+                    if (question.MultipleChoiceOptions != null && questionDraft.MultipleChoiceOptions != null)
+                    {
+                        foreach (var option in question.MultipleChoiceOptions)
+                        {
+                            var optionDraft = questionDraft.MultipleChoiceOptions.FirstOrDefault(o => o.Name == option.Name && o.SortOrder == option.SortOrder);
+                            if (optionDraft != null)
+                            {
+                                optionDraft.NameTranslations = await LoadTranslationsForEntity(db, $"MultipleChoiceOption.{option.Id}", "Name", primaryLanguage, enabledLanguages);
+                                optionDraft.DependentQuestionNameTranslations = await LoadTranslationsForEntity(db, $"MultipleChoiceOption.{option.Id}", "DependentQuestionName", primaryLanguage, enabledLanguages);
+
+                                // Load translations for dependent options
+                                if (option.DependentMultipleChoiceOptions != null && optionDraft.DependentMultipleChoiceOptions != null)
+                                {
+                                    foreach (var depOption in option.DependentMultipleChoiceOptions)
+                                    {
+                                        var depOptionDraft = optionDraft.DependentMultipleChoiceOptions.FirstOrDefault(d => d.Name == depOption.Name && d.SortOrder == depOption.SortOrder);
+                                        if (depOptionDraft != null)
+                                        {
+                                            depOptionDraft.NameTranslations = await LoadTranslationsForEntity(db, $"DependentMultipleChoiceOption.{depOption.Id}", "Name", primaryLanguage, enabledLanguages);
+                                            depOptionDraft.FreeFormFieldDescriptionTranslations = await LoadTranslationsForEntity(db, $"DependentMultipleChoiceOption.{depOption.Id}", "FreeFormFieldDescription", primaryLanguage, enabledLanguages);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private static async Task<Dictionary<string, string>> LoadTranslationsForEntity(AlohaDb db, string resourceKey, string key, string primaryLanguage, List<string> enabledLanguages)
+    {
+        var translations = await db.Set<LocalizationString>()
+            .Where(s => s.ResourceKey == resourceKey && s.Key == key)
+            .Include(s => s.LocalizationCulture)
+            .ToListAsync();
+
+        var result = new Dictionary<string, string>();
+
+        foreach (var trans in translations)
+        {
+            var culture = trans.LocalizationCulture?.Culture;
+            if (string.IsNullOrWhiteSpace(culture) || culture == primaryLanguage || !enabledLanguages.Contains(culture))
+            {
+                continue;
+            }
+
+            result[culture] = trans.DefaultText ?? "";
+        }
+
+        return result;
+    }
+
+    private async Task HandleSubmitAsync()
+    {
+        input.HasSubmitted = true;
+        if (!editContext.Validate())
+        {
+            StateHasChanged();
+            return;
+        }
+        input.Trim();
+        await OnSubmit.InvokeAsync(input);
+        await Task.CompletedTask;
+    }
+
+    // Question Group
+
+    private void OpenEditQuestionGroupForm(QuestionGroupForm.DraftInput group)
+    {
+        isEditingQuestionGroup = true;
+        groupBeingEdited = group;
+    }
+
+    private void CloseEditQuestionGroupForm()
+    {
+        isEditingQuestionGroup = false;
+        groupBeingEdited = null;
+    }
+
+    private void AddQuestionGroup(QuestionGroupForm.Input values)
+    {
+        var draftGroup = new QuestionGroupForm.DraftInput
+        {
+            DraftId = Guid.NewGuid(),
+            Name = values.Name!,
+            Description = string.IsNullOrWhiteSpace(values.Description) ? null : values.Description,
+            Questions = []
+        };
+
+        input.QuestionGroups.Add(draftGroup);
+    }
+
+    private void EditQuestionGroup(QuestionGroupForm.Input values)
+    {
+        groupBeingEdited!.Name = values.Name!;
+        groupBeingEdited.Description = values.Description;
+    }
+
+    private void RemoveQuestionGroup(QuestionGroupForm.DraftInput group)
+    {
+        foreach (var question in group.Questions)
+        {
+            question.DraftGroupId = null;
+            input.UngroupedQuestions.Add(question);
+        }
+
+        input.QuestionGroups.Remove(group);
+    }
+
+    private void HandleOnClose(string message)
+    {
+        if (message == "Success")
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // Question Form
+
+    private void OpenEditQuestionForm(QuestionForm.DraftInput question)
+    {
+        isEditingQuestion = true;
+        questionBeingEdited = question;
+    }
+
+    private void CloseEditQuestionForm()
+    {
+        isEditingQuestion = false;
+        questionBeingEdited = null;
+    }
+
+    private void EditQuestion(QuestionForm.Input values)
+    {
+        // Question lives either inside a group, or inside the "ungrouped" question list
+        var question = questionBeingEdited!.DraftGroupId == null
+            ? input.UngroupedQuestions
+                .First(q => q.DraftId == questionBeingEdited.DraftId)
+            : input.QuestionGroups
+                .First(g => g.DraftId == questionBeingEdited.DraftGroupId).Questions
+                .First(q => q.DraftId == questionBeingEdited.DraftId);
+
+        // If group changes...
+        if (questionBeingEdited.DraftGroupId != values.GroupId)
+        {
+            // If becoming "ungrouped", add to ungrouped question list
+            if (values.GroupId == null)
+            {
+                input.UngroupedQuestions.Add(question);
+            }
+            // Otherwise, add question to the new group
+            else
+            {
+                var nextGroup = input.QuestionGroups.First(g => g.DraftId == values.GroupId);
+                nextGroup.Questions.Add(question);
+            }
+
+            // If previously ungrouped, remove from the "ungrouped" list
+            if (questionBeingEdited.DraftGroupId == null)
+            {
+                input.UngroupedQuestions.Remove(question);
+            }
+            // Otherwise, remove from the old group
+            else
+            {
+                var currentGroup = input.QuestionGroups.First(g => g.DraftId == questionBeingEdited.DraftGroupId);
+                currentGroup.Questions.Remove(question);
+            }
+        }
+
+        question.Name = values.Name!;
+        question.Description = values.Description;
+        question.Type = values.Type;
+        question.DraftGroupId = values.GroupId;
+        question.IsRequired = values.IsRequired;
+
+        question.MultipleChoiceOptions = values.Type != QuestionType.FreeForm
+            ? [..values.MultipleChoiceOptions]
+            : null;
+    }
+
+    private void AddQuestion(QuestionForm.Input values)
+    {
+        var question = new QuestionForm.DraftInput
+        {
+            DraftId = Guid.NewGuid(),
+            Name = values.Name!,
+            Description = string.IsNullOrWhiteSpace(values.Description) ? null : values.Description,
+            DraftGroupId = values.GroupId,
+            Type = values.Type,
+            MultipleChoiceOptions = values.MultipleChoiceOptions.Any() ? values.MultipleChoiceOptions : null,
+            IsRequired = values.IsRequired,
+            SortOrder = 0
+        };
+
+        if (values.GroupId == null)
+        {
+            input.UngroupedQuestions.Add(question);
+        }
+        else
+        {
+            var group = input.QuestionGroups.First(g => g.DraftId == question.DraftGroupId);
+            group.Questions.Add(question);
+        }
+    }
+
+    private void RemoveQuestion(QuestionForm.DraftInput question)
+    {
+        if (question.DraftGroupId == null)
+        {
+            input.UngroupedQuestions.Remove(question);
+        }
+        else
+        {
+            var group = input.QuestionGroups.First(g => g.DraftId == question.DraftGroupId);
+            group.Questions.Remove(question);
+        }
+
+        if (questionBeingEdited?.DraftId == question.DraftId)
+        {
+            CloseEditQuestionForm();
+        }
+    }
+
+    public void SetSaving(bool isSaving)
+    {
+        this.isSaving = isSaving;
+        StateHasChanged();
+    }
+
+    public async Task Notify(ToastMessage message)
+    {
+        await messageRef!.Notify(message);
+        StateHasChanged();
+    }
+
+    public enum ProductType
+    {
+        Share,
+        Loan
+    }
+
+    public class CheckboxOption
+    {
+        public required int Id { get; init; }
+        public required string DisplayName { get; init; }
+        public bool IsChecked { get; set; }
+    }
+
+    public class ProductCheckboxOption
+    {
+        public required int Id { get; init; }
+        public required string DisplayName { get; init; }
+        public ProductType Type { get; init; }
+        public bool IsChecked { get; set; }
+    }
+
+    public class Input
+    {
+        public bool HasSubmitted { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public bool IsEnabled { get; set; }
+        public bool IsRequired { get; set; }
+        public QuestionnaireLevel Level { get; set; } = QuestionnaireLevel.Application;
+        public IList<CheckboxOption> ApplicationTypes { get; set; } = [];
+        public IList<ProductCheckboxOption> Products { get; set; } = [];
+        public IList<QuestionGroupForm.DraftInput> QuestionGroups { get; set; } = [];
+        public IList<QuestionForm.DraftInput> UngroupedQuestions { get; set; } = [];
+
+        public static Input CreateFromQuestionnaire(Questionnaire? questionnaire)
+        {
+            return questionnaire is null
+                ? new Input()
+                : new Input
+                {
+                    Name = questionnaire.Name,
+                    Description = questionnaire.Description,
+                    IsEnabled = questionnaire.IsEnabled,
+                    IsRequired = questionnaire.IsRequired,
+                    Level = questionnaire.Level,
+                    QuestionGroups = questionnaire.QuestionGroups?
+                            .Select((QuestionGroup g) => QuestionGroupForm.DraftInput.CreateFromQuestionGroup(g))
+                            .ToList() ??
+                        [],
+                    UngroupedQuestions = questionnaire.Questions?
+                            .Where(q => q.QuestionGroupId == null)
+                            .Select((Question q) => QuestionForm.DraftInput.CreateFromQuestion(q, draftGroupId: null))
+                            .ToList() ??
+                        []
+                };
+        }
+
+        public void Trim()
+        {
+            Name = Name?.Trim();
+            Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
+        }
+    }
+
+    public class FormValidator : AbstractValidator<Input>
+    {
+        public FormValidator()
+        {
+            When(input => input.HasSubmitted, () =>
+            {
+                RuleFor(p => p.Name).NotEmpty().WithMessage("Questionnaire name is required");
+
+                // When no questions are present in the questionnaire...
+                When(p => !p.UngroupedQuestions.Any() && !p.QuestionGroups.Any(g => g.Questions.Any()), () =>
+                {
+                    RuleFor(p => p.UngroupedQuestions)
+                        .NotEmpty()
+                        .WithMessage("Questionnaire must contain at least one question");
+                });
+
+                // When questionnaire is at product level...
+                When(p => p.Level == QuestionnaireLevel.Product, () =>
+                {
+                    // Ensure at least one product is selected
+                    RuleFor(p => p.Products)
+                        .Must(products => products.Any(product => product.IsChecked))
+                        .WithMessage("At least one product is required for product-level questionnaires");
+                });
+            });
+        }
+    }
+}

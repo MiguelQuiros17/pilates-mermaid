@@ -1,0 +1,176 @@
+@page "/applications/questionnaires/responses/{QuestionnaireResponseId:int}"
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Questionnaires
+@inject IApplicationStateProvider appState
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<SharedResources> sl
+@inject IStringLocalizer<ViewQuestionnaireResponse> l
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+<PageTitle>@l["page-title"]</PageTitle>
+
+<h1>@l["page-heading"]</h1>
+
+@if (isLoading || questionnaireResponse == null)
+{
+    <Spinner/>
+}
+else
+{
+    @if (canEdit)
+    {
+        <div class="mb-3">
+            <button type="button" @onclick="HandleEditPressAsync" class="btn btn-primary">
+                @l["button-edit-response"]
+            </button>
+        </div>
+    }
+
+    <h2 class="h5">@questionnaireResponse.QuestionnaireName</h2>
+    <p>@l["label-selected-answers-are-marked-in-bold"]</p>
+
+    <div class="mb-3">
+        <ol>
+            @foreach (var questionResponse in (questionnaireResponse.QuestionResponses ?? [])
+                          .Where(response => response.QuestionResponseGroup == null)
+                          .OrderBy(response => response.SortOrder)
+                          .Select(response => response.Snapshot))
+            {
+                <QuestionResponseDisplay QuestionResponseSnapshot="questionResponse"/>
+            }
+        </ol>
+    </div>
+
+    @foreach (var questionResponseGroup in (questionnaireResponse.QuestionResponseGroups ?? [])
+              .OrderBy(group => group.SortOrder))
+    {
+        <div>
+            <div class="mb-2">
+                @questionResponseGroup.QuestionGroupName
+                @if (!string.IsNullOrWhiteSpace(questionResponseGroup.QuestionGroupDescription))
+                {
+                    <span>@(" ")@questionResponseGroup.QuestionGroupDescription</span>
+                }
+            </div>
+            <ol>
+                @foreach (var questionResponse in (questionResponseGroup.QuestionResponses ?? [])
+                              .OrderBy(response => response.SortOrder)
+                              .Select(response => response.Snapshot))
+                {
+                    <QuestionResponseDisplay QuestionResponseSnapshot="questionResponse"/>
+                }
+            </ol>
+        </div>
+    }
+}
+
+@if (previousRoute is not null)
+{
+    <div class="d-flex justify-content-end">
+        <button class="btn btn-outline-primary" @onclick="HandleBackPress">@sl["button-back"]</button>
+    </div>
+}
+
+<ConfirmDialog @ref="dialog"/>
+
+@code {
+
+    [Parameter]
+    public int QuestionnaireResponseId { get; set; }
+
+    private ConfirmDialog dialog = null!;
+    private Guid? appKey;
+    private Questionnaire? questionnaire;
+    private QuestionnaireResponse? questionnaireResponse;
+    private bool canEdit;
+    private bool isLoading = true;
+    private string? previousRoute;
+
+    protected override async Task OnAfterRenderAsync(bool isFirstRender)
+    {
+        if (isFirstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            await CheckQuestionnaireAccess(db);
+            await FetchQuestionnaireResponseById(db);
+
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckQuestionnaireAccess(AlohaDb db)
+    {
+        appKey = await appState.GetCurrentApplicationKeyAsync();
+
+        var userApp = await db.UserApplications
+            .Include(userApplication => userApplication.QuestionnaireResponses)
+            .FirstAsync(userApplication => userApplication.ApplicationKey == appKey);
+
+        var existingResponse = (userApp.QuestionnaireResponses ?? [])
+            .FirstOrDefault(response => response.Id == QuestionnaireResponseId);
+
+        if (existingResponse == null)
+        {
+            nav.NavigateTo("/applications/summary");
+            return;
+        }
+
+        questionnaire = await db.Questionnaires.FirstOrDefaultAsync(x => x.Id == existingResponse.QuestionnaireId);
+
+        canEdit = questionnaire is { IsEnabled: true, IsDeleted: false } &&
+            questionnaire.Level == existingResponse.QuestionnaireLevel &&
+            userApp.UserApplicationStatus == UserApplicationStatusType.InProgressMember;
+    }
+
+    private async Task FetchQuestionnaireResponseById(AlohaDb db)
+    {
+        questionnaireResponse = await db.QuestionnaireResponses
+            .Include(x => x.ApplicationLoanProduct)
+            .Include(x => x.ApplicationPerson)
+            .Include(x => x.ApplicationShareProduct)
+            .Include(x => x.QuestionResponseGroups)
+            .Include(x => x.QuestionResponses)
+            .FirstAsync(x => x.Id == QuestionnaireResponseId);
+
+        previousRoute = questionnaireResponse.QuestionnaireLevel switch
+        {
+            QuestionnaireLevel.Application => "/applications/questionnaires",
+            QuestionnaireLevel.Applicant => "/applications/people/questionnaires",
+            QuestionnaireLevel.Product => "/applications/products/questionnaires",
+            _ => "/applications/summary"
+        };
+    }
+
+    private void HandleBackPress()
+    {
+        if (previousRoute != null)
+        {
+            nav.NavigateTo(previousRoute, replace: true);
+        }
+    }
+
+    private async Task HandleEditPressAsync()
+    {
+        if (questionnaireResponse!.QuestionnaireVersion != questionnaire!.Version)
+        {
+            var confirmation = await dialog.ShowAsync(
+                title: l["modal-heading-questionnaire-modified-notice"],
+                message1: l["modal-description-questionnaire-modified-notice"],
+                message2: l["modal-confirmation-questionnaire-modified-notice"],
+                confirmDialogOptions: new ConfirmDialogOptions { IsVerticallyCentered = true });
+
+            if (confirmation)
+            {
+                nav.NavigateTo($"/applications/questionnaires/responses/{QuestionnaireResponseId}/edit");
+            }
+        }
+        else
+        {
+            nav.NavigateTo($"/applications/questionnaires/responses/{QuestionnaireResponseId}/edit");
+        }
+    }
+
+}

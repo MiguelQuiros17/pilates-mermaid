@@ -1,33 +1,29 @@
-using Aloha.Customer.Web.Components;
-using Aloha.Customer.Web.Extensions;
-using Aloha.Customer.Web.HostedServices;
-using Aloha.Customer.Web.Services;
+using Aloha.Admin.Web.Components;
+using Aloha.Admin.Web.Extensions;
+using Aloha.Admin.Web.HostedServices;
+using Aloha.Admin.Web.Identity.Account;
+using Aloha.Domain.Identity.AdminUsers;
 using Aloha.Domain.Services;
-using Aloha.Domain.Services.Localization;
 using Aloha.Infrastructure;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Localization;
 using Serilog;
 using System.Net;
-using System.Text.Json.Serialization;
-using System.Security.Claims;
-using Aloha.Domain.Applicants.ApplicantUsers;
-using IPNetwork = Microsoft.AspNetCore.HttpOverrides.IPNetwork;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("AlohaDb") ??
-    throw new InvalidOperationException("Connection string 'AlohaDb' not found.");
+                       throw new InvalidOperationException("Connection string 'AlohaDb' not found.");
 
 var coreBackendUrl = builder.Configuration["CoreServiceConfig:BaseUrl"] ??
-    throw new InvalidOperationException("CoreServiceConfig 'BaseUrl' not found.");
+                     throw new InvalidOperationException("CoreServiceConfig 'BaseUrl' not found.");
 
 var forwardHeaderProxies = builder.Configuration.GetSection("ForwardHeaders:Proxies").Get<string[]>() ??
-    throw new InvalidOperationException("ForwardHeaders:Proxies not found.");
+                           throw new InvalidOperationException("ForwardHeaders:Proxies not found.");
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
@@ -44,7 +40,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     {
         var ip = IPAddress.Parse(proxy.Split('/')[0]);
         var size = int.Parse(proxy.Split('/')[1]);
-        options.KnownNetworks.Add(new IPNetwork(ip, size));
+        options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(ip, size));
     }
 });
 
@@ -59,131 +55,55 @@ builder.Logging.Configure(options =>
 });
 
 builder.Services.AddDataProtection()
-    .SetApplicationName("Aloha.Customer")
+    .SetApplicationName("Aloha.Admin")
     .PersistKeysToDbContext<AlohaDb>();
 
 builder.Services.AddBlazorBootstrap();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
-builder.Services.AddDbContextFactory<AlohaDb>(options =>
-    options.UseSqlServer(connectionString));
-
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-.AddCookie(config =>
-{
-    config.LoginPath = "/";
-    config.Cookie.Name = "Aloha.Mahalo.Customer";
-    config.Cookie.IsEssential = true;
-    config.ExpireTimeSpan = TimeSpan.FromMinutes(40);
-
-    config.Events = new CookieAuthenticationEvents
+    .AddInteractiveServerComponents()
+    .AddHubOptions(options =>
     {
-        OnSignedIn = async context =>
-        {
-            try
-            {
-                var principal = context.Principal;
-                if (principal == null) return;
-
-                var idClaim = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                var emailClaim = principal.FindFirst(ClaimTypes.Email)?.Value
-                                 ?? principal.Identity?.Name;
-
-                if (string.IsNullOrEmpty(idClaim) && string.IsNullOrEmpty(emailClaim))
-                    return;
-
-                using var scope = context.HttpContext.RequestServices.CreateScope();
-                var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AlohaDb>>();
-                await using var db = await dbFactory.CreateDbContextAsync();
-
-                ApplicantUser? user = null;
-
-                if (int.TryParse(idClaim, out var idNumeric))
-                {
-                    user = await db.ApplicantUsers
-                        .FirstOrDefaultAsync(u => u.Id == idNumeric);
-                }
-
-                if (user == null && !string.IsNullOrEmpty(emailClaim))
-                {
-                    user = await db.ApplicantUsers
-                        .FirstOrDefaultAsync(u => u.EmailAddress == emailClaim);
-                }
-
-                if (user != null)
-                {
-                    user.NewSignIn();
-                    await db.SaveChangesAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "Error running OnSignedIn handler for customer cookie.");
-            }
-        }
-    };
-});
-
-builder.Services.AddLocalization();
-builder.Services.AddSingleton<IStringLocalizerFactory, DbStringLocalizerFactory>();
-
-//Use the json localizer for testing.
-//This replaces the above localizer
-// NOTE: Commented out to use database in development so Spanish translations work
-//if (builder.Environment.IsDevelopment())
-//{
-//    builder.Services.AddSingleton<IStringLocalizerFactory, JsonStringLocalizerFactory>();
-//}
-
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        //Needed for editing terms and conditions. Default is 32 KB
+        options.MaximumReceiveMessageSize = 512 * 1024;
     });
 
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<IdentityUserAccessor>();
+builder.Services.AddScoped<IdentityRedirectManager>();
+builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+builder.Services.AddCoreDomainServices(coreBackendUrl);
+builder.Services.AddAdminDomainServices();
 
-/*
- * Only run these jobs in production.
- *
- * TODO: These will probably have to
- * move to the backend with a proper
- * scheduler. IIS shuts down after
- * some amount of inactivity so the
- * jobs are not guaranteed to run
- * continuously.
- *
- * */
-if (builder.Environment.IsProduction())
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = IdentityConstants.ApplicationScheme;
+        options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+    })
+    .AddIdentityCookies();
+
+builder.Services
+    .AddIdentityCore<AdminUser>(options => options.SignIn.RequireConfirmedAccount = true)
+    .AddRoles<AdminRole>()
+    .AddEntityFrameworkStores<AlohaDb>()
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
+
+builder.Services.AddScoped<IEmailSender<AdminUser>, IdentityEmailSender>();
+
+//if (builder.Environment.IsProduction())
 {
-    builder.Services.AddHostedService<EmailReminderBackgroundService>();
-    builder.Services.AddHostedService<AutoCancelAbandonedApplicationsService>();
-    builder.Services.AddHostedService<ApplicationDecisionSyncService>();
+    builder.Services.AddHostedService<MaintenanceService>();
 }
 
-builder.Services.AddHostedService<DatabaseMigratorBackgroundService>();
-builder.Services.AddHostedService<DefaultLanguageImportService>();
-builder.Services.AddScoped<Aloha.Domain.Services.Translations.IAutoTranslationService, Aloha.Domain.Services.Translations.AutoTranslationService>();
-builder.Services.AddScoped<Aloha.Domain.Services.Translations.ITranslationHelper, Aloha.Domain.Services.Translations.TranslationHelper>();
-builder.Services.AddHostedService<AutoTranslationBackgroundService>();
+builder.Services.AddDbContextFactory<AlohaDb>(options =>
+    options.UseSqlServer(connectionString));
 
-//Note: Very important this stays Scoped. Scoped services are per Signal R connection, per user
-builder.Services.AddScoped<IApplicationStateProvider, ApplicationStateProvider>();
-builder.Services.AddScoped<IAppVisualStateProvider, AppVisualStateProvider>();
-builder.Services.AddScoped<IApplicationStepCompletionManager, ApplicationStepCompletionManager>();
-builder.Services.AddScoped<IQuestionnaireService, QuestionnaireService>();
-builder.Services.AddScoped<IFieldConfigurationService, FieldConfigurationService>();
-builder.Services.AddScoped<ISmartyService, SmartyService>();
-builder.Services.AddCustomerDomainServices();
-builder.Services.AddCoreDomainServices(coreBackendUrl);
-builder.Services.AddScoped<FileUploadState>();
-builder.Services.AddScoped<ImageUploadService>();
+builder.Services.AddLocalization();
 
 var app = builder.Build();
 
@@ -193,8 +113,9 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
 
-var supportedCultures = new[] { "en-US", "en-GB", "es-CR" };
+app.UseForwardedHeaders();
 
+var supportedCultures = new[] { "en-US", "en-GB", "es-CR" };
 var localizationOptions = new RequestLocalizationOptions()
     .SetDefaultCulture(supportedCultures[0])
     .AddSupportedCultures(supportedCultures)
@@ -211,22 +132,33 @@ localizationOptions.RequestCultureProviders.Add(new AcceptLanguageHeaderRequestC
 
 app.UseRequestLocalization(localizationOptions);
 
-app.UseForwardedHeaders();
 app.UseStaticFiles();
-app.UseAuthentication();
-app.UseAuthorization();
 app.UseAntiforgery();
-
 app.UseCustomSerilogRequestLoggingGeneric();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-app.MapBrandingImageEndpoints();
-app.MapStylesheetEndpoints();
-app.MapImageHandlingEndpoints();
-app.MapCardImageEndpoints();
-app.MapControllers();
+// Add additional endpoints required by the Identity /Account Razor components.
+app.MapAdditionalIdentityEndpoints();
+
+// Setup seed data for roles
+using (var scope = app.Services.CreateScope())
+{
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<AdminRole>>();
+
+    var roles = Enum.GetNames<RoleName>();
+
+    foreach (var role in roles)
+    {
+        var isRolePresent = await roleManager.RoleExistsAsync(role);
+
+        if (!isRolePresent)
+        {
+            await roleManager.CreateAsync(AdminRole.Create(role));
+        }
+    }
+}
 
 try
 {

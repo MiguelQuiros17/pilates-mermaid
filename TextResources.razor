@@ -1,11 +1,13 @@
 @page "/customization/textresources"
 
 @using Aloha.Domain.Services.Localization
+@using Aloha.Domain.Services.Translations
 @using Microsoft.AspNetCore.Authorization
 @using Aloha.Domain.Services.AdminAudit
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
 @using Microsoft.AspNetCore.Identity
+@using System.Globalization
 @attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, ContentManager, Audit")]
 
 @inject AuthenticationStateProvider authStateProvider
@@ -14,6 +16,8 @@
 @inject IAdminActivityService adminActivityService
 @inject UserManager<AdminUser> UserManager
 @inject ILocalizationImportExportService localizationImportExportService
+@inject ILanguageConfigurationService LanguageConfigService
+@inject ITranslationHelper TranslationHelper
 @inject IJSRuntime js
 @rendermode InteractiveServer
 
@@ -30,16 +34,21 @@
 
     <ValidationSummary />
 
-    <div class="mb-3">
-        <label class="form-label" for="culture">Culture</label>
-        <InputSelect @bind-Value="input.SelectedCulture"
-                     @bind-Value:after="CultureSelected"
-                     class="form-select"
-                     id="culture">
-            <option value="en-US">English (US)</option>
-            <option value="es-CR">Español (Costa Rica)</option>
-        </InputSelect>
-    </div>
+    @if (isMultiLanguageEnabled)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="culture">Culture</label>
+            <InputSelect @bind-Value="input.SelectedCulture"
+                         @bind-Value:after="CultureSelected"
+                         class="form-select"
+                         id="culture">
+                @foreach (var lang in enabledLanguages)
+                {
+                    <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
+                }
+            </InputSelect>
+        </div>
+    }
 
     <div class="mb-3">
         <label class="form-label" for="resourceKey">Text Resource</label>
@@ -173,6 +182,10 @@
     private InputFile? inputFile;
     private ConfirmationModal importConfirmationModal = null!;
     private IBrowserFile importFile = default!;
+    private List<string> enabledLanguages = new();
+    private string primaryLanguage = "en-US";
+    private bool isMultiLanguageEnabled = false;
+    private Dictionary<string, string> languageDisplayNames = new();
 
     protected override void OnInitialized()
     {
@@ -180,9 +193,6 @@
         messageStore = new ValidationMessageStore(editContext);
         editContext.OnValidationRequested += (s, e) => messageStore.Clear();
         editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
-        
-        // Initialize culture to en-US
-        input.SelectedCulture = "en-US";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -190,6 +200,22 @@
         if (firstRender)
         {
             await CheckRoleAndUpdateReadOnlyFlagAsync();
+            
+            // Load language configuration
+            enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            isMultiLanguageEnabled = await LanguageConfigService.IsMultiLanguageEnabledAsync();
+            
+            // Load language display names
+            languageDisplayNames = new Dictionary<string, string>();
+            foreach (var lang in enabledLanguages)
+            {
+                languageDisplayNames[lang] = await LanguageConfigService.GetLanguageDisplayNameAsync(lang);
+            }
+            
+            // Initialize culture to primary language
+            input.SelectedCulture = primaryLanguage;
+            
             await LoadData();
             await LoadResourceKeys(null);
         }
@@ -213,7 +239,10 @@
 
             var ids = input.LocalizationStrings.Select(x => x.Id);
 
-            var localizationStrings = await db.LocalizationStrings.Where(x => ids.Contains(x.Id)).ToListAsync();
+            var localizationStrings = await db.LocalizationStrings
+                .Include(x => x.LocalizationCulture)
+                .Where(x => ids.Contains(x.Id))
+                .ToListAsync();
 
             foreach (var localizedString in localizationStrings)
             {
@@ -229,7 +258,10 @@
 
                     var message = $"{inputString.Key}-{inputString.ResourceKey} text was updated From: \"{currentText}\" To: \"{updatedText}\"";
 
-                    await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.TextResources, message);
+                    if (AdminUser != null)
+                    {
+                        await adminActivityService.TrackAdminUserActivityAsync(AdminUser, AdminActivityType.TextResources, message);
+                    }
                 }
 
                 if (string.IsNullOrEmpty(inputString.CurrentText))
@@ -247,6 +279,18 @@
             }
 
             await db.SaveChangesAsync();
+
+            // Update cache with changed translations
+            foreach (var localizedString in localizationStrings)
+            {
+                var culture = localizedString.LocalizationCulture?.Culture;
+                if (!string.IsNullOrWhiteSpace(culture))
+                {
+                    // Get the actual text value (CurrentText if set, otherwise DefaultText)
+                    var text = localizedString.CurrentText ?? localizedString.DefaultText ?? "";
+                    Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(culture, localizedString.ResourceKey, localizedString.Key, text);
+                }
+            }
 
             messageRef?.Notify(new(ToastType.Success, string.Empty));
         }
@@ -398,7 +442,10 @@
         exportLoading = true;
         var fileContent = await localizationImportExportService.GetLocalizationJsonAsync();
         await js.InvokeVoidAsync("downloadFile", JsonFileName, "text", "utf-8", fileContent);
-        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.TextResources, "Export text file was made for environment.");
+        if (AdminUser != null)
+        {
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser, AdminActivityType.TextResources, "Export text file was made for environment.");
+        }
         exportLoading = false;
     }
 
@@ -422,7 +469,10 @@
 
             await localizationImportExportService.ImportLocalizationAsync(content);
 
-            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.TextResources, "Text file was imported into environment.");
+            if (AdminUser != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser, AdminActivityType.TextResources, "Text file was imported into environment.");
+            }
 
             messageRef?.Notify(new(ToastType.Success, "Text file was imported into environment successfully."));
         }
@@ -450,7 +500,7 @@
     {
         await using var db = await dbFactory.CreateDbContextAsync();
 
-        var culture = input.SelectedCulture ?? "en-US";
+        var culture = input.SelectedCulture ?? primaryLanguage;
 
         // Load ALL strings for the culture (up to 2000)
         allLocalizationStrings = await db.LocalizationStrings
@@ -518,7 +568,7 @@
     {
         await using var db = await dbFactory.CreateDbContextAsync();
 
-        var culture = input.SelectedCulture ?? "en-US";
+        var culture = input.SelectedCulture ?? primaryLanguage;
 
         // Load ALL individual entries (not just unique resource keys) - up to 2000
         // This allows searching by both key name and actual text content
@@ -542,7 +592,7 @@
 
     private record Input
     {
-        public string? SelectedCulture { get; set; } = "en-US";
+        public string? SelectedCulture { get; set; }
         public string? SelectedResourceKey { get; set; }
         public IList<CustomizableString> LocalizationStrings { get; set; } = [];
     }

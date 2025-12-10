@@ -1,0 +1,158 @@
+@page "/applications/people/questionnaires"
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.Applications
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Questionnaires
+@inject IApplicationStateProvider appState
+@inject IApplicationStepCompletionManager stepManager
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<ApplicantQuestionnaires> l
+@inject IStringLocalizer<SharedResources> sl
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+<PageTitle>@l["page-title"]</PageTitle>
+
+@if (isLoading)
+{
+    <Spinner/>
+}
+else
+{
+    <h1>@l["page-heading"]</h1>
+    <p>@l["page-description"]</p>
+
+    @foreach (var applicant in applicants)
+    {
+        <h2 class="h5">@applicant.GetFullName()</h2>
+
+        <QuestionnaireCardList
+            ApplicationPersonId="applicant.Id"
+            CompletedQuestionnaireIdSet="appPersonIdToCompletedQuestionnaireIdSetLookup[applicant.Id]"
+            QuestionnaireResponses="applicant.QuestionnaireResponses"
+            Questionnaires="questionnaires"
+        />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <p class="validation-message">@errorMessage</p>
+    }
+
+    <div class="d-flex justify-content-end">
+        <button class="btn btn-primary" @onclick="HandleContinueAsync">@sl["button-continue"]</button>
+    </div>
+}
+
+@code {
+
+    private Dictionary<int, HashSet<int>> appPersonIdToCompletedQuestionnaireIdSetLookup = [];
+    private IList<ApplicationPerson> applicants = [];
+    private IList<Questionnaire> questionnaires = [];
+    private bool canProceed;
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var appKey = await appState.GetCurrentApplicationKeyAsync();
+
+            var app = await db.UserApplications
+                .Include(userApplication => userApplication.ProductApplicationType!)
+                .ThenInclude(productApplicationType => productApplicationType.QuestionnaireApplicationTypeLinks!)
+                .ThenInclude(questionnaireApplicationTypeLink => questionnaireApplicationTypeLink.Questionnaire)
+                .Include(userApplication => userApplication.QuestionnaireResponses!)
+                .ThenInclude(questionnaireResponse => questionnaireResponse.Questionnaire!)
+                .Include(userApplication => userApplication.ApplicationPeople!)
+                .ThenInclude(x => x.QuestionnaireResponses)
+                .FirstAsync(x => x.ApplicationKey == appKey);
+
+            applicants = app.ApplicationPeople?
+                .Where(person => person.PersonType != PersonType.Beneficiary)
+                .ToArray() ?? [];
+
+            appPersonIdToCompletedQuestionnaireIdSetLookup =
+                CreateAppPersonIdToCompletedQuestionnaireIdLookup(applicants);
+
+            questionnaires = GetQuestionnairesForAppType(app.ProductApplicationType!);
+
+            if (!questionnaires.Any())
+            {
+                nav.NavigateTo("/applications/disclosures/applicant", replace: true);
+                return;
+            }
+
+            canProceed = IsEveryRequiredQuestionnaireCompleteForEachApplicant();
+
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static IList<Questionnaire> GetQuestionnairesForAppType(ProductApplicationType appType)
+    {
+        return (appType.QuestionnaireApplicationTypeLinks ?? [])
+            .Where(x => x.Questionnaire!.IsEnabled)
+            .Where(x => !x.Questionnaire!.IsDeleted)
+            .Where(x => x.Questionnaire!.Level is QuestionnaireLevel.Applicant)
+            .Select(x => x.Questionnaire!)
+            .ToArray();
+    }
+
+    private static Dictionary<int, HashSet<int>> CreateAppPersonIdToCompletedQuestionnaireIdLookup(IList<ApplicationPerson> applicationPeople)
+    {
+        var appPersonIdToCompletedQuestionnaireIdSet = new Dictionary<int, HashSet<int>>();
+
+        foreach (var appPerson in applicationPeople)
+        {
+            if (!appPersonIdToCompletedQuestionnaireIdSet.ContainsKey(appPerson.Id))
+            {
+                appPersonIdToCompletedQuestionnaireIdSet.Add(appPerson.Id, []);
+            }
+
+            var personQuestionnaireResponses = appPerson.QuestionnaireResponses ?? [];
+
+            foreach (var response in personQuestionnaireResponses)
+            {
+                appPersonIdToCompletedQuestionnaireIdSet[appPerson.Id].Add(response.QuestionnaireId);
+            }
+        }
+
+        return appPersonIdToCompletedQuestionnaireIdSet;
+    }
+
+    private bool IsEveryRequiredQuestionnaireCompleteForEachApplicant()
+    {
+        var requiredQuestionnaireIdSet = new HashSet<int>();
+
+        foreach (var questionnaire in questionnaires)
+        {
+            if (questionnaire.IsRequired)
+            {
+                requiredQuestionnaireIdSet.Add(questionnaire.Id);
+            }
+        }
+
+        return applicants.All(applicant =>
+            appPersonIdToCompletedQuestionnaireIdSetLookup[applicant.Id]
+                .IsSupersetOf(requiredQuestionnaireIdSet));
+    }
+
+    private async Task HandleContinueAsync()
+    {
+        if (canProceed)
+        {
+            await stepManager.MarkStepAsCompletedAsync(UserApplicationStepType.ApplicantQuestionnaires);
+            nav.NavigateTo("/applications/disclosures/applicant");
+        }
+        else
+        {
+            errorMessage = "You must complete all required questionnaires before proceeding.";
+        }
+    }
+
+}

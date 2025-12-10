@@ -1,0 +1,147 @@
+@page "/applications/questionnaires"
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.Applications
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Questionnaires
+@inject IApplicationStateProvider appState
+@inject IApplicationStepCompletionManager stepManager
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<ApplicationQuestionnaires> l
+@inject IStringLocalizer<SharedResources> sl
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+<PageTitle>@l["page-title"]</PageTitle>
+
+@if (isLoading)
+{
+    <Spinner/>
+}
+else
+{
+    <h1>@l["page-heading"]</h1>
+    <p>@l["page-description"]</p>
+
+    <QuestionnaireCardList
+        Questionnaires="questionnaires"
+        QuestionnaireResponses="questionnaireResponses"
+        CompletedQuestionnaireIdSet="completedQuestionnaireIdSet"
+    />
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <p class="validation-message">@errorMessage</p>
+    }
+
+    <div class="d-flex justify-content-end">
+        <button class="btn btn-primary" @onclick="HandleContinueAsync">@sl["button-continue"]</button>
+    </div>
+}
+
+@code {
+
+    private UserApplication app = null!;
+    private bool appHasPrimaryPerson;
+    private bool canProceed;
+    private bool isLoading = true;
+    private readonly HashSet<int> completedQuestionnaireIdSet = [];
+    private readonly IList<Questionnaire> questionnaires = [];
+    private readonly IList<QuestionnaireResponse> questionnaireResponses = [];
+    private string? errorMessage;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var appKey = await appState.GetCurrentApplicationKeyAsync();
+
+            app = await db.UserApplications
+                .Include(userApplication => userApplication.ApplicationPeople)
+                .Include(userApplication => userApplication.ProductApplicationType!)
+                .ThenInclude(productApplicationType => productApplicationType.QuestionnaireApplicationTypeLinks!)
+                .ThenInclude(questionnaireApplicationTypeLink => questionnaireApplicationTypeLink.Questionnaire)
+                .Include(userApplication => userApplication.QuestionnaireResponses!)
+                .ThenInclude(questionnaireResponse => questionnaireResponse.Questionnaire!)
+                .FirstAsync(x => x.ApplicationKey == appKey);
+
+            appHasPrimaryPerson = app!.ApplicationPeople?.Any(person => person.PersonType == PersonType.Primary) ?? false;
+
+            var questionnaireApplicationTypeLinks = app.ProductApplicationType!.QuestionnaireApplicationTypeLinks;
+            var requiredQuestionnaireIds = new HashSet<int>();
+
+            if (questionnaireApplicationTypeLinks != null)
+            {
+                foreach (var link in questionnaireApplicationTypeLinks
+                             .Where(x => x.Questionnaire is { IsEnabled: true, IsDeleted: false })
+                             .Where(x => x.Questionnaire?.Level == QuestionnaireLevel.Application))
+                {
+                    if (link.Questionnaire == null)
+                    {
+                        continue;
+                    }
+
+                    questionnaires.Add(link.Questionnaire);
+
+                    if (link.Questionnaire.IsRequired)
+                    {
+                        requiredQuestionnaireIds.Add(link.Questionnaire.Id);
+                    }
+                }
+            }
+
+            if (!questionnaires.Any())
+            {
+                NavigateToNextStep(isReplace: true);
+                return;
+            }
+
+            var appQuestionnaireResponses = app.QuestionnaireResponses;
+
+            if (appQuestionnaireResponses is not null)
+            {
+                foreach (var response in appQuestionnaireResponses
+                             .Where(x => x.QuestionnaireLevel == QuestionnaireLevel.Application)
+                             .Where(x => x.Questionnaire!.IsEnabled && !x.Questionnaire!.IsDeleted))
+                {
+                    questionnaireResponses.Add(response);
+                    completedQuestionnaireIdSet.Add(response.QuestionnaireId);
+                }
+            }
+
+            if (completedQuestionnaireIdSet.IsSupersetOf(requiredQuestionnaireIds))
+            {
+                canProceed = true;
+            }
+
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleContinueAsync()
+    {
+        if (canProceed)
+        {
+            await stepManager.MarkStepAsCompletedAsync(UserApplicationStepType.ApplicationQuestionnaires);
+            NavigateToNextStep();
+        }
+        else
+        {
+            errorMessage = "You must complete all required questionnaires before proceeding.";
+        }
+    }
+
+    private void NavigateToNextStep(bool isReplace = false)
+    {
+        if (app.ProductApplicationType!.ApplicationType == ApplicationType.Member)
+        {
+            nav.NavigateTo(appHasPrimaryPerson ? "/applications/people" : "/applications/people/add", replace: isReplace);
+            return;
+        }
+            
+        nav.NavigateTo("/applications/products", replace: isReplace);
+    }
+
+}

@@ -1,0 +1,17 @@
+[
+    {
+      "key": "page-title",
+      "value": "Application Questionnaires",
+      "context": "Browser tab title for 'Application Questionnaires' page"
+    },
+    {
+      "key": "page-heading",
+      "value": "Application Questionnaires",
+      "context": "Primary heading at top of 'Application Questionnaires' page"
+    },
+    {
+      "key": "page-description",
+      "value": "For each of the following questionnaires marked as required, please open and submit responses to the respective questionnaire. You will be returned to this page upon completion of a questionnaire. When all required questionnaires are complete, you may proceed.",
+      "context": "Instructional text underneath primary heading of 'Application Questionnaires' page"
+    }
+  ]

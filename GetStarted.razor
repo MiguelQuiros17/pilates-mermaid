@@ -1,0 +1,405 @@
+@page "/Application/GetStarted"
+
+@using System.Security.Claims
+@using Aloha.Domain.Applications
+@using Aloha.Domain.ProductApplications
+@using Aloha.Domain.Services.Application
+@using Aloha.Domain.Services.Translations
+@using Aloha.Infrastructure
+@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Localization
+
+@inject IApplicationStateProvider appState
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IApplicationPrefillService applicationPrefillService
+@inject IStringLocalizer<Index> l
+@inject NavigationManager nav
+@inject IHttpContextAccessor HttpContextAccessor
+@inject ITranslationHelper TranslationHelper
+
+@rendermode InteractiveServer
+
+<PageTitle>@l["page-title"]</PageTitle>
+
+<div class="align-top d-flex flex-column-reverse flex-md-row gap-4 justify-content-between">
+    <div>
+        <h1>@l["page-heading"]</h1>
+    </div>
+    <div class="d-grid d-md-inline-block">
+        <a class="btn btn-lg btn-primary" href="/application/dashboard">
+            @l["button-continue-application"]
+        </a>
+    </div>
+</div>
+<div class="mb-4">
+    <div class="mb-3">
+        <a href="/application/settings">@l["settings-link"]</a>
+    </div>
+    <p>@l["helper-subtitle-1"]</p>
+    <p>@l["helper-subtitle-2"]</p>
+    @if (IsOverApplicationLimit())
+    {
+        <p class="text-danger">@l["validation-max-applications"]</p>
+    }
+</div>
+
+@if (memberAppTypes.Any())
+{
+    <h2 class="h5">@l["account-applications-section-heading"]</h2>
+
+    <div class=@($"mb-4 row row-cols-1 row-cols-lg-3 g-3")>
+        @foreach (var appType in memberAppTypes)
+        {
+            <div class="col">
+                <div
+                    class="align-items-center d-flex flex-column focus-ring gap-4 rounded-3 h-100"
+                    @onclick="() => HandleOpenSharePress(appType.Id)"
+                    role="button"
+                    style="background-color: var(--aloha-color-surface)"
+                    tabindex="0">
+                    @if (appType.ProductApplicationTypeImageId == null)
+                    {
+                        <div class="d-flex align-items-center justify-content-center overflow-hidden bg-primary"
+                             style="aspect-ratio: 16/9; width: 100%; border-top-left-radius: var(--bs-border-radius-lg); border-top-right-radius: var(--bs-border-radius-lg)">
+                            <div class="w-100 d-flex flex-1 align-items-center justify-content-center">
+                                <i class="bi bi-piggy-bank-fill text-bg-primary" style="font-size: 96px"></i>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex align-items-center justify-content-center overflow-hidden"
+                             style="aspect-ratio: 16/9; width: 100%; border-top-left-radius: var(--bs-border-radius-lg); border-top-right-radius: var(--bs-border-radius-lg)">
+                            <img
+                                alt="marketing image for application type"
+                                style="width: 100%; aspect-ratio: 16/9; object-fit: cover; object-position: center"
+                                src=@($"/api/app-type-image/{appType.Id}")/>
+                        </div>
+                    }
+                    <div class="text-center px-4 py-1 mb-2">
+                        <h5 class="m-0 mb-2">@(displayNameTranslations.TryGetValue(appType.Id, out var displayName) ? displayName : appType.ApplicationDisplayName)</h5>
+                        <p>@(displayDescriptionTranslations.TryGetValue(appType.Id, out var displayDesc) ? displayDesc : appType.ApplicationDisplayDescription)</p>
+                        @if (loading)
+                        {
+                            <p>
+                                <Spinner Color="SpinnerColor.Primary" Size="SpinnerSize.Small" />
+                                <span class="ms-2">Loading&hellip;</span>
+                            </p>
+                        }
+                    </div>                  
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (loanAppTypes.Any())
+{
+    <h2 class="h5">@l["loan-applications-section-heading"]</h2>
+
+    <div class=@($"mb-4 row row-cols-1 row-cols-lg-3 g-3")>
+        @foreach (var appType in loanAppTypes)
+        {
+            <div class="col">
+                <div
+                    class="align-items-center d-flex flex-column focus-ring gap-4 rounded-3 h-100"
+                    @onclick="() => HandleOpenLoanPress(appType.Id)"
+                    role="button"
+                    style="background-color: var(--aloha-color-surface)"
+                    tabindex="0">
+                    @if (appType.ProductApplicationTypeImageId == null)
+                    {
+                        <div class="d-flex align-items-center justify-content-center overflow-hidden bg-primary"
+                             style="aspect-ratio: 16/9; width: 100%; border-top-left-radius: var(--bs-border-radius-lg); border-top-right-radius: var(--bs-border-radius-lg)">
+                            <div class="w-100 d-flex flex-1 align-items-center justify-content-center">
+                                <i class="bi bi-piggy-bank-fill text-bg-primary" style="font-size: 96px"></i>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex align-items-center justify-content-center overflow-hidden"
+                             style="aspect-ratio: 16/9; width: 100%; border-top-left-radius: var(--bs-border-radius-lg); border-top-right-radius: var(--bs-border-radius-lg)">
+                            <img
+                                alt="marketing image for application type"
+                                style="width: 100%; aspect-ratio: 16/9; object-fit: cover; object-position: center"
+                                src=@($"/api/app-type-image/{appType.Id}")/>
+                        </div>
+                    }
+                    <div class="text-center px-4 py-1 mb-2">
+                        <h5 class="m-0 mb-2">@(displayNameTranslations.TryGetValue(appType.Id, out var displayName) ? displayName : appType.ApplicationDisplayName)</h5>
+                        <p>@(displayDescriptionTranslations.TryGetValue(appType.Id, out var displayDesc) ? displayDesc : appType.ApplicationDisplayDescription)</p>
+                        @if (loading)
+                        {
+                            <p>
+                                <Spinner Color="SpinnerColor.Primary" Size="SpinnerSize.Small" />
+                                <span class="ms-2">Loading&hellip;</span>
+                            </p>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+
+    [SupplyParameterFromQuery]
+    public string? AppTypes { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> authStateTask { get; set; } = default!;
+
+    private IList<ProductApplicationType> applicationTypes = [];
+    private ClaimsPrincipal? claimsUser = default!;
+    private IList<ProductApplicationType> loanAppTypes = [];
+    private IList<ProductApplicationType> memberAppTypes = [];
+    private int? maximumApplicationLimit = null;
+    private int currentUserApplicationCount = 0;
+    private bool loading = false;
+    
+    // Translation dictionaries
+    private Dictionary<int, string> displayNameTranslations = new();
+    private Dictionary<int, string> displayDescriptionTranslations = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        claimsUser = (await authStateTask).User;
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+        maximumApplicationLimit = feature?.WebApplicationFeature?.MaximumApplicationsPerUser;
+
+        applicationTypes = await db.ProductApplicationTypes
+            .GetEnabledProductApplicationTypes()
+            .OrderByDescending(x => x.Id)
+            .ToListAsync();
+
+        memberAppTypes = applicationTypes
+            .Where(x => x.ApplicationType == ApplicationType.Member)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .ToList();
+
+        loanAppTypes = applicationTypes
+            .Where(x => x.ApplicationType == ApplicationType.Loan)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .ToList();
+
+        if (AppTypes is not null && AppTypes.Equals("loan", StringComparison.OrdinalIgnoreCase))
+        {
+            memberAppTypes = [];
+        }
+        if (AppTypes is not null && AppTypes.Equals("share", StringComparison.OrdinalIgnoreCase))
+        {
+            loanAppTypes = [];
+        }
+
+        if (claimsUser?.Identity is null || !claimsUser.Identity.IsAuthenticated)
+        {
+            nav.NavigateTo("/", true);
+            return;
+        }
+
+        currentUserApplicationCount = await db.UserApplications
+            .CountAsync(x => x.ApplicantUser!.EmailAddress == claimsUser!.Identity!.Name!);
+
+        // Load translations for all application types
+        await LoadTranslationsAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadTranslationsAsync()
+    {
+        displayNameTranslations.Clear();
+        displayDescriptionTranslations.Clear();
+        
+        var currentCulture = GetCurrentCulture();
+        System.Diagnostics.Debug.WriteLine($"[GetStarted] Current culture: {currentCulture ?? "null (will default to en-US)"}");
+        
+        foreach (var appType in applicationTypes)
+        {
+            if (!displayNameTranslations.ContainsKey(appType.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(appType, "ApplicationDisplayName", currentCulture);
+                System.Diagnostics.Debug.WriteLine($"[GetStarted] AppType ID {appType.Id}: '{appType.ApplicationDisplayName}' -> '{translatedName}' (culture: {currentCulture ?? "null"})");
+                displayNameTranslations[appType.Id] = translatedName;
+            }
+            
+            if (!displayDescriptionTranslations.ContainsKey(appType.Id))
+            {
+                var translatedDesc = await TranslationHelper.GetLocalTextAsync(appType, "ApplicationDisplayDescription", currentCulture);
+                System.Diagnostics.Debug.WriteLine($"[GetStarted] AppType ID {appType.Id} Description: '{appType.ApplicationDisplayDescription}' -> '{translatedDesc}' (culture: {currentCulture ?? "null"})");
+                displayDescriptionTranslations[appType.Id] = translatedDesc;
+            }
+        }
+    }
+
+    private string? GetCurrentCulture()
+    {
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext != null)
+        {
+            var requestCulture = httpContext.Features.Get<IRequestCultureFeature>();
+            if (requestCulture?.RequestCulture?.Culture != null)
+            {
+                var cultureName = requestCulture.RequestCulture.Culture.Name;
+                System.Diagnostics.Debug.WriteLine($"[GetStarted] GetCurrentCulture: Detected culture from HttpContext: {cultureName}");
+                // Map to supported cultures
+                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
+                {
+                    return cultureName;
+                }
+                else if (cultureName.StartsWith("en"))
+                {
+                    return "en-US";
+                }
+                else if (cultureName.StartsWith("es"))
+                {
+                    return "es-CR";
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("[GetStarted] GetCurrentCulture: IRequestCultureFeature is null or culture is null");
+            }
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine("[GetStarted] GetCurrentCulture: HttpContext is null");
+        }
+        return null;
+    }
+
+    private async Task HandleOpenSharePress(int id)
+    {
+        if (IsOverApplicationLimit())
+        {
+            //Not allowed to start a new application.
+            return;
+        }
+        if (loading)
+        {
+            //No double clicks.
+            return;
+        }
+        loading = true;
+        var applicationType = applicationTypes.FirstOrDefault(x => x.Id == id);
+
+        if (applicationType is null)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        applicationType ??= await InsertDefaultApplicationTypeAsync(db);
+
+        var user = await db.ApplicantUsers
+            .FirstAsync(x => x.EmailAddress == claimsUser!.Identity!.Name!);
+
+        var coreIdentifier = claimsUser?.Claims.FirstOrDefault(x => x.Type == "CoreIdentifier")?.Value;
+
+        UserApplication? application = null;
+        if (coreIdentifier is not null)
+        {
+            //Prefill info
+            application = await applicationPrefillService.CreatePrefilledApplicationAsync(db, user, applicationType.Id, coreIdentifier);
+        }
+
+        if (application is null)
+        {
+            application = UserApplication.Create(user, applicationType.Id);
+            db.Add(application);
+        }
+
+        await db.SaveChangesAsync();
+
+        await appState.SetCurrentApplicationAsync(application.ApplicationKey);
+        nav.NavigateTo("/applications/welcome");
+    }
+
+    private async Task HandleOpenLoanPress(int id)
+    {
+        if (IsOverApplicationLimit())
+        {
+            //Not allowed to start a new application.
+            return;
+        }
+        if (loading)
+        {
+            //No double clicks.
+            return;
+        }
+        loading = true;
+        var applicationType = applicationTypes.FirstOrDefault(x => x.Id == id);
+
+        if (applicationType is null)
+        {
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var user = await db.ApplicantUsers
+            .FirstAsync(x => x.EmailAddress == claimsUser!.Identity!.Name!);
+
+        var coreIdentifier = claimsUser?.Claims.FirstOrDefault(x => x.Type == "CoreIdentifier")?.Value;
+
+        UserApplication? application = null;
+        if (coreIdentifier is not null)
+        {
+            //Prefill info
+            application = await applicationPrefillService.CreatePrefilledApplicationAsync(db, user, applicationType.Id, coreIdentifier);
+        }
+
+        if (application is null)
+        {
+            application = UserApplication.Create(user, applicationType.Id);
+            db.Add(application);
+        }
+
+        await db.SaveChangesAsync();
+
+        await appState.SetCurrentApplicationAsync(application.ApplicationKey);
+        nav.NavigateTo("/applications/welcome");
+    }
+
+    private bool IsOverApplicationLimit()
+    {
+        return maximumApplicationLimit is not null &&
+        maximumApplicationLimit > 0 &&
+        currentUserApplicationCount >= maximumApplicationLimit;
+    }
+
+    private static async Task<ProductApplicationType> InsertDefaultApplicationTypeAsync(AlohaDb db)
+    {
+        var applicationType = ProductApplicationType.Create(
+            "Default Application",
+            "Default Description",
+            "000000000",
+            "0000000000",
+            "0000000000",
+            ApplicationType.Member,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "0000000000",
+            true,
+            0,
+            0,
+            null,
+            "000000000",
+            "000000000",
+            string.Empty
+        );
+
+        db.Add(applicationType);
+        await db.SaveChangesAsync();
+        return applicationType;
+    }
+}
+

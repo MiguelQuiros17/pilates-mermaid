@@ -1,0 +1,285 @@
+@page "/applications/products/questionnaires"
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.ApplicationProducts
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Questionnaires
+@inject IApplicationStateProvider appState
+@inject IApplicationStepCompletionManager stepManager
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<ProductQuestionnaires> l
+@inject IStringLocalizer<SharedResources> sl
+@inject NavigationManager nav
+@rendermode InteractiveServer
+
+<PageTitle>@l["page-title"]</PageTitle>
+
+@if (isLoading)
+{
+    <Spinner/>
+}
+else
+{
+    <h1>@l["page-heading"]</h1>
+    <p>@l["page-description"]</p>
+
+    @foreach (var groupedQuestionnaire in distinctQuestionnaireAppProducts)
+    {
+        var groupedProductNames = groupedQuestionnaireAppProducts.Where(x => x.QuestionnaireId == groupedQuestionnaire.QuestionnaireId).Select(p => p.ProductName + (p.NickName ?? string.Empty)).ToArray();
+        var product = questionnaireProducts
+            .First(p => p.ProductName == groupedQuestionnaire.ProductName);
+        <QuestionnaireCardList ApplicationLoanProductId="product.AppLoanProduct?.Id"
+                               ApplicationShareProductId="product.AppShareProduct?.Id"
+                               CompletedQuestionnaireIdSet="product.CompletedQuestionnaireIds"
+                               QuestionnaireResponses="product.QuestionnaireResponses"
+                               Questionnaires="[groupedQuestionnaire.Questionnaire]"
+                               ApplicationProductNames="groupedProductNames" />
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <p class="validation-message">@errorMessage</p>
+    }
+
+    <div class="d-flex justify-content-end">
+        <button class="btn btn-primary" @onclick="HandleContinueAsync">@sl["button-continue"]</button>
+    </div>
+}
+
+@code {
+
+    private bool isLoading = true;
+    private bool canProceed;
+    private string? errorMessage;
+    private UserApplication? app;
+    private readonly IList<QuestionnaireProduct> questionnaireProducts = [];
+    private IList<QuestionnaireAppProduct> distinctQuestionnaireAppProducts = [];
+    private IList<QuestionnaireAppProduct> groupedQuestionnaireAppProducts = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var appKey = await appState.GetCurrentApplicationKeyAsync();
+
+            app = await db.UserApplications
+                .AsSplitQuery()
+                .Include(userApplication => userApplication.ApplicationShareProducts!)
+                .ThenInclude(applicationShareProduct => applicationShareProduct.ShareProduct!)
+                .ThenInclude(shareProduct => shareProduct.QuestionnaireShareProductLinks!)
+                .ThenInclude(questionnaireShareProductLink => questionnaireShareProductLink.Questionnaire!)
+                .ThenInclude(questionnaire => questionnaire.QuestionnaireApplicationTypeLinks)
+                .Include(userApplication => userApplication.ApplicationLoanProducts!)
+                .ThenInclude(applicationLoanProduct => applicationLoanProduct.LoanProduct!)
+                .ThenInclude(loanProduct => loanProduct.QuestionnaireLoanProductLinks!)
+                .ThenInclude(questionnaireLoanProductLink => questionnaireLoanProductLink.Questionnaire!)
+                .ThenInclude(questionnaire => questionnaire.QuestionnaireApplicationTypeLinks)
+                .Include(userApplication => userApplication.QuestionnaireResponses!)
+                .ThenInclude(questionnaireResponse => questionnaireResponse.ApplicationShareProduct)
+                .FirstAsync(x => x.ApplicationKey == appKey);
+
+            var appShareProductIdToCompletedQuestionnaireSetLookup = new Dictionary<int, HashSet<int>>();
+            var appShareProductIdToRequiredQuestionnaireSetLookup = new Dictionary<int, HashSet<int>>();
+
+            foreach (var appShareProduct in app.ApplicationShareProducts ?? [])
+            {
+                var questionnaireProduct = new QuestionnaireProduct
+                {
+                    ProductName = appShareProduct.ShareProduct?.ProductDisplayName ?? string.Empty,
+                    Questionnaires = (appShareProduct.ShareProduct?.QuestionnaireShareProductLinks ?? [])
+                        .Where(x => x.Questionnaire is { IsEnabled: true, IsDeleted: false })
+                        .Where(x => x.Questionnaire?.QuestionnaireApplicationTypeLinks != null &&
+                            x.Questionnaire.QuestionnaireApplicationTypeLinks.Any(link =>
+                                link.ProductApplicationTypeId == app.ProductApplicationTypeId))
+                        .Select(x => x.Questionnaire!)
+                        .ToArray(),
+                    AppShareProduct = appShareProduct
+                };
+
+                if (!questionnaireProduct.Questionnaires.Any())
+                {
+                    continue;
+                }
+
+                appShareProductIdToCompletedQuestionnaireSetLookup[appShareProduct.Id] = [];
+
+                appShareProductIdToRequiredQuestionnaireSetLookup[appShareProduct.Id] = questionnaireProduct.Questionnaires
+                    .Where(x => x.IsRequired).Select(x => x.Id).ToHashSet();
+
+                questionnaireProduct.QuestionnaireResponses = (app.QuestionnaireResponses ?? [])
+                    .Where(x => x.ApplicationShareProductId == appShareProduct.Id)
+                    .ToList();
+
+                questionnaireProduct.CompletedQuestionnaireIds = (app.QuestionnaireResponses ?? [])
+                    .Where(x => x.ApplicationShareProductId == appShareProduct.Id)
+                    .Select(x => x.QuestionnaireId)
+                    .ToHashSet();
+
+                questionnaireProducts.Add(questionnaireProduct);
+
+                // This is for simplified questionnaires grouped by questionnaire.Id in UI
+                foreach (var questionnaire in questionnaireProduct.Questionnaires)
+                {
+                    var questionnaireProducts = new QuestionnaireAppProduct
+                    {
+                        QuestionnaireId = questionnaire.Id,
+                        ProductName = appShareProduct.ShareProduct?.ProductDisplayName ?? string.Empty,
+                        NickName = (appShareProduct.Nickname is not null ? $" ({appShareProduct.Nickname})" : string.Empty) ?? string.Empty,
+                        ApplicationProductId = appShareProduct.Id,
+                        Questionnaire = questionnaire,
+                        QuestionnaireResponse = questionnaireProduct.QuestionnaireResponses.FirstOrDefault(x => x.QuestionnaireId == questionnaire.Id) ?? default!
+                    };
+                    if (!groupedQuestionnaireAppProducts.Any(qp =>
+                            qp.QuestionnaireId == questionnaireProducts.QuestionnaireId &&
+                            qp.ApplicationProductId == questionnaireProducts.ApplicationProductId
+                    ))
+                    {
+                        groupedQuestionnaireAppProducts.Add(questionnaireProducts);
+                    }
+                }
+            }
+
+            var appLoanProductIdToCompletedQuestionnaireSetLookup = new Dictionary<int, HashSet<int>>();
+            var appLoanProductIdToRequiredQuestionnaireSetLookup = new Dictionary<int, HashSet<int>>();
+
+            foreach (var appLoanProduct in app.ApplicationLoanProducts ?? [])
+            {
+                var questionnaireProduct = new QuestionnaireProduct
+                {
+                    ProductName = appLoanProduct.LoanProduct?.ProductDisplayName ?? string.Empty,
+                    Questionnaires = (appLoanProduct.LoanProduct?.QuestionnaireLoanProductLinks ?? [])
+                        .Where(x => x.Questionnaire is { IsEnabled: true, IsDeleted: false })
+                        .Where(x => x.Questionnaire?.QuestionnaireApplicationTypeLinks != null &&
+                            x.Questionnaire.QuestionnaireApplicationTypeLinks.Any(link =>
+                                link.ProductApplicationTypeId == app.ProductApplicationTypeId))
+                        .Select(x => x.Questionnaire!)
+                        .ToArray(),
+                    AppLoanProduct = appLoanProduct
+                };
+
+                if (!questionnaireProduct.Questionnaires.Any())
+                {
+                    continue;
+                }
+
+                appLoanProductIdToCompletedQuestionnaireSetLookup[appLoanProduct.Id] = [];
+
+                appLoanProductIdToRequiredQuestionnaireSetLookup[appLoanProduct.Id] = questionnaireProduct.Questionnaires
+                    .Where(x => x.IsRequired).Select(x => x.Id).ToHashSet();
+
+                questionnaireProduct.QuestionnaireResponses = (app.QuestionnaireResponses ?? [])
+                    .Where(x => x.ApplicationLoanProductId == appLoanProduct.Id)
+                    .ToList();
+
+                questionnaireProduct.CompletedQuestionnaireIds = (app.QuestionnaireResponses ?? [])
+                    .Where(x => x.ApplicationLoanProductId == appLoanProduct.Id)
+                    .Select(x => x.QuestionnaireId)
+                    .ToHashSet();
+
+                questionnaireProducts.Add(questionnaireProduct);
+
+                // This is for simplified questionnaires grouped by questionnaire.Id in UI
+                foreach (var questionnaire in questionnaireProduct.Questionnaires)
+                {
+                    var questionnaireProducts = new QuestionnaireAppProduct
+                    {
+                        QuestionnaireId = questionnaire.Id,
+                        ProductName = appLoanProduct.LoanProduct?.ProductDisplayName ?? string.Empty,
+                        NickName = (appLoanProduct.Nickname is not null ? $" ({appLoanProduct.Nickname})" : string.Empty) ?? string.Empty,
+                        ApplicationProductId = appLoanProduct.Id,
+                        Questionnaire = questionnaire,
+                        QuestionnaireResponse = questionnaireProduct.QuestionnaireResponses.FirstOrDefault(x => x.QuestionnaireId == questionnaire.Id) ?? default!
+                    };
+                    if (!groupedQuestionnaireAppProducts.Any(qp =>
+                            qp.QuestionnaireId == questionnaireProducts.QuestionnaireId &&
+                            qp.ApplicationProductId == questionnaireProducts.ApplicationProductId
+                    ))
+                    {
+                        groupedQuestionnaireAppProducts.Add(questionnaireProducts);
+                    }
+                }
+            }
+
+            if (!questionnaireProducts.Any())
+            {
+                nav.NavigateTo("/applications/products/options", replace: true);
+                return;
+            }
+
+            distinctQuestionnaireAppProducts = groupedQuestionnaireAppProducts.DistinctBy(x => x.QuestionnaireId).ToList();
+
+            foreach (var response in app.QuestionnaireResponses ?? [])
+            {
+                if (response.ApplicationShareProductId is not null &&
+                    appShareProductIdToCompletedQuestionnaireSetLookup.ContainsKey(response.ApplicationShareProductId.Value))
+                {
+                    appShareProductIdToCompletedQuestionnaireSetLookup[response.ApplicationShareProductId.Value].Add(response.QuestionnaireId);
+                }
+
+                if (response.ApplicationLoanProductId is not null &&
+                    appLoanProductIdToCompletedQuestionnaireSetLookup.ContainsKey(response.ApplicationLoanProductId.Value))
+                {
+                    appLoanProductIdToCompletedQuestionnaireSetLookup[response.ApplicationLoanProductId.Value].Add(response.QuestionnaireId);
+                }
+            }
+
+            var isEveryRequiredQuestionnaireCompleteForEachProduct = true;
+
+            foreach (var (appShareProductId, requiredShareQuestionnaireSet) in appShareProductIdToRequiredQuestionnaireSetLookup)
+            {
+                if (!appShareProductIdToCompletedQuestionnaireSetLookup[appShareProductId].IsSupersetOf(requiredShareQuestionnaireSet))
+                {
+                    isEveryRequiredQuestionnaireCompleteForEachProduct = false;
+                }
+            }
+
+            foreach (var (appLoanProductId, requiredLoanQuestionnaireSet) in appLoanProductIdToRequiredQuestionnaireSetLookup)
+            {
+                if (!appLoanProductIdToCompletedQuestionnaireSetLookup[appLoanProductId].IsSupersetOf(requiredLoanQuestionnaireSet))
+                {
+                    isEveryRequiredQuestionnaireCompleteForEachProduct = false;
+                }
+            }
+
+            canProceed = isEveryRequiredQuestionnaireCompleteForEachProduct;
+
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleContinueAsync()
+    {
+        if (canProceed)
+        {
+            await stepManager.MarkStepAsCompletedAsync(UserApplicationStepType.ProductQuestionnaires);
+            nav.NavigateTo("/applications/products/options");
+        }
+        else
+        {
+            errorMessage = "You must complete all required questionnaires before proceeding.";
+        }
+    }
+
+    private class QuestionnaireProduct
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public IList<Questionnaire> Questionnaires { get; set; } = [];
+        public ApplicationLoanProduct? AppLoanProduct { get; set; }
+        public ApplicationShareProduct? AppShareProduct { get; set; }
+        public HashSet<int> CompletedQuestionnaireIds { get; set; } = [];
+        public IList<QuestionnaireResponse> QuestionnaireResponses { get; set; } = [];
+    }
+
+    private class QuestionnaireAppProduct
+    {
+        public int QuestionnaireId { get; set; } = default!;
+        public string ProductName { get; set; } = string.Empty;
+        public string NickName { get; set; } = string.Empty;
+        public int ApplicationProductId { get; set; } = default!;
+        public Questionnaire Questionnaire { get; set; } = default!;
+        public QuestionnaireResponse QuestionnaireResponse { get; set; } = default!;
+        public HashSet<int> CompletedQuestionnaireIds { get; set; } = [];
+    }
+
+}

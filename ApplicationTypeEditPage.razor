@@ -11,6 +11,8 @@
 @using Microsoft.AspNetCore.Identity
 @using Aloha.Domain.Services.Translations
 @using System.Globalization
+@using Aloha.Domain.Localization
+@using Aloha.Infrastructure
 @attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
 
 @inject IDbContextFactory<AlohaDb> dbFactory
@@ -19,6 +21,7 @@
 @inject AuthenticationStateProvider authStateProvider
 @inject IAdminActivityService adminActivityService
 @inject ITranslationHelper TranslationHelper
+@inject ILanguageConfigurationService LanguageConfigService
 @rendermode InteractiveServer
 
 <h3>Edit Application Type</h3>
@@ -347,7 +350,8 @@
     private const long MAX_IMAGE_FILE_BYTES = 1024000L;
     bool isCoreOfflineMode = false;
     private AdminUser? AdminUser = default!;
-    private string bulkSelectedCulture = "en-US";
+    private string bulkSelectedCulture = "en-US"; // Will be initialized to primary language in OnAfterRenderAsync
+    private string primaryLanguage = "en-US";
     private BulkTranslateButton? bulkTranslateButton;
 
     protected override async Task OnInitializedAsync()
@@ -368,6 +372,8 @@
     {
         if (firstRender)
         {
+            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            bulkSelectedCulture = primaryLanguage;
             await CheckRoleAndUpdateReadOnlyFlagAsync();
             await LoadData();
         }
@@ -654,17 +660,149 @@
                 input.CorelationAppDeclinedIdentifier,
                 input.CoreApplicationAccountTypeIndentifier!);
 
-            // TODO: Save translations to database
-            // You'll need to implement this based on your data model.
-            // Options:
-            // 1. Store as JSON in a new column on ProductApplicationType
-            // 2. Store in a separate ProductApplicationTypeTranslations table
-            // 3. Store in the LocalizationStrings table with a specific ResourceKey pattern
-            // Example for option 3:
-            // foreach (var translation in input.DisplayNameTranslations)
-            // {
-            //     // Save to LocalizationStrings with ResourceKey like "ProductApplicationType.{Id}.DisplayName"
-            // }
+            // Save translations to LocalizationStrings table
+            var resourceKey = $"ProductApplicationType.{Id}";
+            
+            // Get all cultures from database
+            var cultures = await db.Set<LocalizationCulture>().ToListAsync();
+            var cultureMap = cultures.ToDictionary(c => c.Culture, c => c.Id);
+            
+            // Get primary language to determine save strategy
+            var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            
+            // Save DisplayName translations
+            // Note: Translations dictionary contains all non-primary language translations
+            // Primary language value is stored in ApplicationDisplayName property
+            foreach (var translation in input.DisplayNameTranslations)
+            {
+                if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
+                {
+                    continue; // Skip if culture doesn't exist
+                }
+                
+                var existing = await db.Set<LocalizationString>()
+                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
+                                           && s.ResourceKey == resourceKey 
+                                           && s.Key == "DisplayName");
+                
+                if (existing != null)
+                {
+                    existing.UpdateDefault(translation.Value ?? "");
+                }
+                else
+                {
+                    var newString = LocalizationString.Create(
+                        localizationCultureId: cultureId,
+                        resourceKey: resourceKey,
+                        key: "DisplayName",
+                        defaultText: translation.Value ?? ""
+                    );
+                    db.Set<LocalizationString>().Add(newString);
+                }
+            }
+            
+            // Save primary language DisplayName to database if primary is not English
+            // (When primary is English, it's saved in the entity property, not in LocalizationStrings)
+            if (!primaryLanguage.StartsWith("en"))
+            {
+                if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
+                {
+                    var existing = await db.Set<LocalizationString>()
+                        .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
+                                               && s.ResourceKey == resourceKey 
+                                               && s.Key == "DisplayName");
+                    
+                    if (existing != null)
+                    {
+                        existing.UpdateDefault(input.ApplicationDisplayName ?? "");
+                    }
+                    else
+                    {
+                        var newString = LocalizationString.Create(
+                            localizationCultureId: primaryCultureId,
+                            resourceKey: resourceKey,
+                            key: "DisplayName",
+                            defaultText: input.ApplicationDisplayName ?? ""
+                        );
+                        db.Set<LocalizationString>().Add(newString);
+                    }
+                }
+            }
+            
+            // Save DisplayDescription translations
+            foreach (var translation in input.DisplayDescriptionTranslations)
+            {
+                if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
+                {
+                    continue; // Skip if culture doesn't exist
+                }
+                
+                var existing = await db.Set<LocalizationString>()
+                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
+                                           && s.ResourceKey == resourceKey 
+                                           && s.Key == "DisplayDescription");
+                
+                if (existing != null)
+                {
+                    existing.UpdateDefault(translation.Value ?? "");
+                }
+                else
+                {
+                    var newString = LocalizationString.Create(
+                        localizationCultureId: cultureId,
+                        resourceKey: resourceKey,
+                        key: "DisplayDescription",
+                        defaultText: translation.Value ?? ""
+                    );
+                    db.Set<LocalizationString>().Add(newString);
+                }
+            }
+            
+            // Save primary language DisplayDescription to database if primary is not English
+            // (When primary is English, it's saved in the entity property, not in LocalizationStrings)
+            if (!primaryLanguage.StartsWith("en"))
+            {
+                if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
+                {
+                    var existing = await db.Set<LocalizationString>()
+                        .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
+                                               && s.ResourceKey == resourceKey 
+                                               && s.Key == "DisplayDescription");
+                    
+                    if (existing != null)
+                    {
+                        existing.UpdateDefault(input.ApplicationDisplayDescription ?? "");
+                    }
+                    else
+                    {
+                        var newString = LocalizationString.Create(
+                            localizationCultureId: primaryCultureId,
+                            resourceKey: resourceKey,
+                            key: "DisplayDescription",
+                            defaultText: input.ApplicationDisplayDescription ?? ""
+                        );
+                        db.Set<LocalizationString>().Add(newString);
+                    }
+                }
+            }
+
+            // Update cache with saved translations
+            foreach (var translation in input.DisplayNameTranslations)
+            {
+                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "DisplayName", translation.Value ?? "");
+            }
+            if (!primaryLanguage.StartsWith("en") && cultureMap.TryGetValue(primaryLanguage, out _))
+            {
+                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "DisplayName", input.ApplicationDisplayName ?? "");
+            }
+            foreach (var translation in input.DisplayDescriptionTranslations)
+            {
+                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "DisplayDescription", translation.Value ?? "");
+            }
+            if (!primaryLanguage.StartsWith("en") && cultureMap.TryGetValue(primaryLanguage, out _))
+            {
+                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "DisplayDescription", input.ApplicationDisplayDescription ?? "");
+            }
 
             foreach (var link in input.LoanLinks)
             {
@@ -765,8 +903,42 @@
             return;
         }
 
-        input.ApplicationDisplayName = applicationType.ApplicationDisplayName;
-        input.ApplicationDisplayDescription = applicationType.ApplicationDisplayDescription;
+        // Load existing translations from LocalizationStrings table FIRST
+        // We need this to determine what values to load into ApplicationDisplayName/Description vs Translations
+        var resourceKey = $"ProductApplicationType.{Id}";
+        
+        var translations = await db.Set<LocalizationString>()
+            .Where(s => s.ResourceKey == resourceKey 
+                     && (s.Key == "DisplayName" || s.Key == "DisplayDescription"))
+            .Include(s => s.LocalizationCulture)
+            .ToListAsync();
+        
+        // Get all enabled languages to know which translations to load
+        var enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+        
+        // Load primary language values into ApplicationDisplayName/Description
+        // If primary language is English, use entity properties
+        // If primary language is Spanish, load from database translations
+        if (primaryLanguage.StartsWith("en"))
+        {
+            // Primary language is English, so entity properties contain the primary language value
+            input.ApplicationDisplayName = applicationType.ApplicationDisplayName;
+            input.ApplicationDisplayDescription = applicationType.ApplicationDisplayDescription;
+        }
+        else
+        {
+            // Primary language is Spanish, so we need to load Spanish from database
+            // If Spanish translation exists, use it; otherwise use English as fallback
+            var spanishDisplayName = translations
+                .FirstOrDefault(t => t.LocalizationCulture?.Culture == primaryLanguage && t.Key == "DisplayName");
+            input.ApplicationDisplayName = spanishDisplayName?.DefaultText ?? applicationType.ApplicationDisplayName;
+            
+            var spanishDisplayDesc = translations
+                .FirstOrDefault(t => t.LocalizationCulture?.Culture == primaryLanguage && t.Key == "DisplayDescription");
+            input.ApplicationDisplayDescription = spanishDisplayDesc?.DefaultText ?? applicationType.ApplicationDisplayDescription;
+        }
+        
+        // Load all other property values
         input.CoreTypeIdentifier = applicationType.CoreTypeIdentifier;
         input.CoreChannelIdentifier = applicationType.CoreChannelIdentifier;
         input.CoreAccountTypeIdentifier = applicationType.CoreAccountTypeIdentifier;
@@ -783,20 +955,57 @@
         input.SymitarAutoApprovalCode = applicationType.SymitarAutoApprovalCode;
         input.CorelationAppApprovalIdentifier = applicationType.CorelationAppApprovalIdentifier;
         input.CorelationAppDeclinedIdentifier = applicationType.CorelationAppDeclinedIdentifier;
-
-        // TODO: Load existing translations from database
-        // You'll need to implement this based on your data model.
-        // Example:
-        // var translations = await db.ProductApplicationTypeTranslations
-        //     .Where(t => t.ProductApplicationTypeId == Id)
-        //     .ToListAsync();
-        // foreach (var trans in translations)
-        // {
-        //     if (trans.FieldName == "DisplayName")
-        //         input.DisplayNameTranslations[trans.LanguageCode] = trans.TranslatedText;
-        //     else if (trans.FieldName == "DisplayDescription")
-        //         input.DisplayDescriptionTranslations[trans.LanguageCode] = trans.TranslatedText;
-        // }
+        
+        // Load all non-primary language translations into the Translations dictionary
+        foreach (var trans in translations)
+        {
+            var culture = trans.LocalizationCulture?.Culture;
+            if (string.IsNullOrWhiteSpace(culture))
+            {
+                continue;
+            }
+            
+            // Skip primary language culture - it's stored in ApplicationDisplayName/Description
+            if (culture == primaryLanguage)
+            {
+                continue;
+            }
+            
+            // Only load translations for enabled languages
+            if (!enabledLanguages.Contains(culture))
+            {
+                continue;
+            }
+            
+            if (trans.Key == "DisplayName")
+            {
+                input.DisplayNameTranslations[culture] = trans.DefaultText ?? "";
+            }
+            else if (trans.Key == "DisplayDescription")
+            {
+                input.DisplayDescriptionTranslations[culture] = trans.DefaultText ?? "";
+            }
+        }
+        
+        // If primary language is not English, put English values (from entity properties) into Translations dictionary
+        // so they can be displayed when English is selected
+        if (!primaryLanguage.StartsWith("en"))
+        {
+            var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
+            if (englishCulture != null)
+            {
+                // Use entity property values for English (they're always in English)
+                // Only set if not already loaded from database
+                if (!input.DisplayNameTranslations.ContainsKey(englishCulture))
+                {
+                    input.DisplayNameTranslations[englishCulture] = applicationType.ApplicationDisplayName ?? "";
+                }
+                if (!input.DisplayDescriptionTranslations.ContainsKey(englishCulture))
+                {
+                    input.DisplayDescriptionTranslations[englishCulture] = applicationType.ApplicationDisplayDescription ?? "";
+                }
+            }
+        }
 
         var loanProducts = await db.LoanProducts.Where(x => !x.IsDeleted).ToListAsync();
         var shareProducts = await db.ShareProducts.Where(x => !x.IsDeleted).ToListAsync();
@@ -940,4 +1149,3 @@
         public int OptionId { get; set; }
     }
 }
-

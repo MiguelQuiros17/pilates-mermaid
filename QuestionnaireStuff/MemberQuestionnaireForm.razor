@@ -1,0 +1,890 @@
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Customer.Web.Components.Common.Forms
+@using Aloha.Domain.Questionnaires
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<MemberQuestionnaireForm> l
+@inject IStringLocalizer<SharedResources> sl
+@rendermode InteractiveServer
+
+@if (isLoading)
+{
+    <Spinner/>
+}
+else
+{
+    <h2 class="h4 mb-1">@questionnaire!.Name</h2>
+
+    @if (!string.IsNullOrWhiteSpace(questionnaire.Description))
+    {
+        <p>@questionnaire.Description</p>
+    }
+
+    <RequiredFieldHelper/>
+
+    <EditForm
+        novalidate
+        class="needs-validation"
+        EditContext="editContext"
+        FormName=@($"Questionnaire{QuestionnaireId}")
+        Context="QuestionnaireFormContext"
+        OnSubmit="() => HandleSubmitAsync()"
+    >
+        <FluentValidationValidator/>
+        @foreach (var responseGroup in input.QuestionResponseGroups)
+        {
+            <div class="mb-3">
+                @if (responseGroup.QuestionGroup is not null)
+                {
+                    <h3 class="h5 mb-1">@responseGroup.QuestionGroup.Name</h3>
+                    <p>@responseGroup.QuestionGroup.Description</p>
+                }
+                @foreach (var questionResponse in responseGroup.QuestionResponses)
+                {
+                    @if (questionResponse.Question.Type == QuestionType.FreeForm)
+                    {
+                        <div class="mb-3">
+                            <label for="@($"question-{questionResponse.Question.Id}-free-form-input")"
+                                   class="form-label">
+                                @questionResponse.Question.Name
+                                @if (!string.IsNullOrWhiteSpace(questionResponse.Question.Description))
+                                {
+                                    <span> - @questionResponse.Question.Description</span>
+                                }
+                                @if (questionResponse.Question.IsRequired)
+                                {
+                                    <span class="text-danger">*</span>
+                                }
+                            </label>
+                            <InputText
+                                @bind-Value="questionResponse.FreeFormFieldValue"
+                                id="@($"question-{questionResponse.Question.Id}-free-form-input")"
+                                class="form-control"/>
+                            <ValidationMessage class="invalid-feedback"
+                                               For="() => questionResponse.FreeFormFieldValue"/>
+                        </div>
+                    }
+
+                    @if (questionResponse.Question.Type == QuestionType.SingleSelect)
+                    {
+                        <fieldset>
+                            <legend class="mb-0">
+                                @questionResponse.Question.Name
+                                @if (questionResponse.Question.IsRequired)
+                                {
+                                    <span class="text-danger">*</span>
+                                }
+                            </legend>
+                            <InputRadioGroup
+                                Name="@($"question-{questionResponse.Question.Id}-radio")"
+                                @bind-Value="questionResponse.SelectedMultipleChoiceResponseId"
+                                @bind-Value:after="() => ClearChildOptionsForUnselectedRadios(questionResponse)"
+                            >
+                                @foreach (var multipleChoiceResponse in questionResponse.MultipleChoiceResponses)
+                                {
+                                    <div class="form-check">
+                                        <InputRadio
+                                            id="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}")"
+                                            class="form-check-input"
+                                            type="radio"
+                                            Value="multipleChoiceResponse.MultipleChoiceOption.Id"/>
+                                        <label
+                                            for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}")"
+                                            class="form-check-label">
+                                            @multipleChoiceResponse.MultipleChoiceOption.Name
+                                        </label>
+                                    </div>
+                                    <div style="margin-left: 2rem">
+                                        @if (multipleChoiceResponse.MultipleChoiceOption.DependentQuestionType == DependentQuestionType.FreeForm)
+                                        {
+                                            <div class="mb-3">
+                                                <label
+                                                    class="form-label"
+                                                    for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-free-form-field")">
+                                                    @multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName
+                                                </label>
+                                                <InputText
+                                                    @bind-Value="multipleChoiceResponse.FreeFormFieldValue"
+                                                    id="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-free-form-field")"
+                                                    class="form-control"/>
+                                                <ValidationMessage class="invalid-feedback"
+                                                                   For="() => multipleChoiceResponse.FreeFormFieldValue"/>
+                                            </div>
+                                        }
+                                        @if (multipleChoiceResponse.MultipleChoiceOption.DependentQuestionType == DependentQuestionType.SingleSelect)
+                                        {
+                                            <fieldset>
+                                                <legend
+                                                    class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                                <InputRadioGroup
+                                                    Name="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-radio")"
+                                                    @bind-Value="multipleChoiceResponse.SelectedDependentMultipleChoiceResponseId"
+                                                >
+                                                    @foreach (var depResponse in multipleChoiceResponse.DependentMultipleChoiceResponses)
+                                                    {
+                                                        <div class="form-check">
+                                                            <InputRadio
+                                                                id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                                type="radio"
+                                                                class="form-check-input"
+                                                                Value="depResponse.DependentMultipleChoiceOption.Id"/>
+                                                            <label
+                                                                for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                                class="form-check-label">
+                                                                @depResponse.DependentMultipleChoiceOption.Name
+                                                                @if (
+                                                                    depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
+                                                                    !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                                {
+                                                                    <span
+                                                                        id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-single-select-free-form-field")">
+                                                                        - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                    </span>
+                                                                }
+                                                            </label>
+                                                            @if (depResponse.DependentMultipleChoiceOption.HasFreeFormField)
+                                                            {
+                                                                <InputText
+                                                                    @bind-Value="depResponse.FreeFormFieldValue"
+                                                                    aria-labelledby="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-single-select-free-form-field")"
+                                                                    class="form-control"/>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </InputRadioGroup>
+                                                <ValidationMessage class="invalid-feedback"
+                                                                   For="() => multipleChoiceResponse.FreeFormFieldValue"/>
+                                            </fieldset>
+                                        }
+                                        @if (multipleChoiceResponse.MultipleChoiceOption.DependentQuestionType == DependentQuestionType.MultipleSelect)
+                                        {
+                                            <fieldset>
+                                                <legend
+                                                    class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                                @foreach (var depResponse in multipleChoiceResponse.DependentMultipleChoiceResponses)
+                                                {
+                                                    <div class="form-check">
+                                                        <InputCheckbox
+                                                            @bind-Value="depResponse.IsChecked"
+                                                            id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                            type="checkbox"
+                                                            class="form-check-input"/>
+                                                        <label
+                                                            for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                            class="form-check-label">
+                                                            @depResponse.DependentMultipleChoiceOption.Name
+                                                            @if (
+                                                                depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
+                                                                !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                            {
+                                                                <span
+                                                                    id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-multiple-choice-free-form-field")">
+                                                                    - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                </span>
+                                                            }
+                                                        </label>
+                                                        @if (depResponse.DependentMultipleChoiceOption.HasFreeFormField)
+                                                        {
+                                                            <InputText
+                                                                @bind-Value="depResponse.FreeFormFieldValue"
+                                                                aria-labelledby="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-multiple-choice-free-form-field")"
+                                                                class="form-control"/>
+                                                        }
+                                                    </div>
+                                                }
+                                            </fieldset>
+                                        }
+                                    </div>
+                                }
+                            </InputRadioGroup>
+                            <ValidationMessage class="invalid-feedback"
+                                               For="() => questionResponse.MultipleChoiceResponses"/>
+                        </fieldset>
+                    }
+
+                    @if (questionResponse.Question.Type == QuestionType.MultipleSelect)
+                    {
+                        <fieldset>
+                            <legend class="mb-0">
+                                @questionResponse.Question.Name
+                                @if (questionResponse.Question.IsRequired)
+                                {
+                                    <span class="text-danger">*</span>
+                                }
+                            </legend>
+                            @foreach (var multipleChoiceResponse in questionResponse.MultipleChoiceResponses)
+                            {
+                                <div class="form-check">
+                                    <InputCheckbox
+                                        @bind-Value="multipleChoiceResponse.IsChecked"
+                                        @bind-Value:after="() => ClearChildOptionsIfUnselected(multipleChoiceResponse)"
+                                        id="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}")"
+                                        class="form-check-input"
+                                        type="checkbox"/>
+                                    <label for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}")"
+                                           class="form-check-label">
+                                        @multipleChoiceResponse.MultipleChoiceOption.Name
+                                    </label>
+                                </div>
+                                <div style="margin-left: 2rem">
+                                    @if (multipleChoiceResponse.MultipleChoiceOption.DependentQuestionType == DependentQuestionType.FreeForm)
+                                    {
+                                        <div class="mb-3">
+                                            <label
+                                                class="form-label"
+                                                for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-free-form-field")">
+                                                @multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName
+                                            </label>
+                                            <InputText
+                                                @bind-Value="multipleChoiceResponse.FreeFormFieldValue"
+                                                class="form-control"
+                                                id="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-free-form-field")"/>
+                                            <ValidationMessage class="invalid-feedback"
+                                                               For="() => multipleChoiceResponse.FreeFormFieldValue"/>
+                                        </div>
+                                    }
+                                    @if (multipleChoiceResponse.MultipleChoiceOption.DependentQuestionType == DependentQuestionType.SingleSelect)
+                                    {
+                                        <fieldset>
+                                            <legend
+                                                class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                            <InputRadioGroup
+                                                Name="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-radio")"
+                                                @bind-Value="multipleChoiceResponse.SelectedDependentMultipleChoiceResponseId"
+                                            >
+                                                @foreach (var depResponse in multipleChoiceResponse.DependentMultipleChoiceResponses)
+                                                {
+                                                    <div class="form-check">
+                                                        <InputRadio
+                                                            Value="depResponse.DependentMultipleChoiceOption.Id"
+                                                            id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                            class="form-check-input"/>
+                                                        <label
+                                                            for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                            class="form-check-label">
+                                                            @depResponse.DependentMultipleChoiceOption.Name
+                                                            @if (
+                                                                depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
+                                                                !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                            {
+                                                                <span
+                                                                    id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-free-form-field")">
+                                                                    - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                </span>
+                                                            }
+                                                        </label>
+                                                        @if (depResponse.DependentMultipleChoiceOption.HasFreeFormField)
+                                                        {
+                                                            <InputText
+                                                                @bind-Value="depResponse.FreeFormFieldValue"
+                                                                aria-labelledby="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-free-form-field")"
+                                                                class="form-control"/>
+                                                        }
+                                                    </div>
+                                                }
+                                            </InputRadioGroup>
+                                        </fieldset>
+                                    }
+                                    @if (multipleChoiceResponse.MultipleChoiceOption.DependentQuestionType == DependentQuestionType.MultipleSelect)
+                                    {
+                                        <fieldset>
+                                            <legend
+                                                class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                            @foreach (var depResponse in multipleChoiceResponse.DependentMultipleChoiceResponses)
+                                            {
+                                                <div class="form-check">
+                                                    <InputCheckbox
+                                                        @bind-Value="depResponse.IsChecked"
+                                                        id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                        type="checkbox"
+                                                        class="form-check-input"/>
+                                                    <label
+                                                        for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
+                                                        class="form-check-label">
+                                                        @depResponse.DependentMultipleChoiceOption.Name
+                                                        @if (
+                                                            depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
+                                                            !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                        {
+                                                            <span
+                                                                id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-free-form-field")">
+                                                                - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                            </span>
+                                                        }
+                                                    </label>
+                                                    @if (depResponse.DependentMultipleChoiceOption.HasFreeFormField)
+                                                    {
+                                                        <InputText
+                                                            @bind-Value="depResponse.FreeFormFieldValue"
+                                                            aria-labelledby="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-free-form-field")"
+                                                            class="form-control"/>
+                                                    }
+                                                </div>
+                                            }
+                                        </fieldset>
+                                    }
+                                </div>
+                            }
+                            <ValidationMessage class="invalid-feedback"
+                                               For="() => questionResponse.MultipleChoiceResponses"/>
+                        </fieldset>
+                    }
+                }
+            </div>
+        }
+        <hr class="border border-1 opacity-50">
+        @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
+        {
+            <Alert Color="AlertColor.Danger">
+                <Icon class="me-2" Name="IconName.ExclamationTriangleFill"></Icon>
+                @sl["error-form-invalid"]
+            </Alert>
+        }
+        <div class="d-flex justify-content-end gap-1">
+            <a href="@CancellationUrl" class="btn btn-outline-primary">@sl["button-cancel"]</a>
+            <button class="btn btn-primary">@sl["button-continue"]</button>
+        </div>
+        <FormNavigationWarning @ref="formNavigationWarning" ConfirmRequired="editContext.IsModified()"/>
+    </EditForm>
+}
+
+@code {
+
+    [Parameter, EditorRequired]
+    public EventCallback<(Input, Questionnaire)> OnSubmit { get; set; }
+
+    [Parameter]
+    public int? QuestionnaireId { get; set; }
+
+    [Parameter]
+    public int? QuestionnaireResponseId { get; set; }
+
+    private EditContext editContext = null!;
+    private FormNavigationWarning? formNavigationWarning;
+    private Questionnaire? questionnaire;
+    private ValidationMessageStore messageStore = null!;
+    private bool isLoading = true;
+    private readonly Input input = new();
+    private bool isEditingResponse => QuestionnaireResponseId is not null;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+        editContext.SetFieldCssClassProvider(new CustomFieldClassProvider());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            // Attempt pre-fill from existing responses if questionnaire response ID was provided
+            if (QuestionnaireResponseId is not null)
+            {
+                var questionnaireResponse = await db.QuestionnaireResponses
+                    .Include(x => x.QuestionResponses)
+                    .Include(x => x.QuestionResponseGroups!)
+                    .ThenInclude(x => x.QuestionResponses)
+                    .FirstAsync(x => x.Id == QuestionnaireResponseId);
+
+                questionnaire = await FetchQuestionnaireByIdAsync(db, questionnaireResponse.QuestionnaireId);
+
+                // If current questionnaire version is different from version responded to, create empty form
+                if (questionnaire.Version != questionnaireResponse.QuestionnaireVersion)
+                {
+                    input.QuestionResponseGroups = MapQuestionnaireToQuestionResponseGroupInputs(questionnaire);
+                }
+                // Otherwise, build form with fields pre-populated
+                else
+                {
+                    var lookup = MapQuestionnaireToDetailLookup(questionnaire);
+                    input.QuestionResponseGroups = MapQuestionnaireResponseToQuestionResponseGroupInputs(lookup, questionnaireResponse);
+                }
+            }
+            // Otherwise, create empty form from scratch
+            else if (QuestionnaireId is not null)
+            {
+                questionnaire = await FetchQuestionnaireByIdAsync(db, QuestionnaireId!.Value);
+                input.QuestionResponseGroups = MapQuestionnaireToQuestionResponseGroupInputs(questionnaire);
+            }
+
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task<Questionnaire> FetchQuestionnaireByIdAsync(AlohaDb db, int id)
+    {
+        return await db.Questionnaires
+            .AsSplitQuery()
+            .Include(q => q.Questions!)
+            .ThenInclude(q => q.QuestionGroup)
+            .Include(q => q.Questions!)
+            .ThenInclude(q => q.MultipleChoiceOptions!)
+            .ThenInclude(q => q.DependentMultipleChoiceOptions)
+            .Include(q => q.QuestionGroups)
+            .FirstAsync(q => q.Id == id);
+    }
+
+    private static IList<QuestionResponseGroupInput> MapQuestionnaireResponseToQuestionResponseGroupInputs(
+        QuestionnaireDetailLookup lookup,
+        QuestionnaireResponse questionnaireResponse)
+    {
+        var questionResponseGroups = new List<QuestionResponseGroupInput>();
+
+        var ungroupedQuestionResponses = (questionnaireResponse.QuestionResponses ?? [])
+            .Where(response => response.QuestionResponseGroup == null)
+            .ToArray();
+
+        questionResponseGroups.Add(new QuestionResponseGroupInput
+        {
+            QuestionGroup = null,
+            QuestionResponses = MapQuestionResponsesToQuestionResponseInputs(lookup, ungroupedQuestionResponses)
+        });
+
+        questionResponseGroups.AddRange(
+            (questionnaireResponse.QuestionResponseGroups ?? []).Select(questionResponseGroup =>
+                new QuestionResponseGroupInput
+                {
+                    QuestionGroup = lookup.QuestionGroupMap[questionResponseGroup.QuestionGroupId],
+                    QuestionResponses = MapQuestionResponsesToQuestionResponseInputs(
+                        lookup,
+                        questionResponseGroup.QuestionResponses ?? [])
+                }));
+
+        return questionResponseGroups;
+    }
+
+    private static IList<QuestionResponseInput> MapQuestionResponsesToQuestionResponseInputs(
+        QuestionnaireDetailLookup lookup,
+        IList<QuestionResponse> questionResponses)
+    {
+        return questionResponses
+            .Select(questionResponse =>
+            {
+                var questionResponseInput = new QuestionResponseInput
+                {
+                    Question = lookup.QuestionMap[questionResponse.Snapshot.QuestionId],
+                    FreeFormFieldValue = questionResponse.Snapshot.FreeFormResponse,
+                    SelectedMultipleChoiceResponseId = questionResponse.Snapshot.SelectedMultipleChoiceOptionId
+                };
+
+                questionResponseInput.MultipleChoiceResponses = (questionResponse.Snapshot.MultipleChoiceResponses ?? [])
+                    .Select(optionResponse =>
+                    {
+                        var multipleChoiceResponseInput = new MultipleChoiceResponseInput
+                        {
+                            QuestionResponse = questionResponseInput,
+                            MultipleChoiceOption = lookup.OptionMap[optionResponse.MultipleChoiceOptionId],
+                            IsChecked = optionResponse.IsChecked == true,
+                            FreeFormFieldValue = optionResponse.FreeFormResponse,
+                            SelectedDependentMultipleChoiceResponseId = optionResponse.SelectedDependentMultipleChoiceOptionId,
+                        };
+
+                        multipleChoiceResponseInput.DependentMultipleChoiceResponses = (optionResponse.DependentMultipleChoiceResponses ?? [])
+                            .Select(depOptionResponse => new DependentMultipleChoiceResponseInput
+                            {
+                                MultipleChoiceResponse = multipleChoiceResponseInput,
+                                DependentMultipleChoiceOption = lookup.DepOptionMap[depOptionResponse.DependentMultipleChoiceOptionId],
+                                IsChecked = depOptionResponse.IsChecked == true,
+                                FreeFormFieldValue = depOptionResponse.FreeFormResponse,
+                            })
+                            .ToArray();
+
+                        return multipleChoiceResponseInput;
+                    })
+                    .ToArray();
+
+                return questionResponseInput;
+            })
+            .ToArray();
+    }
+
+    private static IList<QuestionResponseGroupInput> MapQuestionnaireToQuestionResponseGroupInputs(
+        Questionnaire questionnaire)
+    {
+        var questionResponseGroups = new List<QuestionResponseGroupInput>();
+
+        var ungroupedQuestions = new QuestionResponseGroupInput
+        {
+            QuestionResponses = questionnaire.Questions
+                    ?.Where(question => question.QuestionGroup == null)
+                    .OrderBy(q => q.SortOrder)
+                    .Select(MapQuestionToQuestionResponseInput)
+                    .ToArray() ??
+                []
+        };
+
+        questionResponseGroups.Add(ungroupedQuestions);
+
+        if (questionnaire.QuestionGroups != null)
+        {
+            questionResponseGroups.AddRange(questionnaire.QuestionGroups
+                .OrderBy(g => g.SortOrder)
+                .Select(MapQuestionGroupToQuestionResponseGroupInput)
+            );
+        }
+
+        return questionResponseGroups;
+    }
+
+    private static QuestionResponseGroupInput MapQuestionGroupToQuestionResponseGroupInput(QuestionGroup group)
+    {
+        return new QuestionResponseGroupInput
+        {
+            QuestionGroup = group,
+            QuestionResponses = group.Questions
+                    ?.OrderBy(x => x.SortOrder)
+                    .Select(MapQuestionToQuestionResponseInput)
+                    .ToArray() ??
+                []
+        };
+    }
+
+    private static QuestionResponseInput MapQuestionToQuestionResponseInput(Question question)
+    {
+        var questionResponse = new QuestionResponseInput { Question = question };
+
+        questionResponse.MultipleChoiceResponses = question.MultipleChoiceOptions
+                ?.OrderBy(x => x.SortOrder)
+                .Select(option => MapMultipleChoiceOptionToMultipleChoiceResponseInput(option, questionResponse))
+                .ToArray() ??
+            [];
+
+        return questionResponse;
+    }
+
+    private static MultipleChoiceResponseInput MapMultipleChoiceOptionToMultipleChoiceResponseInput(
+        MultipleChoiceOption option,
+        QuestionResponseInput questionResponse)
+    {
+        var optionResponse = new MultipleChoiceResponseInput
+        {
+            MultipleChoiceOption = option,
+            QuestionResponse = questionResponse
+        };
+
+        optionResponse.DependentMultipleChoiceResponses = option.DependentMultipleChoiceOptions
+                ?.OrderBy(x => x.SortOrder)
+                .Select(depOption => MapDependentMultipleChoiceOptionToDependentMultipleChoiceResponseInput(
+                    depOption,
+                    optionResponse))
+                .ToArray() ??
+            [];
+
+        return optionResponse;
+    }
+
+    private static DependentMultipleChoiceResponseInput MapDependentMultipleChoiceOptionToDependentMultipleChoiceResponseInput(
+        DependentMultipleChoiceOption depOption,
+        MultipleChoiceResponseInput optionResponse)
+    {
+        return new DependentMultipleChoiceResponseInput
+        {
+            DependentMultipleChoiceOption = depOption,
+            MultipleChoiceResponse = optionResponse
+        };
+    }
+
+    private static QuestionnaireDetailLookup MapQuestionnaireToDetailLookup(Questionnaire questionnaire)
+    {
+        var lookup = new QuestionnaireDetailLookup();
+
+        foreach (var question in questionnaire.Questions ?? [])
+        {
+            lookup.QuestionMap[question.Id] = question;
+
+            foreach (var option in question.MultipleChoiceOptions ?? [])
+            {
+                lookup.OptionMap[option.Id] = option;
+
+                foreach (var depOption in option.DependentMultipleChoiceOptions ?? [])
+                {
+                    lookup.DepOptionMap[depOption.Id] = depOption;
+                }
+            }
+        }
+
+        foreach (var group in questionnaire.QuestionGroups ?? [])
+        {
+            lookup.QuestionGroupMap[group.Id] = group;
+        }
+
+        return lookup;
+    }
+
+    private async Task HandleSubmitAsync()
+    {
+        input.HasSubmitted = true;
+        foreach (var qrg in input.QuestionResponseGroups)
+        {
+            foreach (var qr in qrg.QuestionResponses!)
+            {
+                qr.HasSubmitted = true;
+            }
+        }
+        if (!editContext.Validate())
+        {
+            StateHasChanged();
+            return;
+        }
+        formNavigationWarning?.SkipNavigationWarning();
+        await OnSubmit.InvokeAsync((input, questionnaire!));
+    }
+
+    private void ClearChildOptionsIfUnselected(MultipleChoiceResponseInput multipleChoiceResponseInput)
+    {
+        if (multipleChoiceResponseInput.IsChecked)
+        {
+            return;
+        }
+
+        multipleChoiceResponseInput.FreeFormFieldValue = null;
+        multipleChoiceResponseInput.SelectedDependentMultipleChoiceResponseId = null;
+        foreach (var depResponse in multipleChoiceResponseInput.DependentMultipleChoiceResponses)
+        {
+            depResponse.IsChecked = false;
+            depResponse.FreeFormFieldValue = null;
+        }
+    }
+
+    private void ClearChildOptionsForUnselectedRadios(QuestionResponseInput questionResponseInput)
+    {
+        foreach (var optionResponse in questionResponseInput.MultipleChoiceResponses
+                     .Where(x => x.QuestionResponse.Question.Type == QuestionType.SingleSelect)
+                     .Where(x => x.MultipleChoiceOption.Id != questionResponseInput.SelectedMultipleChoiceResponseId))
+        {
+            optionResponse.FreeFormFieldValue = null;
+            optionResponse.SelectedDependentMultipleChoiceResponseId = null;
+
+            foreach (var depResponse in optionResponse.DependentMultipleChoiceResponses)
+            {
+                depResponse.IsChecked = false;
+                depResponse.FreeFormFieldValue = null;
+            }
+        }
+    }
+
+    private string CancellationUrl => questionnaire?.Level switch
+    {
+        QuestionnaireLevel.Application => "/applications/questionnaires",
+        QuestionnaireLevel.Applicant => "/applications/people/questionnaires",
+        QuestionnaireLevel.Product => "/applications/products/questionnaires",
+        _ => "/applications/summary"
+    };
+
+    public class Input
+    {
+        public bool HasSubmitted { get; set; } = false;
+        public IList<QuestionResponseGroupInput> QuestionResponseGroups { get; set; } = [];
+    }
+
+    public class QuestionResponseGroupInput
+    {
+        public QuestionGroup? QuestionGroup { get; set; }
+        public IList<QuestionResponseInput> QuestionResponses { get; set; } = [];
+    }
+
+    public class QuestionResponseInput
+    {
+        public bool HasSubmitted { get; set; } = false;
+        public Question Question { get; set; } = null!;
+        public IList<MultipleChoiceResponseInput> MultipleChoiceResponses { get; set; } = [];
+        public string? FreeFormFieldValue { get; set; }
+        public int? SelectedMultipleChoiceResponseId { get; set; }
+    }
+
+    public class MultipleChoiceResponseInput
+    {
+        public MultipleChoiceOption MultipleChoiceOption { get; set; } = null!;
+        public QuestionResponseInput QuestionResponse { get; set; } = null!;
+        public IList<DependentMultipleChoiceResponseInput> DependentMultipleChoiceResponses { get; set; } = [];
+        public int? SelectedDependentMultipleChoiceResponseId { get; set; }
+        public string? FreeFormFieldValue { get; set; }
+        public bool IsChecked { get; set; }
+    }
+
+    public class DependentMultipleChoiceResponseInput
+    {
+        public DependentMultipleChoiceOption DependentMultipleChoiceOption { get; set; } = null!;
+        public MultipleChoiceResponseInput MultipleChoiceResponse { get; set; } = null!;
+        public string? FreeFormFieldValue { get; set; }
+        public bool IsChecked { get; set; }
+    }
+
+    public class FormValidator : AbstractValidator<Input>
+    {
+        public FormValidator(IStringLocalizer<MemberQuestionnaireForm> l)
+        {
+            When(input => input.HasSubmitted, () =>
+            {
+                RuleForEach(form => form.QuestionResponseGroups).SetValidator(new QuestionResponseGroupValidator(l));
+            });
+        }
+    }
+
+    public class QuestionResponseGroupValidator : AbstractValidator<QuestionResponseGroupInput>
+    {
+        public QuestionResponseGroupValidator(IStringLocalizer<MemberQuestionnaireForm> l)
+        {
+            RuleForEach(group => group.QuestionResponses).SetValidator(new QuestionResponseValidator(l));
+        }
+    }
+
+    public class QuestionResponseValidator : AbstractValidator<QuestionResponseInput>
+    {
+        public QuestionResponseValidator(IStringLocalizer<MemberQuestionnaireForm> l)
+        {
+            When(questionResponse => questionResponse.HasSubmitted, () =>
+            {
+                When(questionResponse => questionResponse.Question.Type is QuestionType.FreeForm, () =>
+                {
+                    RuleFor(questionResponse => questionResponse.FreeFormFieldValue)
+                        .NotEmpty()
+                        .When(questionResponse => questionResponse.Question.IsRequired)
+                        .WithMessage(l["error-free-form-response-required"]);
+
+                RuleFor(questionResponse => questionResponse.FreeFormFieldValue)
+                    .MaximumLength(200)
+                    .WithMessage(l["validation-maximum-length", 200]);
+                });
+
+                When(questionResponse => questionResponse.Question.Type is QuestionType.SingleSelect, () =>
+                {
+                    RuleFor(questionResponse => questionResponse.SelectedMultipleChoiceResponseId)
+                        .NotNull()
+                        .When(questionResponse => questionResponse.Question.IsRequired)
+                        .WithMessage(l["error-option-required"]);
+
+                    When(question => question.SelectedMultipleChoiceResponseId is not null, () =>
+                    {
+                        RuleForEach(question => question.MultipleChoiceResponses)
+                            .SetValidator(new MultipleChoiceResponseValidator(l));
+                    });
+                });
+
+                When(questionResponse => questionResponse.Question.Type is QuestionType.MultipleSelect, () =>
+                {
+                    When(questionResponse =>
+                            questionResponse.Question.IsRequired &&
+                            questionResponse.MultipleChoiceResponses.All(option => !option.IsChecked),
+                        () =>
+                        {
+                            RuleForEach(questionResponse => questionResponse.MultipleChoiceResponses)
+                                .ChildRules(optionResponse =>
+                                {
+                                    optionResponse.RuleFor(o => o.IsChecked)
+                                        .Must(isChecked => isChecked)
+                                        .WithMessage(l["error-option-required"]);
+                                });
+                        });
+
+                    When(questionResponse => questionResponse.MultipleChoiceResponses.Any(option => option.IsChecked), () =>
+                    {
+                        RuleForEach(questionResponse => questionResponse.MultipleChoiceResponses)
+                            .SetValidator(new MultipleChoiceResponseValidator(l));
+                    });
+                });
+            });
+        }
+    }
+
+    public class MultipleChoiceResponseValidator : AbstractValidator<MultipleChoiceResponseInput>
+    {
+        public MultipleChoiceResponseValidator(IStringLocalizer<MemberQuestionnaireForm> l)
+        {
+            When(o =>
+                    (o.QuestionResponse.Question.Type == QuestionType.SingleSelect &&
+                        o.QuestionResponse.SelectedMultipleChoiceResponseId == o.MultipleChoiceOption.Id) ||
+                    (o.QuestionResponse.Question.Type == QuestionType.MultipleSelect &&
+                        o.IsChecked),
+                () =>
+                {
+                    When(o => o.MultipleChoiceOption.DependentQuestionType is DependentQuestionType.FreeForm, () =>
+                    {
+                        RuleFor(o => o.FreeFormFieldValue)
+                            .NotEmpty()
+                            .WithMessage(l["error-option-free-form-response-required"]);
+
+                        RuleFor(o => o.FreeFormFieldValue)
+                            .MaximumLength(200)
+                            .WithMessage(l["validation-maximum-length", 200]);
+                    });
+
+                    When(o => o.MultipleChoiceOption.DependentQuestionType is DependentQuestionType.SingleSelect, () =>
+                    {
+                        RuleFor(o => o.SelectedDependentMultipleChoiceResponseId)
+                            .NotNull()
+                            .WithMessage(l["error-dependent-option-required"]);
+
+                        RuleForEach(o => o.DependentMultipleChoiceResponses)
+                            .ChildRules(depResponse =>
+                            {
+                                depResponse.When(dep => dep.DependentMultipleChoiceOption.Id == dep.MultipleChoiceResponse.SelectedDependentMultipleChoiceResponseId, () =>
+                                {
+                                    depResponse.RuleFor(dep => dep.FreeFormFieldValue)
+                                        .NotEmpty()
+                                        .When(dep => dep.DependentMultipleChoiceOption.HasFreeFormField)
+                                        .WithMessage(l["error-dependent-option-free-form-response-required"]);
+
+                                    depResponse.RuleFor(dep => dep.FreeFormFieldValue)
+                                        .MaximumLength(200)
+                                        .WithMessage(l["validation-maximum-length", 200]);
+                                });
+                            });
+                    });
+
+                    When(o => o.MultipleChoiceOption.DependentQuestionType is DependentQuestionType.MultipleSelect, () =>
+                    {
+                        When(o => o.DependentMultipleChoiceResponses.All(dep => !dep.IsChecked), () =>
+                        {
+                            RuleForEach(o => o.DependentMultipleChoiceResponses)
+                                .ChildRules(depResponse =>
+                                {
+                                    depResponse.RuleFor(dep => dep.IsChecked)
+                                        .Must(isChecked => isChecked)
+                                        .WithMessage(l["error-dependent-option-required"]);
+                                });
+                        });
+
+                        RuleForEach(o => o.DependentMultipleChoiceResponses)
+                            .ChildRules(depResponse =>
+                            {
+                                depResponse.When(dep => dep.IsChecked, () =>
+                                {
+                                    depResponse.RuleFor(dep => dep.FreeFormFieldValue)
+                                        .NotEmpty()
+                                        .When(dep => dep.DependentMultipleChoiceOption.HasFreeFormField)
+                                        .WithMessage(l["error-dependent-option-free-form-response-required"]);
+
+                                    depResponse.RuleFor(dep => dep.FreeFormFieldValue)
+                                        .MaximumLength(200)
+                                        .WithMessage(l["validation-maximum-length", 200]);
+                                });
+                            });
+                    });
+                });
+        }
+    }
+
+    public class CustomFieldClassProvider : FieldCssClassProvider
+    {
+        public override string GetFieldCssClass(EditContext editContext, in FieldIdentifier fieldIdentifier)
+        {
+            var isValid = editContext.IsValid(fieldIdentifier);
+            return isValid ? "" : "is-invalid";
+        }
+    }
+
+    private class QuestionnaireDetailLookup
+    {
+        public Dictionary<int, QuestionGroup> QuestionGroupMap { get; set; } = [];
+        public Dictionary<int, Question> QuestionMap { get; set; } = [];
+        public Dictionary<int, MultipleChoiceOption> OptionMap { get; set; } = [];
+        public Dictionary<int, DependentMultipleChoiceOption> DepOptionMap { get; set; } = [];
+    }
+
+}

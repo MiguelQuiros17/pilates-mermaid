@@ -1,0 +1,1140 @@
+@page "/ApplicationConfiguration/systemfeatures"
+
+@using Aloha.Domain.Features
+@using Aloha.Domain.Vendors.Core
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Core.Services
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@using Aloha.Infrastructure
+@using Aloha.Domain.Customization
+@using Microsoft.EntityFrameworkCore
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+@using System.ComponentModel.DataAnnotations
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
+
+@inject AuthenticationStateProvider authStateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject UserManager<AdminUser> UserManager
+@inject IAdminActivityService adminActivityService
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<h3>Features</h3>
+
+<EditForm EditContext="editContext" FormName="features" OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator/>
+    <ValidationSummary/>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Language Configuration</h4>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold">Enabled Languages</label>
+        <p class="form-text">Select which languages are available for translation and display on the site.</p>
+        <div class="form-check">
+            <InputCheckbox @bind-Value="input.EnabledLanguages_enUS"
+                           class="form-check-input"
+                           disabled="@isReadOnly"
+                           id="lang-en-us"/>
+            <label class="form-check-label" for="lang-en-us">English (US) - en-US</label>
+        </div>
+        <div class="form-check">
+            <InputCheckbox @bind-Value="input.EnabledLanguages_esCR"
+                           class="form-check-input"
+                           disabled="@isReadOnly"
+                           id="lang-es-cr"/>
+            <label class="form-check-label" for="lang-es-cr">Español (Costa Rica) - es-CR</label>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="primaryLanguage">Primary Language</label>
+        <p class="form-text">The primary language used as the default and source for translations.</p>
+        <InputSelect @bind-Value="input.PrimaryLanguage"
+                     class="form-select"
+                     disabled="@isReadOnly"
+                     id="primaryLanguage">
+            @if (input.EnabledLanguages_enUS)
+            {
+                <option value="en-US">English (US)</option>
+            }
+            @if (input.EnabledLanguages_esCR)
+            {
+                <option value="es-CR">Español (Costa Rica)</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => input.PrimaryLanguage"/>
+    </div>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Web Application Options</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.ApplicationComingSoon"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="application-coming-soon"/>
+        <label class="form-check-label" for="application-coming-soon">Application Coming Soon Page Enabled</label>
+        <ValidationMessage For="() => input.ApplicationComingSoon"/>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="maxApplications">Maximum Applications Per User</label>
+        <InputNumber @bind-Value="input.MaximumApplicationsPerUser"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="maxApplications"
+                     type="text"/>
+        <ValidationMessage For="() => input.MaximumApplicationsPerUser"/>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="maxApplications">Maximum Identity Image Retention Days</label>
+        <InputNumber @bind-Value="input.MaximumIdentityImageRetentionDays"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="maxImageRetentionDays"
+                     type="text"/>
+        <ValidationMessage For="() => input.MaximumIdentityImageRetentionDays"/>
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CoreOfflineModeEnabled"
+                       @bind-Value:after="UpdateCoreOfflineFlags"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="core-offline-mode-enabled"/>
+        <label class="form-check-label" for="core-offline-mode-enabled">Core Offline Mode Enabled</label>
+        <ValidationMessage For="() => input.CoreOfflineModeEnabled"/>
+    </div>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Application Input</h4>
+
+    <h5>General Allowed Characters</h5>
+    <div class="align-items-start d-flex flex-wrap mb-3">
+        <div class="me-3">
+            <h6>Letters</h6>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="generalDefaults.AllowUppercase"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="allowUppercase"/>
+                <label class="form-check-label" for="allowUppercase">Uppercase (A-Z)</label>
+                <ValidationMessage For="() => generalDefaults.AllowUppercase"/>
+            </div>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="generalDefaults.AllowLowercase"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="allowLowercase"/>
+                <label class="form-check-label" for="allowLowercase">Lowercase (a-z)</label>
+                <ValidationMessage For="() => generalDefaults.AllowLowercase"/>
+            </div>
+        </div>
+
+        <div class="me-3">
+            <h6>Numbers</h6>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="generalDefaults.AllowDigits"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="allowDigits"/>
+                <label class="form-check-label" for="allowDigits">Digits (0-9)</label>
+                <ValidationMessage For="() => generalDefaults.AllowDigits"/>
+            </div>
+        </div>
+
+        <div>
+            <h6>Special Characters</h6>
+            <div class="form-control" style="height: 150px; overflow-y: auto;">
+                @foreach (var generalCharacter in generalSpecialCharacters)
+                {
+                    <div class="form-check mb-3">
+                        <InputCheckbox @bind-Value="generalCharacter.IsSelected"
+                                       class="form-check-input"
+                                       disabled="@isReadOnly"
+                                       id="@($"generalSpecialChar-{generalCharacter.Character}")"/>
+                        <label class="form-check-label"
+                               for="@($"generalSpecialChar-{generalCharacter.Character}")">@generalCharacter.Display</label>
+                        <ValidationMessage For="() => generalCharacter.IsSelected"/>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <h5>Nickname Allowed Characters</h5>
+    <div class="align-items-start d-flex flex-wrap mb-3">
+        <div class="me-3">
+            <h6>Letters</h6>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="nicknameDefaults.AllowUppercase"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="nicknameAllowUppercase"/>
+                <label class="form-check-label" for="nicknameAllowUppercase">Uppercase (A-Z)</label>
+                <ValidationMessage For="() => nicknameDefaults.AllowUppercase"/>
+            </div>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="nicknameDefaults.AllowLowercase"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="nicknameAllowLowercase"/>
+                <label class="form-check-label" for="nicknameAllowLowercase">Lowercase (a-z)</label>
+                <ValidationMessage For="() => nicknameDefaults.AllowLowercase"/>
+            </div>
+        </div>
+
+        <div class="me-3">
+            <h6>Numbers</h6>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="nicknameDefaults.AllowDigits"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="nicknameAllowDigits"/>
+                <label class="form-check-label" for="nicknameAllowDigits">Digits (0-9)</label>
+                <ValidationMessage For="() => nicknameDefaults.AllowDigits"/>
+            </div>
+        </div>
+
+        <div>
+            <h6>Special Characters</h6>
+            <div class="form-control" style="height: 150px; overflow-y: auto;">
+                @foreach (var nicknameCharacter in nicknameSpecialCharacters)
+                {
+                    <div class="form-check mb-3">
+                        <InputCheckbox @bind-Value="nicknameCharacter.IsSelected"
+                                       class="form-check-input"
+                                       disabled="@isReadOnly"
+                                       id="@($"nicknameSpecialChar-{nicknameCharacter.Character}")"/>
+                        <label class="form-check-label"
+                               for="@($"nicknameSpecialChar-{nicknameCharacter.Character}")">@nicknameCharacter.Display</label>
+                        <ValidationMessage For="() => nicknameCharacter.IsSelected"/>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <h5>Person Allowed Characters</h5>
+    <div class="align-items-start d-flex flex-wrap mb-3">
+        <div class="me-3">
+            <h6>Letters</h6>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="personDefaults.AllowUppercase"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="personAllowUppercase"/>
+                <label class="form-check-label" for="personAllowUppercase">Uppercase (A-Z)</label>
+                <ValidationMessage For="() => personDefaults.AllowUppercase"/>
+            </div>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="personDefaults.AllowLowercase"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="personAllowLowercase"/>
+                <label class="form-check-label" for="personAllowLowercase">Lowercase (a-z)</label>
+                <ValidationMessage For="() => personDefaults.AllowLowercase"/>
+            </div>
+        </div>
+
+        <div class="me-3">
+            <h6>Numbers</h6>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="personDefaults.AllowDigits"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="personAllowDigits"/>
+                <label class="form-check-label" for="personAllowDigits">Digits (0-9)</label>
+                <ValidationMessage For="() => personDefaults.AllowDigits"/>
+            </div>
+        </div>
+
+        <div>
+            <h6>Special Characters</h6>
+            <div class="form-control" style="height: 150px; overflow-y: auto;">
+                @foreach (var personCharacter in personSpecialCharacters)
+                {
+                    <div class="form-check mb-3">
+                        <InputCheckbox @bind-Value="personCharacter.IsSelected"
+                                       class="form-check-input"
+                                       disabled="@isReadOnly"
+                                       id="@($"personSpecialChar-{personCharacter.Character}")"/>
+                        <label class="form-check-label"
+                               for="@($"personSpecialChar-{personCharacter.Character}")">@personCharacter.Display</label>
+                        <ValidationMessage For="() => personCharacter.IsSelected"/>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Product Options</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.ShareNicknamesEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="shareNicknames"/>
+        <label class="form-check-label" for="shareNicknames">Share Nicknames Enabled</label>
+        <ValidationMessage For="() => input.ShareNicknamesEnabled"/>
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.LoanNicknamesEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="loanNicknames"/>
+        <label class="form-check-label" for="loanNicknames">Loan Nicknames Enabled</label>
+        <ValidationMessage For="() => input.LoanNicknamesEnabled"/>
+    </div>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Card Ordering Options</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CardOrderingOnlineEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="cardOrderingOnlineEnabled"/>
+        <label class="form-check-label" for="cardOrderingOnlineEnabled">Ordering Online Enabled</label>
+        <p class="form-text">
+            Admin must configure Card Products or Card Application Note for this to function.
+        </p>
+        <ValidationMessage For="() => input.CardOrderingOnlineEnabled"/>
+    </div>
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CardOrderingInBranchEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="cardOrderingInBranchEnabled"/>
+        <label class="form-check-label" for="cardOrderingInBranchEnabled">Ordering In Branch Enabled</label>
+        <p class="form-text">
+            Admin should configure Branches for Card Issuance to assist Applicant
+        </p>
+        <ValidationMessage For="() => input.CardOrderingInBranchEnabled"/>
+    </div>
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CardOrderingSkipEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="cardOrderingSkipEnabled"/>
+        <label class="form-check-label" for="cardOrderingSkipEnabled">Ordering Skip Enabled</label>
+        <p class="form-text">
+            Will allow users to bypass card ordering
+        </p>
+        <ValidationMessage For="() => input.CardOrderingSkipEnabled"/>
+    </div>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Person Options</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.SecurityQuestionEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="securityQuestionEnabled"/>
+        <label class="form-check-label" for="securityQuestionEnabled">Enable Member Security Question</label>
+        <ValidationMessage For="() => input.SecurityQuestionEnabled"/>
+    </div>
+
+    @if (currentCoreSystemType == CoreSystemType.Symitar)
+    {
+        <div class="form-check mb-3">
+            <InputCheckbox @bind-Value="input.JointApplicantsEnabled"
+                           class="form-check-input"
+                           disabled="@isReadOnly"
+                           id="jointApplicantsEnabled"/>
+            <label class="form-check-label" for="jointApplicantsEnabled">Enable Joint Applicant Level</label>
+            <ValidationMessage For="() => input.JointApplicantsEnabled"/>
+        </div>
+
+        @if (input.JointApplicantsEnabled)
+        {
+            <div class="ms-4">
+                <div class="mb-3">
+                    <label class="form-label" for="jointApplicantLevel">Joint Applicant Level</label>
+                    <InputSelect @bind-Value="input.JointApplicantLevel" class="form-select" id="jointApplicantLevel">
+                        <option value="">Select...</option>
+                        @foreach (var option in Enum.GetValues<JointApplicantLevel>())
+                        {
+                            <option
+                                value="@option">@(option == JointApplicantLevel.ShareLoan ? "Share/Loan" : option.ToString())</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => input.JointApplicantLevel"/>
+                </div>
+            </div>
+        }
+
+        <div class="form-check mb-3">
+            <InputCheckbox @bind-Value="input.BeneficiaryApplicantsEnabled"
+                           class="form-check-input"
+                           disabled="@isReadOnly"
+                           id="beneficiaryApplicantsEnabled"/>
+            <label class="form-check-label" for="isReadOnly"
+                   id="beneficiaryApplicantsEnabled">Enable Beneficiary Applicant Level</label>
+            <ValidationMessage For="() => input.BeneficiaryApplicantsEnabled"/>
+        </div>
+
+        @if (input.BeneficiaryApplicantsEnabled)
+        {
+            <div class="ms-4">
+                <div class="mb-3">
+                    <label class="form-label" for="beneficiaryApplicantLevel">Beneficiary Applicant Level</label>
+                    <InputSelect @bind-Value="input.BeneficiaryApplicantLevel" class="form-select"
+                                 id="beneficiaryApplicantLevel">
+                        <option value="">Select...</option>
+                        @foreach (var option in Enum.GetValues<BeneficiaryApplicantLevel>())
+                        {
+                            <option value="@option">@option.ToString()</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => input.BeneficiaryApplicantLevel"/>
+                </div>
+            </div>
+        }
+    }
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">E-Statements</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.EstatementEnrollEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="estatement"/>
+        <label class="form-check-label" for="estatement">E-Statement Enrollment Enabled</label>
+        <ValidationMessage For="() => input.EstatementEnrollEnabled"/>
+    </div>
+
+    @if (input.EstatementEnrollEnabled)
+    {
+        <div class="ms-4">
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="input.EstatementEnrollSelectedByDefault"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="e-statements-default-selected"/>
+                <label class="form-check-label" for="e-statements-default-selected">Preselect By-Default</label>
+                <p class="form-text">
+                    Turning this default on may result in your credit union being out of compliance with e-Statement
+                    Opt-In
+                    regulations.
+                </p>
+                <ValidationMessage For="() => input.EstatementEnrollSelectedByDefault"/>
+            </div>
+        </div>
+
+        @if (currentCoreSystemType == CoreSystemType.Corelation)
+        {
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="input.PopulateEStatementPersonContact"
+                               class="form-check-input"
+                               disabled="@isReadOnly"
+                               id="populateEStatementPersonContact"/>
+                <label class="form-check-label" for="populateEStatementPersonContact">Populate EStatement Person
+                    Contact</label>
+                <ValidationMessage For="() => input.PopulateEStatementPersonContact"/>
+            </div>
+        }
+    }
+
+    @if (currentCoreSystemType == CoreSystemType.Corelation)
+    {
+        <hr class="border border-1 opacity-75">
+        <h4 class="my-3">Addresses</h4>
+        
+        <div class="form-check mb-3">
+            <InputCheckbox @bind-Value="input.ValidateAddressOnCore"
+                           class="form-check-input"
+                           disabled="@(isReadOnly || input.CoreOfflineModeEnabled)"
+                           id="validateaddress"/>
+            <label class="form-check-label" for="validateaddress">Validate Address On Core</label>
+            <ValidationMessage For="() => input.ValidateAddressOnCore"/>
+        </div>   
+    }
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Funding Options</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.ManualMailInEnabled"
+                       class="form-check-input"
+                       disabled="@(isReadOnly || input.CoreOfflineModeEnabled)"
+                       id="mailin"/>
+        <label class="form-check-label" for="mailin">Manual Mail In Enabled</label>
+        <ValidationMessage For="() => input.ManualMailInEnabled"/>
+    </div>
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.ManualBranchEnabled"
+                       class="form-check-input"
+                       disabled="@(isReadOnly || input.CoreOfflineModeEnabled)"
+                       id="branch"/>
+        <label class="form-check-label" for="branch">Manual Branch Enabled</label>
+        <ValidationMessage For="() => input.ManualBranchEnabled"/>
+    </div>
+    <div>
+        <InputCheckbox
+            @bind-Value="input.ManualRemoteDepositCaptureEnabled"
+            class="form-check-input"
+            disabled="@(isReadOnly || input.CoreOfflineModeEnabled)"
+            id="funding-via-manual-rdc"
+        />
+        <label class="form-check-label" for="funding-via-manual-rdc">Manual Remote Deposit Capture Enabled</label>
+        <ValidationMessage For="() => input.ManualRemoteDepositCaptureEnabled"/>
+    </div>
+
+    <hr class="border border-1 opacity-75">
+    <h4 class="my-3">Authorization Options</h4>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.ChallengeEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="challengeEnabled"/>
+        <label class="form-check-label" for="challengeEnabled">Challenge Enabled</label>
+        <ValidationMessage For="() => input.ChallengeEnabled"/>
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="challengeCount">Challenge Lock Fail Count</label>
+        <InputNumber @bind-Value="input.LockFailedChallengeCount"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="challengeCount"
+                     type="text"/>
+        <ValidationMessage For="() => input.LockFailedChallengeCount"/>
+    </div>
+    
+    @if (input.ChallengeEnabled)
+    {
+        <div class="form-check mb-3">
+            <InputCheckbox @bind-Value="input.TimeBasedUnlockEnabled"
+                           class="form-check-input"
+                           disabled="@isReadOnly"
+                           id="timeBasedUnlockEnabled"/>
+            <label class="form-check-label" for="timeBasedUnlockEnabled">Time Based Unlock</label>
+            <p class="form-text">
+                When enabled, locked users will automatically unlock after the configured time period has elapsed. Even when enabled, admins can still manually unlock users at any time. When disabled, users may ONLY be unlocked by an admin.
+            </p>
+            <ValidationMessage For="() => input.TimeBasedUnlockEnabled"/>
+        </div>
+        
+        @if (input.TimeBasedUnlockEnabled)
+        {
+            <div class="ms-4 mb-3">
+                <label class="form-label" for="unlockAfterMinutes">Unlock After (minutes)</label>
+                <InputNumber @bind-Value="input.UnlockAfterMinutes"
+                class="form-control"
+                disabled="@isReadOnly"
+                id="unlockAfterMinutes"
+                type="text"/>
+                <p class="form-text">
+                    Minimum: 15 minutes. Maximum: 1440 minutes (24 hours). Will NOT reset an Admin Locked status after elapsed time.
+                </p>
+                <ValidationMessage For="() => input.UnlockAfterMinutes"/>
+            </div>
+        }
+    }
+    
+    <hr class="border border-1 opacity-75">
+
+    @if (!isReadOnly)
+    {
+        <div class="flex-row gap-2 mb-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Features" RouteAfterSaved="/ApplicationConfiguration"/>
+        </div>
+    }
+</EditForm>
+
+@code {
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private bool isReadOnly = true;
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private CoreSystemType? currentCoreSystemType;
+
+    private InputFeature.AllowedCharacterDefaults generalDefaults = new();
+    private InputFeature.AllowedCharacterDefaults nicknameDefaults = new();
+    private InputFeature.AllowedCharacterDefaults personDefaults = new();
+
+    private List<InputFeature.SpecialCharacterOption> generalSpecialCharacters = [];
+    private List<InputFeature.SpecialCharacterOption> nicknameSpecialCharacters = [];
+    private List<InputFeature.SpecialCharacterOption> personSpecialCharacters = [];
+    private AdminUser? AdminUser = default!;
+
+    private List<InputFeature.SpecialCharacterOption> specialCharactersList =
+    [
+        new(" ", "Space"), new(",", "Comma (,)"), new("*", "Asterisk (*)"),
+        new(":", "Colon (:)"), new(";", "Semicolon (;)"), new("@", "At (@)"),
+        new("&", "Ampersand (&)"), new("$", "Dollar ($)"), new("~", "Tilde (~)"),
+        new("'", "Single Quote (')"), new("-", "Hyphen (-)"), new(".", "Period (.)"),
+        new("(", "Left Parenthesis (()"), new(")", "Right Parenthesis ())"),
+        new("[", "Left Bracket ([)"), new("]", "Right Bracket (])")
+    ];
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+
+        // Initialize special characters with independent instances
+        generalSpecialCharacters = specialCharactersList.Select(character =>
+            new InputFeature.SpecialCharacterOption(character.Character, character.Display)).ToList();
+
+        nicknameSpecialCharacters = specialCharactersList.Select(character =>
+            new InputFeature.SpecialCharacterOption(character.Character, character.Display)).ToList();
+
+        personSpecialCharacters = specialCharactersList.Select(character =>
+            new InputFeature.SpecialCharacterOption(character.Character, character.Display)).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+
+            generalDefaults = InputFeature.ParseDefaultCharacters(feature?.Input.GeneralAllowedCharacters ?? InputFeature.DefaultGeneralAllowedChars);
+            nicknameDefaults = InputFeature.ParseDefaultCharacters(feature?.Input.NicknameAllowedCharacters ?? InputFeature.DefaultNicknameAllowedCharacters);
+            personDefaults = InputFeature.ParseDefaultCharacters(feature?.Input.PersonNameAllowedCharacters ?? InputFeature.DefaultPersonNameAllowedCharacters);
+
+            var coreSettings = await db.CoreSettings
+                .OrderByDescending(x => x.Id)
+                .FirstOrDefaultAsync();
+            currentCoreSystemType = coreSettings?.CoreSystemType;
+
+            // Initialize IsSelected for General characters
+            foreach (var generalCharacter in generalSpecialCharacters)
+            {
+                generalCharacter.IsSelected = generalDefaults.SpecialChars.Any(s => s.Character == generalCharacter.Character);
+            }
+
+            // Initialize IsSelected for Nickname characters
+            foreach (var nicknameCharacter in nicknameSpecialCharacters)
+            {
+                nicknameCharacter.IsSelected = nicknameDefaults.SpecialChars.Any(s => s.Character == nicknameCharacter.Character);
+            }
+
+            // Initialize IsSelected for Person characters
+            foreach (var personCharacter in personSpecialCharacters)
+            {
+                personCharacter.IsSelected = personDefaults.SpecialChars.Any(s => s.Character == personCharacter.Character);
+            }
+
+            input.GeneralAllowedCharacters = feature?.Input.GeneralAllowedCharacters ?? InputFeature.DefaultGeneralAllowedChars;
+            input.NicknameAllowedCharacters = feature?.Input.NicknameAllowedCharacters ?? InputFeature.DefaultNicknameAllowedCharacters;
+            input.PersonNameAllowedCharacters = feature?.Input.PersonNameAllowedCharacters ?? InputFeature.DefaultPersonNameAllowedCharacters;
+
+            input.MaximumApplicationsPerUser = feature?.WebApplicationFeature?.MaximumApplicationsPerUser;
+            input.MaximumIdentityImageRetentionDays = feature?.WebApplicationFeature?.MaximumIdentityImageRetentionDays;
+            input.ApplicationComingSoon = feature?.WebApplicationFeature.ApplicationComingSoon ?? false;
+            input.CoreOfflineModeEnabled = feature?.WebApplicationFeature.CoreOfflineModeEnabled ?? false;
+            input.EstatementEnrollEnabled = feature?.Estatements.EnrollmentEnabled ?? false;
+            input.EstatementEnrollSelectedByDefault = feature?.Estatements.IsPreselectedByDefault ?? false;
+            input.PopulateEStatementPersonContact = feature?.Estatements.PopulateEStatementPersonContact ?? false;
+            input.ValidateAddressOnCore = feature?.Addresses.ValidateAddressOnCore ?? false;
+            input.ManualBranchEnabled = feature?.FundingSystem.ManualBranchEnabled ?? false;
+            input.ManualMailInEnabled = feature?.FundingSystem.ManualMailInEnabled ?? false;
+            input.ManualRemoteDepositCaptureEnabled = feature?.FundingSystem.ManualRemoteDepositCaptureEnabled ?? false;
+
+            input.ShareNicknamesEnabled = feature?.Products.ShareNicknamesEnabled ?? false;
+            input.LoanNicknamesEnabled = feature?.Products.LoanNicknamesEnabled ?? false;
+
+            input.ChallengeEnabled = feature?.Authorization.ChallengeEnabled ?? false;
+            input.LockFailedChallengeCount = feature?.Authorization.LockFailedChallengeCount ?? 4;
+            
+            input.TimeBasedUnlockEnabled = feature?.Authorization.TimeBasedUnlockEnabled ?? true;
+            input.UnlockAfterMinutes = feature?.Authorization.UnlockAfterMinutes ?? 15;
+            if (!input.UnlockAfterMinutes.HasValue || input.UnlockAfterMinutes < 15)
+            {
+                input.UnlockAfterMinutes = 15;
+            }
+            
+            input.IsApplicantNotificationEnabled = feature?.ApplicantNotification.IsApplicantNotificationEnabled ?? false;
+            input.DaysBeforeAbandonmentEmailReminderOne = feature?.ApplicantNotification.DaysBeforeAbandonmentEmailReminderOne ?? 1;
+            input.DaysBeforeAbandonmentEmailReminderTwo = feature?.ApplicantNotification.DaysBeforeAbandonmentEmailReminderTwo ?? 2;
+            input.MinutesBetweenApplicationAbandonmentScans = feature?.ApplicantNotification.MinutesBetweenApplicationAbandonmentScans ?? 60;
+
+            input.SecurityQuestionEnabled = feature?.PersonFeatures.SecurityQuestionEnabled ?? false;
+            input.JointApplicantsEnabled = feature?.PersonFeatures.JointApplicantsEnabled ?? false;
+            input.JointApplicantLevel = feature?.PersonFeatures.JointApplicantLevel ?? JointApplicantLevel.Account;
+            input.BeneficiaryApplicantsEnabled = feature?.PersonFeatures.BeneficiaryApplicantsEnabled ?? false;
+            input.BeneficiaryApplicantLevel = feature?.PersonFeatures.BeneficiaryApplicantLevel ?? BeneficiaryApplicantLevel.Account;
+
+            //Default these to true
+            input.CardOrderingOnlineEnabled = feature?.CardOrderingFeature.CardOrderingOnlineEnabled ?? true;
+            input.CardOrderingInBranchEnabled = feature?.CardOrderingFeature.CardOrderingInBranchEnabled ?? true;
+            input.CardOrderingSkipEnabled = feature?.CardOrderingFeature.CardOrderingSkipEnabled ?? true;
+
+            // Load language configuration
+            var enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+            input.EnabledLanguages_enUS = enabledLanguages.Contains("en-US");
+            input.EnabledLanguages_esCR = enabledLanguages.Contains("es-CR");
+            input.PrimaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") || authUser.IsInRole("MasterAdmin"));
+    }
+
+    private void UpdateCoreOfflineFlags()
+    {
+        input.ManualBranchEnabled = false;
+        input.ManualMailInEnabled = false;
+        input.ManualRemoteDepositCaptureEnabled = false;
+        input.ValidateAddressOnCore = false;
+    }
+
+    private async Task SubmitForm()
+    {
+        // Validate language configuration
+        var enabledLanguages = new List<string>();
+        if (input.EnabledLanguages_enUS) enabledLanguages.Add("en-US");
+        if (input.EnabledLanguages_esCR) enabledLanguages.Add("es-CR");
+
+        if (!enabledLanguages.Any())
+        {
+            messageStore.Add(() => input.EnabledLanguages_enUS, "At least one language must be enabled.");
+            return;
+        }
+
+        if (!enabledLanguages.Contains(input.PrimaryLanguage))
+        {
+            messageStore.Add(() => input.PrimaryLanguage, "Primary language must be one of the enabled languages.");
+            return;
+        }
+
+        if (input.IsApplicantNotificationEnabled && input.DaysBeforeAbandonmentEmailReminderOne >= input.DaysBeforeAbandonmentEmailReminderTwo)
+        {
+            messageStore.Add(
+                () => input.DaysBeforeAbandonmentEmailReminderOne,
+                "Must be less than value in reminder two field");
+
+            messageStore.Add(
+                () => input.DaysBeforeAbandonmentEmailReminderTwo,
+                "Must be less than value in reminder one field");
+
+            return;
+        }
+        
+        if (input.TimeBasedUnlockEnabled)
+        {
+            if (!input.UnlockAfterMinutes.HasValue)
+            {
+                input.UnlockAfterMinutes = 15;
+            }
+            if (input.UnlockAfterMinutes < 15)
+            {
+                messageStore.Add(
+                    () => input.UnlockAfterMinutes,
+                    "Unlock after time must be at least 15 minutes.");
+                return;
+            }
+            if (input.UnlockAfterMinutes > 1440)
+            {
+                messageStore.Add(
+                    () => input.UnlockAfterMinutes,
+                    "Unlock after time must be at most 1440 minutes (24 hours).");
+                return;
+            }
+        }
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            /*
+            * We delete and recreate the feature
+            * because the json objects can't have
+            * new properties added.
+                     * This is an open issue:
+            *  https://github.com/dotnet/efcore/issues/32301
+                     *
+                     */
+
+            var originalSystemFeatures = await db.SystemFeatures.GetActiveFeatureAsync();
+            db.RemoveRange(db.SystemFeatures);
+            await db.SaveChangesAsync();
+
+            var feature = SystemFeature.Create();
+
+            db.Add(feature);
+
+            // Set language configuration in WebApplicationFeature
+            // Store as JSON in the WebApplicationFeature object
+            feature.WebApplicationFeature.SetFlags(
+                input.ApplicationComingSoon,
+                input.MaximumApplicationsPerUser,
+                input.MaximumIdentityImageRetentionDays,
+                input.CoreOfflineModeEnabled);
+            
+            // Note: Language configuration is now stored in CustomStyleSheets table via SaveLanguageConfigurationAsync
+            // We no longer store it in WebApplicationFeature JSON to avoid breaking the existing structure
+            
+            // Only track activity if originalSystemFeatures exists and has WebApplicationFeature
+            if (originalSystemFeatures != null && originalSystemFeatures.WebApplicationFeature != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Web Application Options were edited: ", originalSystemFeatures.WebApplicationFeature, feature.WebApplicationFeature, new List<string>());
+            }
+
+            if (input.CoreOfflineModeEnabled)
+            {
+                //set all application types to express application
+                var productApplicationTypes = await db.ProductApplicationTypes
+                    .GetActiveProductApplicationTypes()
+                    .ToListAsync();
+
+                foreach (var appplicationType in productApplicationTypes)
+                {
+                    appplicationType.UpdateCoreOfflineFlags();
+                }
+
+                var dbSettings = await db.CoreSettings.OrderByDescending(x => x.Id).FirstOrDefaultAsync();
+                DateOnly? coreMinDate = new DateOnly();
+
+                /*
+                * We delete and recreate the feature
+                * because the json objects can't have
+                * new properties added.
+                * This is an open issue:
+                *  https://github.com/dotnet/efcore/issues/32301
+                *
+                */
+
+                if (dbSettings is not null)
+                {
+                    coreMinDate = dbSettings.CoreMinimumDate;
+                    db.Remove(dbSettings);
+                }
+
+                var settings = CoreSettings.Create();
+
+                db.Add(settings);
+
+                settings.UpdateCoreType(CoreSystemType.Offline);
+
+                if (coreMinDate.HasValue)
+                {
+                    settings.UpdateCoreMinimumDate(coreMinDate.Value);
+                }
+            }
+
+            feature.Estatements.SetEnrollment(
+                input.EstatementEnrollEnabled,
+                input is { EstatementEnrollEnabled: true, EstatementEnrollSelectedByDefault: true },
+                input.PopulateEStatementPersonContact);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"E-statements Options were edited: ", originalSystemFeatures.Estatements, feature.Estatements, new List<string>());
+            }
+
+            feature.Addresses.SetFlags(input.ValidateAddressOnCore);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Addresses Options were edited: ", originalSystemFeatures.Addresses, feature.Addresses, new List<string>());
+            }
+
+            feature.FundingSystem.SetFlags(
+                input.ManualBranchEnabled,
+                input.ManualMailInEnabled,
+                input.ManualRemoteDepositCaptureEnabled);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Funding Options were edited: ", originalSystemFeatures.FundingSystem, feature.FundingSystem, new List<string>());
+            }
+
+            feature.Products.SetFlags(input.ShareNicknamesEnabled, input.LoanNicknamesEnabled);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Product Options were edited: ", originalSystemFeatures.Products, feature.Products, new List<string>());
+            }
+            
+            feature.Authorization.SetFlags(
+                input.ChallengeEnabled, 
+                input.LockFailedChallengeCount,
+                input.TimeBasedUnlockEnabled,
+                input.UnlockAfterMinutes ?? 15);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Authorization Options were edited: ", originalSystemFeatures.Authorization, feature.Authorization, new List<string>());
+            }
+            
+            // Set general character flags
+            feature.Input.SetFlags(
+                generalDefaults.AllowUppercase,
+                generalDefaults.AllowLowercase,
+                generalDefaults.AllowDigits,
+                generalSpecialCharacters.Where(c => c.IsSelected).ToList(),
+                "General"
+            );
+
+            // Set nickname character flags
+            feature.Input.SetFlags(
+                nicknameDefaults.AllowUppercase,
+                nicknameDefaults.AllowLowercase,
+                nicknameDefaults.AllowDigits,
+                nicknameSpecialCharacters.Where(c => c.IsSelected).ToList(),
+                "Nickname"
+            );
+
+            // Set person character flags
+            feature.Input.SetFlags(
+                personDefaults.AllowUppercase,
+                personDefaults.AllowLowercase,
+                personDefaults.AllowDigits,
+                personSpecialCharacters.Where(c => c.IsSelected).ToList(),
+                "Person"
+            );
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Application Input Options were edited: ", originalSystemFeatures.Input, feature.Input, new List<string>());
+            }
+
+            feature.ApplicantNotification.SetFlags(
+                input.IsApplicantNotificationEnabled,
+                input.DaysBeforeAbandonmentEmailReminderOne,
+                input.DaysBeforeAbandonmentEmailReminderTwo,
+                input.MinutesBetweenApplicationAbandonmentScans);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Application Notification Options were edited: ", originalSystemFeatures.ApplicantNotification, feature.ApplicantNotification, new List<string>());
+            }
+
+            feature.PersonFeatures.SetFlags(
+                input.SecurityQuestionEnabled,
+                input.JointApplicantsEnabled,
+                input.JointApplicantLevel,
+                input.BeneficiaryApplicantsEnabled,
+                input.BeneficiaryApplicantLevel
+            );
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Person Options were edited: ", originalSystemFeatures.PersonFeatures, feature.PersonFeatures, new List<string>());
+            }
+
+            feature.CardOrderingFeature.SetFlags(input.CardOrderingOnlineEnabled, input.CardOrderingInBranchEnabled, input.CardOrderingSkipEnabled);
+            if (originalSystemFeatures != null)
+            {
+                await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.SystemFeatures, $"Card Ordering Options were edited: ", originalSystemFeatures.CardOrderingFeature, feature.CardOrderingFeature, new List<string>());
+            }
+
+            // Save language configuration to CustomStyleSheets table (similar to translation API keys)
+            // This is a workaround since we can't easily modify the WebApplicationFeature JSON structure
+            try
+            {
+                await SaveLanguageConfigurationAsync(db, enabledLanguages, input.PrimaryLanguage);
+            }
+            catch (Exception ex)
+            {
+                // Log the error but don't fail the entire save operation
+                // Language configuration is optional and shouldn't break the main features save
+                Console.WriteLine($"Error saving language configuration: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+
+            await db.SaveChangesAsync();
+
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch (Exception ex)
+        {
+            // Log the full error for debugging
+            Console.WriteLine($"Error saving system features: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+            }
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private async Task SaveLanguageConfigurationAsync(AlohaDb db, List<string> enabledLanguages, string primaryLanguage)
+    {
+        // Store language configuration in CustomStyleSheets table
+        // Try to find existing config by checking FileContent for LanguageConfiguration
+        // Use a simple approach: try to load all records and filter, but handle enum errors gracefully
+        CustomStyleSheet? existingConfig = null;
+        int? existingConfigId = null;
+        
+        try
+        {
+            // Try using raw SQL query first (avoids enum conversion issues)
+            var useCaseValue = "BootstrapCompleteOverride";
+            var rawResults = await db.Database
+                .SqlQueryRaw<RawCustomStyleSheetResult>($"SELECT Id, FileContent FROM CustomStyleSheets WHERE UseCase = {{0}}", useCaseValue)
+                .ToListAsync();
+            
+            var existingRaw = rawResults.FirstOrDefault(f => 
+                f.FileContent != null && 
+                f.FileContent.Length > 0 &&
+                System.Text.Encoding.UTF8.GetString(f.FileContent).Contains("\"LanguageConfiguration\""));
+            
+            if (existingRaw != null)
+            {
+                existingConfigId = existingRaw.Id;
+            }
+        }
+        catch
+        {
+            // If raw SQL fails, try loading all and filtering in memory
+            // This will fail if there are invalid enum values, but we'll catch that
+            try
+            {
+                var allStyleSheets = await db.CustomStyleSheets
+                    .AsNoTracking()
+                    .Where(c => EF.Property<string>(c, "UseCase") == "BootstrapCompleteOverride")
+                    .ToListAsync();
+                
+                existingConfig = allStyleSheets.FirstOrDefault(f => 
+                    f.FileContent != null && 
+                    f.FileContent.Length > 0 &&
+                    System.Text.Encoding.UTF8.GetString((byte[])f.FileContent).Contains("\"LanguageConfiguration\""));
+            }
+            catch
+            {
+                // If both approaches fail, we'll just create a new entry
+                existingConfig = null;
+            }
+        }
+
+        var configJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            LanguageConfiguration = new
+            {
+                EnabledLanguages = enabledLanguages,
+                PrimaryLanguage = primaryLanguage
+            }
+        });
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(configJson);
+
+        // Update existing or create new
+        if (existingConfigId.HasValue)
+        {
+            // Try to reload the entity with tracking to update it
+            try
+            {
+                var trackedEntity = await db.CustomStyleSheets
+                    .FirstOrDefaultAsync(c => EF.Property<int>(c, "Id") == existingConfigId.Value);
+                if (trackedEntity != null)
+                {
+                    trackedEntity.Update("application/json", bytes);
+                    return; // Successfully updated
+                }
+            }
+            catch
+            {
+                // If we can't update, fall through to create new
+            }
+        }
+        else if (existingConfig != null)
+        {
+            // Try to reload the entity with tracking to update it
+            try
+            {
+                // Get the ID from the entity using EF.Property
+                var id = EF.Property<int>(existingConfig, "Id");
+                var trackedEntity = await db.CustomStyleSheets
+                    .FirstOrDefaultAsync(c => EF.Property<int>(c, "Id") == id);
+                if (trackedEntity != null)
+                {
+                    trackedEntity.Update("application/json", bytes);
+                    return; // Successfully updated
+                }
+            }
+            catch
+            {
+                // If we can't update, fall through to create new
+            }
+        }
+        
+        // Create a new entry if we couldn't update existing
+        var newConfig = CustomStyleSheet.Create(
+            CustomStyleSheetUseCase.BootstrapCompleteOverride,
+            "application/json",
+            bytes
+        );
+        db.CustomStyleSheets.Add(newConfig);
+    }
+    
+    // Helper class for raw SQL query results (avoids enum conversion issues)
+    private class RawCustomStyleSheetResult
+    {
+        public int Id { get; set; }
+        public byte[] FileContent { get; set; } = Array.Empty<byte>();
+    }
+
+    private class Input
+    {
+        // Language Configuration
+        public bool EnabledLanguages_enUS { get; set; } = true;
+        public bool EnabledLanguages_esCR { get; set; } = true;
+        [Required]
+        public string PrimaryLanguage { get; set; } = "en-US";
+
+        public bool ApplicationComingSoon { get; set; }
+        public int? MaximumApplicationsPerUser { get; set; }
+        public int? MaximumIdentityImageRetentionDays { get; set; }
+        public bool CoreOfflineModeEnabled { get; set; }
+        public bool EstatementEnrollEnabled { get; set; }
+        public bool EstatementEnrollSelectedByDefault { get; set; }
+        public bool PopulateEStatementPersonContact { get; set; }
+
+        public bool ValidateAddressOnCore { get; set; }
+
+        public bool ManualBranchEnabled { get; set; }
+        public bool ManualMailInEnabled { get; set; }
+        public bool ManualRemoteDepositCaptureEnabled { get; set; }
+
+        public bool ShareNicknamesEnabled { get; set; }
+        public bool LoanNicknamesEnabled { get; set; }
+
+        public bool SecurityQuestionEnabled { get; set; }
+        public bool JointApplicantsEnabled { get; set; }
+        public JointApplicantLevel JointApplicantLevel { get; set; } = JointApplicantLevel.Account;
+        public bool BeneficiaryApplicantsEnabled { get; set; }
+        public BeneficiaryApplicantLevel BeneficiaryApplicantLevel { get; set; } = BeneficiaryApplicantLevel.Account;
+
+        public string GeneralAllowedCharacters { get; set; } = default!;
+        public string NicknameAllowedCharacters { get; set; } = default!;
+        public string PersonNameAllowedCharacters { get; set; } = default!;
+
+        public bool ChallengeEnabled { get; set; }
+        public int LockFailedChallengeCount { get; set; }
+        
+        public bool TimeBasedUnlockEnabled { get; set; }
+        public int? UnlockAfterMinutes { get; set; }
+        
+        public bool IsApplicantNotificationEnabled { get; set; }
+        public int DaysBeforeAbandonmentEmailReminderOne { get; set; }
+        public int DaysBeforeAbandonmentEmailReminderTwo { get; set; }
+        public int MinutesBetweenApplicationAbandonmentScans { get; set; }
+
+        public bool CardOrderingOnlineEnabled { get; set; }
+        public bool CardOrderingInBranchEnabled { get; set; }
+        public bool CardOrderingSkipEnabled { get; set; }
+    }
+}
+

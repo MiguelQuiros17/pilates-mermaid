@@ -1,0 +1,80 @@
+@using Aloha.Domain.Questionnaires
+@inject IDbContextFactory<AlohaDb> dbFactory
+@rendermode InteractiveServer
+
+@if (isLoading || questionnaireResponse == null)
+{
+    <Spinner/>
+}
+else
+{
+    <details>
+        <summary>
+            [ID @questionnaireResponse.QuestionnaireId] @questionnaireResponse.QuestionnaireName (version @questionnaireResponse.QuestionnaireVersion)
+        </summary>
+        <div>
+            <ol>
+                @foreach (var questionResponse in (questionnaireResponse.QuestionResponses ?? [])
+                              .Where(response => response.QuestionResponseGroup == null)
+                              .OrderBy(response => response.SortOrder)
+                              .Select(response => response.Snapshot))
+                {
+                    <QuestionResponsePreview QuestionResponseSnapshot="questionResponse"/>
+                }
+            </ol>
+        </div>
+
+        @foreach (var questionResponseGroup in (questionnaireResponse.QuestionResponseGroups ?? [])
+                      .OrderBy(group => group.SortOrder))
+        {
+            <div>
+                <div>@questionResponseGroup.QuestionGroupName</div>
+                @if (!string.IsNullOrWhiteSpace(questionResponseGroup.QuestionGroupDescription))
+                {
+                    <div>@questionResponseGroup.QuestionGroupDescription</div>
+                }
+                <ol>
+                    @foreach (var questionResponse in (questionResponseGroup.QuestionResponses ?? [])
+                                  .OrderBy(response => response.SortOrder)
+                                  .Select(response => response.Snapshot))
+                    {
+                        <QuestionResponsePreview QuestionResponseSnapshot="questionResponse"/>
+                    }
+                </ol>
+            </div>
+        }
+    </details>
+}
+
+@code {
+
+    [Parameter]
+    public int QuestionnaireResponseId { get; set; }
+
+    private QuestionnaireResponse? questionnaireResponse;
+    private bool isLoading = true;
+
+    protected override async Task OnAfterRenderAsync(bool isFirstRender)
+    {
+        if (isFirstRender)
+        {
+            await FetchQuestionnaireResponseById(QuestionnaireResponseId);
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task FetchQuestionnaireResponseById(int id)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        questionnaireResponse = await db.QuestionnaireResponses
+            .Include(x => x.ApplicationLoanProduct)
+            .Include(x => x.ApplicationPerson)
+            .Include(x => x.ApplicationShareProduct)
+            .Include(x => x.QuestionResponseGroups)
+            .Include(x => x.QuestionResponses)
+            .FirstAsync(x => x.Id == QuestionnaireResponseId);
+    }
+
+}

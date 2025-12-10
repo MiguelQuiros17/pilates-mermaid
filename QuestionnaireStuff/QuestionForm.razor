@@ -1,0 +1,659 @@
+@using Aloha.Domain.Questionnaires
+@using Blazored.FluentValidation
+@using FluentValidation
+@using Aloha.Domain.Services.Translations
+@using System.Globalization
+@inject ITranslationHelper TranslationHelper
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<EditForm novalidate
+          OnSubmit="HandleSubmitAsync"
+          EditContext="editContext"
+          Context="questionFormContext"
+          FormName="AddQuestion">
+    <FluentValidationValidator/>
+    @* Bulk translate button at the top *@
+    <BulkTranslateButton @ref="bulkTranslateButton"
+                        SelectedCulture="@bulkSelectedCulture"
+                        SelectedCultureChanged="@OnBulkCultureChanged"
+                        OnBulkTranslate="@OnBulkTranslateAll"
+                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
+                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
+                        HasEnglishTextFunc="@HasEnglishText" />
+
+    @* Multi-language input for Name *@
+    <MultiLanguageInput Label="Name"
+                       FieldId="questionName"
+                       Placeholder="Enter question name"
+                       Rows="1"
+                       IsDisabled="false"
+                       EnglishValue="@input.Name"
+                       EnglishValueChanged="@((string value) => input.Name = value)"
+                       Translations="@input.NameTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+
+    @* Multi-language input for Description *@
+    <MultiLanguageInput Label="Description"
+                       FieldId="questionDescription"
+                       Placeholder="Enter question description"
+                       Rows="3"
+                       IsDisabled="false"
+                       EnglishValue="@input.Description"
+                       EnglishValueChanged="@((string value) => input.Description = value)"
+                       Translations="@input.DescriptionTranslations"
+                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DescriptionTranslations = trans)"
+                       SelectedCultureOverride="@bulkSelectedCulture"
+                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+    <div class="mb-2">
+        <label class="form-label">Question Group</label>
+        <InputSelect class="form-select" @bind-Value="input.GroupId">
+            <option value="">None</option>
+            @{
+                var orderedQuestionGroups = QuestionGroups.OrderBy(g => g.SortOrder).ToList();
+            }
+            @foreach (var group in orderedQuestionGroups)
+            {
+                <option value="@group.DraftId">@group.Name</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="mb-2">
+        <InputCheckbox class="form-check-input"
+                       id="question-is-required-input"
+                       @bind-Value="input.IsRequired"/>
+        <label for="question-is-required-input" class="form-check-label">Is Required?</label>
+    </div>
+    <div class="mb-2">
+        <label class="form-label">Question Type*</label>
+        <InputSelect required class="form-select" @bind-Value="@input.Type">
+            @foreach (var questionType in Enum.GetValues<QuestionType>())
+            {
+                <option value="@questionType">@questionType.ToDisplayName()</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => input.Type"/>
+    </div>
+    @if (input.Type != QuestionType.FreeForm)
+    {
+        <div class="card my-3">
+            <div class="card-header">Question Options</div>
+            <div class="card-body">
+                <ul class="mb-0 list-unstyled">
+                    @if (!input.MultipleChoiceOptions.Any())
+                    {
+                        <li>No multiple choice options entered</li>
+                    }
+                    else
+                    {
+                        var orderedOptions = input.MultipleChoiceOptions.OrderBy(o => o.SortOrder).ToList();
+                        foreach (var option in orderedOptions)
+                        {
+                            var isOptionBeingEdited = optionBeingEdited?.DraftId == option.DraftId;
+                            <li style=@(isOptionBeingEdited ? "border-width: 2px; border-radius: 4px; border-color: var(--bs-primary); border-style: solid; padding: 8px" : string.Empty)>
+                                @if (isOptionBeingEdited)
+                                {
+                                    <p class="text-primary fw-bold mb-0">Currently Editing</p>
+                                    <hr class="my-2"/>
+                                }
+                                <div class="d-flex justify-content-start" style="gap: 8px">
+                                    <div>
+                                        <label for=@($"sort-option-{option.DraftId}")>Sort*</label>
+                                        <InputNumber id=@($"sort-option-{option.DraftId}")
+                                                     min="0"
+                                                     @bind-Value="option.SortOrder"
+                                                     class="form-control"
+                                                     style="width: 64px"/>
+                                    </div>
+                                    <div class="flex-fill">
+                                        <div>
+                                            @option.Name
+                                            @if (option.HasDependentQuestion)
+                                            {
+                                                @if (!string.IsNullOrWhiteSpace(option.DependentQuestionName))
+                                                {
+                                                    <span class="fst-italic">
+                                                        @($" - {option.DependentQuestionName}")
+                                                    </span>
+                                                }
+
+                                                <span> (@option.DependentQuestionType.ToDisplayName())</span>
+                                            }
+                                        </div>
+                                        @if (option is { HasDependentQuestion: true, DependentQuestionType: DependentQuestionType.MultipleSelect or DependentQuestionType.SingleSelect })
+                                        {
+                                            <ul>
+                                                @{
+                                                    var orderedDepOptions = option.DependentMultipleChoiceOptions!.OrderBy(o => o.SortOrder).ToList();
+                                                    foreach (var depOption in orderedDepOptions)
+                                                    {
+                                                        <li>
+                                                            <div class="flex-fill">
+                                                                @depOption.Name
+                                                                @if (depOption.HasFreeFormField)
+                                                                {
+                                                                    <span class="fst-italic">
+                                                                            @(depOption.FreeFormFieldDescription != null
+                                                                            ? $" - {depOption.FreeFormFieldDescription}"
+                                                                            : "") 
+                                                                        </span>
+                                                                    <span> (Free Form)</span>
+                                                                }
+                                                            </div>
+                                                        </li>
+                                                    }
+                                                }
+                                            </ul>
+                                        }
+                                    </div>
+                                    <div class="d-flex align-items-baseline gap-2">
+                                        <button class="btn btn-outline-secondary"
+                                                type="button"
+                                                @onclick=@(() => OpenEditMultipleChoiceOptionForm(option))>
+                                            <Icon Name="IconName.PencilFill"/>
+                                        </button>
+                                        <button class="btn btn-outline-danger"
+                                                type="button"
+                                                @onclick=@(() => RemoveMultipleChoiceOption(option))>
+                                            <Icon Name="IconName.TrashFill"/>
+                                        </button>
+                                    </div>
+                                </div>
+                            </li>
+                            }
+                        }
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <div class="d-flex mb-4">
+            <div class="d-lg-block d-none"
+                 style="border-width: 0; border-left-width: 1px; border-style: solid; border-color: var(--bs-border-color)">
+                <div class="mx-3"></div>
+            </div>
+            <div class="flex-fill">
+                <h5 class="mb-2">@($"{(isEditingOption ? "Edit" : "Add")} ")Multiple Choice Option</h5>
+                <MultipleChoiceOptionForm
+                    InitialValues="optionBeingEdited"
+                    IsEditing="isEditingOption"
+                    OnClose="CloseEditMultipleChoiceOptionForm"
+                    OnSubmit="@(isEditingOption ? EditMultipleChoiceOption : AddMultipleChoiceOption)"
+                />
+            </div>
+        </div>
+    }
+    <div class="d-flex flex-column">
+        @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
+        {
+            <Alert Color="AlertColor.Danger">
+                <Icon class="me-2" Name="IconName.ExclamationTriangleFill"></Icon>
+                Some information is missing and/or invalid. Please review your responses.
+            </Alert>
+        }
+        <div class="mt-2 d-flex gap-2">
+            @if (IsEditing)
+            {
+                <button class="btn btn-outline-primary">Save Question Edits</button>
+                <button class="btn btn-outline-secondary" @onclick="OnClose.InvokeAsync" type="button">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-outline-primary">Add Question</button>
+            }
+        </div>
+    </div>
+</EditForm>
+
+@code {
+
+    private bool isEditingOption;
+    private MultipleChoiceOptionForm.DraftInput? optionBeingEdited;
+    private Input input = default!;
+    private ValidationMessageStore messageStore = default!;
+    private EditContext editContext = default!;
+
+    private IList<QuestionGroupForm.DraftInput> questionGroups = [];
+    private QuestionForm.DraftInput? initialValues;
+    private string bulkSelectedCulture = "en-US";
+    private string primaryLanguage = "en-US";
+    private BulkTranslateButton? bulkTranslateButton;
+
+    [Parameter]
+    public bool IsEditing { get; set; }
+
+    [Parameter]
+    public QuestionForm.DraftInput? InitialValues { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<Input> OnSubmit { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<Input> OnClose { get; set; }
+
+    [Parameter, EditorRequired]
+    public IList<QuestionGroupForm.DraftInput> QuestionGroups { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        questionGroups = QuestionGroups;
+        initialValues = InitialValues;
+        input = Input.CreateFromDraft(initialValues);
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (_, _) => messageStore.Clear();
+        editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+        bulkSelectedCulture = primaryLanguage;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            bulkSelectedCulture = primaryLanguage;
+            StateHasChanged();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // If question group list changes...
+        if (!ReferenceEquals(QuestionGroups, questionGroups))
+        {
+            questionGroups = QuestionGroups;
+
+            // If the currently selected group does not exist anymore, clear the group field
+            if (questionGroups.All(g => g.DraftId != input.GroupId))
+            {
+                input.GroupId = null;
+            }
+        }
+
+        // If initial values change...
+        if (InitialValues != initialValues)
+        {
+            initialValues = InitialValues;
+
+            // Clear the form if new values are null...
+            if (initialValues is null)
+            {
+                input.Clear();
+                messageStore.Clear();
+                editContext.MarkAsUnmodified();
+                editContext.NotifyValidationStateChanged();
+            }
+            // Otherwise, replace form values with initial values
+            else
+            {
+                input.UpdateFromDraft(initialValues);
+                editContext.Validate();
+            }
+
+            // Clear sub-forms
+            CloseEditMultipleChoiceOptionForm();
+        }
+    }
+
+    private void OpenEditMultipleChoiceOptionForm(MultipleChoiceOptionForm.DraftInput option)
+    {
+        isEditingOption = true;
+        optionBeingEdited = option;
+    }
+
+    private void CloseEditMultipleChoiceOptionForm()
+    {
+        isEditingOption = false;
+        optionBeingEdited = null;
+    }
+
+    private void EditMultipleChoiceOption(MultipleChoiceOptionForm.Input values)
+    {
+        var option = input.MultipleChoiceOptions.First(o => o.DraftId == optionBeingEdited!.DraftId);
+        option.Name = values.Name!;
+        option.HasDependentQuestion = values.HasDependentQuestion;
+
+        if (values.HasDependentQuestion)
+        {
+            option.DependentQuestionName = values.DependentQuestionName;
+            option.DependentQuestionType = values.DependentQuestionType;
+
+            option.DependentMultipleChoiceOptions =
+                values.DependentQuestionType == DependentQuestionType.SingleSelect ||
+                values.DependentQuestionType == DependentQuestionType.MultipleSelect
+                    ? [..values.DependentMultipleChoiceOptions]
+                    : null;
+        }
+        else
+        {
+            option.DependentQuestionName = null;
+            option.DependentQuestionType = DependentQuestionType.None;
+            option.DependentMultipleChoiceOptions = null;
+        }
+
+        CloseEditMultipleChoiceOptionForm();
+    }
+
+    private void AddMultipleChoiceOption(MultipleChoiceOptionForm.Input values)
+    {
+        var draft = new MultipleChoiceOptionForm.DraftInput
+        {
+            DraftId = Guid.NewGuid(),
+            Name = values.Name!,
+            HasDependentQuestion = values.HasDependentQuestion,
+            DependentQuestionType = values.HasDependentQuestion ? values.DependentQuestionType : DependentQuestionType.None,
+            DependentQuestionName = values.HasDependentQuestion ? values.DependentQuestionName : null,
+            DependentMultipleChoiceOptions =
+                values.HasDependentQuestion &&
+                (values.DependentQuestionType == DependentQuestionType.SingleSelect ||
+                    values.DependentQuestionType == DependentQuestionType.MultipleSelect)
+                    ? [..values.DependentMultipleChoiceOptions]
+                    : null
+        };
+
+        input.MultipleChoiceOptions.Add(draft);
+    }
+
+    private void RemoveMultipleChoiceOption(MultipleChoiceOptionForm.DraftInput option)
+    {
+        input.MultipleChoiceOptions.Remove(option);
+
+        if (optionBeingEdited?.DraftId == option.DraftId)
+        {
+            CloseEditMultipleChoiceOptionForm();
+        }
+    }
+
+    private async Task HandleSubmitAsync()
+    {
+        input.HasSubmitted = true;
+        if (!editContext.Validate())
+        {
+            StateHasChanged();
+            return;
+        }
+        input.Trim();
+        await OnSubmit.InvokeAsync(input);
+        await OnClose.InvokeAsync();
+        input.Clear();
+        CloseEditMultipleChoiceOptionForm();
+    }
+
+    public class DraftInput
+    {
+        public Guid DraftId { get; set; }
+        public required string Name { get; set; }
+        public string? Description { get; set; }
+        public bool IsRequired { get; set; }
+        public int SortOrder { get; set; }
+        public required QuestionType Type { get; set; }
+        public Guid? DraftGroupId { get; set; }
+        public int? GroupId { get; set; }
+        public IList<MultipleChoiceOptionForm.DraftInput>? MultipleChoiceOptions { get; set; }
+        public Dictionary<string, string> NameTranslations { get; set; } = new();
+        public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
+
+        public static DraftInput CreateFromQuestion(Question question, Guid? draftGroupId, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? descriptionTranslations = null)
+        {
+            return new DraftInput
+            {
+                DraftId = Guid.NewGuid(),
+                Name = question.Name,
+                Description = question.Description,
+                IsRequired = question.IsRequired,
+                SortOrder = question.SortOrder,
+                Type = question.Type,
+                DraftGroupId = draftGroupId,
+                GroupId = question.QuestionGroupId,
+                MultipleChoiceOptions = question.MultipleChoiceOptions?
+                    .Select((MultipleChoiceOption o) => MultipleChoiceOptionForm.DraftInput.CreateFromOption(o))
+                    .ToList(),
+                NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
+                DescriptionTranslations = descriptionTranslations ?? new Dictionary<string, string>()
+            };
+        }
+    }
+
+    public class Input
+    {
+        public bool HasSubmitted { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public Guid? GroupId { get; set; }
+        public bool IsRequired { get; set; }
+        public QuestionType Type { get; set; } = QuestionType.FreeForm;
+        public IList<MultipleChoiceOptionForm.DraftInput> MultipleChoiceOptions { get; set; } = [];
+        public Dictionary<string, string> NameTranslations { get; set; } = new();
+        public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
+
+        public static Input CreateFromDraft(QuestionForm.DraftInput? draft)
+        {
+            var newInput = new Input();
+
+            if (draft is not null)
+            {
+                newInput.UpdateFromDraft(draft);
+            }
+
+            return newInput;
+        }
+
+        public void UpdateFromDraft(QuestionForm.DraftInput draft)
+        {
+            Name = draft.Name;
+            Description = draft.Description;
+            GroupId = draft.DraftGroupId;
+            IsRequired = draft.IsRequired;
+            Type = draft.Type;
+            MultipleChoiceOptions = draft.MultipleChoiceOptions == null ? [] : [..draft.MultipleChoiceOptions];
+            NameTranslations = new Dictionary<string, string>(draft.NameTranslations);
+            DescriptionTranslations = new Dictionary<string, string>(draft.DescriptionTranslations);
+        }
+
+        public void Trim()
+        {
+            Name = Name?.Trim();
+            Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
+        }
+
+        public void Clear()
+        {
+            Name = null;
+            Description = null;
+            GroupId = null;
+            IsRequired = false;
+            Type = QuestionType.FreeForm;
+            MultipleChoiceOptions = [];
+            NameTranslations.Clear();
+            DescriptionTranslations.Clear();
+        }
+    }
+
+    public class FormValidator : AbstractValidator<Input>
+    {
+        public FormValidator()
+        {
+            When(input => input.HasSubmitted, () =>
+            {
+                RuleFor(p => p.Name).NotEmpty().WithMessage("Question name is required");
+
+                When(p => p.Type != QuestionType.FreeForm, () =>
+                        {
+                            RuleFor((QuestionForm.Input p) => p.MultipleChoiceOptions)
+                                .NotEmpty()
+                                .WithMessage("Please provide multiple choice options for this question");
+                        });
+            });
+        }
+    }
+
+    private async Task OnBulkCultureChanged(string culture)
+    {
+        bulkSelectedCulture = culture;
+        StateHasChanged();
+    }
+
+    private bool HasEnglishText()
+    {
+        return !string.IsNullOrWhiteSpace(input.Name) ||
+               !string.IsNullOrWhiteSpace(input.Description);
+    }
+
+    private List<string> GetFieldsWithExistingText()
+    {
+        var fields = new List<string>();
+        if (input.NameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
+        {
+            fields.Add("Name");
+        }
+        if (input.DescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
+        {
+            fields.Add("Description");
+        }
+        return fields;
+    }
+
+    private async Task OnBulkTranslateAll()
+    {
+        bulkTranslateButton?.ClearError();
+        
+        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == primaryLanguage)
+        {
+            return;
+        }
+
+        var errors = new List<string>();
+
+        // Translate Name
+        if (!string.IsNullOrWhiteSpace(input.Name))
+        {
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(input.Name, bulkSelectedCulture);
+                if (translated != null)
+                {
+                    input.NameTranslations[bulkSelectedCulture] = translated;
+                }
+                else
+                {
+                    errors.Add($"Name: Translation failed (no result returned)");
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Name: {ex.Message}");
+            }
+        }
+
+        // Translate Description
+        if (!string.IsNullOrWhiteSpace(input.Description))
+        {
+            try
+            {
+                var translated = await TranslationHelper.TranslateAsync(input.Description, bulkSelectedCulture);
+                if (translated != null)
+                {
+                    input.DescriptionTranslations[bulkSelectedCulture] = translated;
+                }
+                else
+                {
+                    errors.Add($"Description: Translation failed (no result returned)");
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Description: {ex.Message}");
+            }
+        }
+
+        if (errors.Any())
+        {
+            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+            var errorMessage = isApiConfigured 
+                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
+                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+            bulkTranslateButton?.SetError(errorMessage);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnBulkTranslateAllLanguages()
+    {
+        bulkTranslateButton?.ClearError();
+        
+        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
+        var errors = new List<string>();
+
+        // Translate Name to all languages
+        if (!string.IsNullOrWhiteSpace(input.Name))
+        {
+            foreach (var lang in availableLanguages)
+            {
+                if (lang == primaryLanguage) continue;
+                
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(input.Name, lang);
+                    if (translated != null)
+                    {
+                        input.NameTranslations[lang] = translated;
+                    }
+                    else
+                    {
+                        errors.Add($"Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
+                }
+            }
+        }
+
+        // Translate Description to all languages
+        if (!string.IsNullOrWhiteSpace(input.Description))
+        {
+            foreach (var lang in availableLanguages)
+            {
+                if (lang == primaryLanguage) continue;
+                
+                try
+                {
+                    var translated = await TranslationHelper.TranslateAsync(input.Description, lang);
+                    if (translated != null)
+                    {
+                        input.DescriptionTranslations[lang] = translated;
+                    }
+                    else
+                    {
+                        errors.Add($"Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
+                }
+            }
+        }
+
+        if (errors.Any())
+        {
+            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
+            var errorMessage = isApiConfigured 
+                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
+                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
+            bulkTranslateButton?.SetError(errorMessage);
+        }
+
+        StateHasChanged();
+    }
+
+}

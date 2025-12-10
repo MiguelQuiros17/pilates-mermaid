@@ -6,9 +6,9 @@ import { motion } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { getApiUrl } from '@/lib/utils/api'
 
 export default function LoginPage() {
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
   const router = useRouter()
   const [formData, setFormData] = useState({
     correo: '',
@@ -42,7 +42,7 @@ export default function LoginPage() {
     setError('')
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
