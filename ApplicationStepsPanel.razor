@@ -1,0 +1,713 @@
+@using System.Collections.Immutable
+@using Aloha.Customer.Web.Services
+@using Aloha.Customer.Web.Utilities
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Disclosures
+@using Aloha.Domain.Features
+@using Aloha.Domain.Plaid
+@using Aloha.Domain.ProductApplications
+@using Microsoft.IdentityModel.Tokens
+@inject IApplicationStateProvider stateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<ApplicationStepsPanel> l
+@inject NavigationManager nav
+@inject IJSRuntime jsRuntime
+@inject IAppVisualStateProvider visualState
+@rendermode InteractiveServer
+
+@if (isVisible)
+{
+    <div class="accordion accordion-flush align-self-lg-baseline mb-2 px-4 py-1 rounded-2 sticky-lg-top"
+    id="appStepsAccordion"
+    style="background-color: var(--aloha-color-surface); min-width: 288px">
+        <div class="accordion-item">
+            <div class="accordion-header">
+                <button aria-controls="appStepsAccordionCollapse"
+                aria-expanded="false"
+                class="accordion-button bg-transparent collapsed h5 m-0 p-0 py-3 shadow-none"
+                data-bs-target="#appStepsAccordionCollapse"
+                data-bs-toggle="collapse"
+                id="appStepsAccordionButton"
+                type="button">
+                    @l["button-application-process"]
+                </button>
+            </div>
+            <div class="accordion-collapse collapse" data-bs-parent="#appStepsAccordion" id="appStepsAccordionCollapse">
+                <nav class="accordion-body gap-3 p-0 pb-3 vstack">
+                    <hr class="m-0"/>
+                    <a class="btn btn-outline-primary" href="/applications/summary">@l["nav-item-summary"]</a>
+                    @if (isApplicationCommentFeatureEnabled)
+                    {
+                        <button @onclick="visualState.OpenApplicationCommentModal" class="btn btn-outline-primary">
+                            @l["nav-item-application-comment"]
+                        </button>
+                    }
+                    @foreach (var panelSection in panelSections)
+                    {
+                        @if (!panelSection.Items.IsNullOrEmpty())
+                        {
+                            <div class="vstack">
+                                <h6 class="mb-2">@l[panelSection.TranslationKey]</h6>
+                                <div class="gap-1 vstack">
+                                    @foreach (var item in panelSection.Items)
+                                    {
+                                        <a aria-disabled=@(item.IsEnabled ? null : true)
+                                        class="d-flex align-items-start gap-2 text-body text-decoration-none"
+                                        @onclick="() => NavigateTo(item)"
+                                        role="@(item.IsEnabled ? null : "link")"
+                                        style="cursor: pointer; @(!item.IsEnabled ? "opacity:70%;" : "")">
+                                            <Icon Name="@(item.IsComplete ? IconName.CheckCircleFill : IconName.Circle)" Color="@(item.IsComplete ? IconColor.Success : IconColor.Muted)" class="flex-shrink-0"/>
+                                            <label class="form-check-label flex-grow-1"
+                                            style="cursor: pointer">@l[item.TranslationKey]</label>
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </nav>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    private bool isApplicationCommentFeatureEnabled;
+    private bool isVisible;
+    private IJSObjectReference? jsModule;
+    private bool isCoreOfflineMode = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Load the JavaScript module explicitly
+            jsModule = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./Components/Layout/ApplicationStepsPanel.razor.js");
+
+            // Call the onUpdate function after rendering
+            await jsModule.InvokeVoidAsync("onUpdate");
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+            isCoreOfflineMode = feature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+            StateHasChanged();
+        }
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        UpdateVisibility(e.Location);
+        StateHasChanged();
+
+        if (!isVisible || jsModule == null) return;
+
+        await InitializePanelDataAsync();
+        await jsModule.InvokeVoidAsync("onUpdate");
+    }
+
+    private void UpdateVisibility(string uri)
+    {
+        var currentPath = nav.ToBaseRelativePath(uri);
+        isVisible = currentPath.StartsWith("applications/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        nav.LocationChanged -= OnLocationChanged;
+
+        if (jsModule != null)
+        {
+            await jsModule.DisposeAsync();
+        }
+    }
+
+    private void NavigateTo(NavigationPanelItem item)
+    {
+        if (item.IsEnabled)
+        {
+            nav.NavigateTo(item.Href);
+        }
+    }
+
+    private List<NavigationPanelItem> memberAppPanelItemPool =
+    [
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Started,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/welcome",
+            TranslationKey = "nav-item-welcome",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Eligibility,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/eligibility",
+            TranslationKey = "nav-item-eligibility",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicationDisclosures,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/disclosures/application",
+            TranslationKey = "nav-item-disclosure-application",
+            IsComplete = false,
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicationQuestionnaires,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/questionnaires",
+            TranslationKey = "nav-item-application-questionnaires",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.People,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/people",
+            TranslationKey = "nav-item-people",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicantQuestionnaires,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/people/questionnaires",
+            TranslationKey = "nav-item-applicant-questionnaires",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicantDisclosures,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/disclosures/applicant",
+            TranslationKey = "nav-item-disclosure-applicant",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Products,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products",
+            TranslationKey = "nav-item-products-share",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ProductQuestionnaires,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products/questionnaires",
+            TranslationKey = "nav-item-product-questionnaires",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ProductOptions,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products/options",
+            TranslationKey = "nav-item-products-share-options",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Cards,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products/cards",
+            TranslationKey = "nav-item-products-card",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Funding,
+            SectionId = NavigationPanelSectionType.OpenAccount,
+            Href = "/applications/funding",
+            TranslationKey = "nav-item-funding",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Confirmation,
+            SectionId = NavigationPanelSectionType.OpenAccount,
+            Href = "/applications/onlineservices",
+            TranslationKey = "nav-item-online-services",
+            IsComplete = false
+        }
+    ];
+
+    private List<NavigationPanelItem> loanAppPanelItemPool =
+    [
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Started,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/welcome",
+            TranslationKey = "nav-item-welcome",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.PrimaryApplicantInfo,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/people/primary-applicant-info",
+            TranslationKey = "nav-item-primary-applicant-info",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicationDisclosures,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/disclosures/application",
+            TranslationKey = "nav-item-disclosure-application",
+            IsComplete = false,
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicationQuestionnaires,
+            SectionId = NavigationPanelSectionType.GatherInformation,
+            Href = "/applications/questionnaires",
+            TranslationKey = "nav-item-application-questionnaires",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Products,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products",
+            TranslationKey = "nav-item-products-loan",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ProductQuestionnaires,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products/questionnaires",
+            TranslationKey = "nav-item-product-questionnaires",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ProductOptions,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/products/options",
+            TranslationKey = "nav-item-products-loan-options",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Eligibility,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/eligibility",
+            TranslationKey = "nav-item-eligibility",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.People,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/people",
+            TranslationKey = "nav-item-people",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicantQuestionnaires,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/people/questionnaires",
+            TranslationKey = "nav-item-applicant-questionnaires",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.ApplicantDisclosures,
+            SectionId = NavigationPanelSectionType.SelectProducts,
+            Href = "/applications/disclosures/applicant",
+            TranslationKey = "nav-item-disclosure-applicant",
+            IsComplete = false
+        },
+        new NavigationPanelItem
+        {
+            Type = UserApplicationStepType.Confirmation,
+            SectionId = NavigationPanelSectionType.OpenAccount,
+            Href = "/applications/onlineservices",
+            TranslationKey = "nav-item-online-services",
+            IsComplete = false
+        }
+    ];
+
+    private NavigationPanelSection[] panelSections =
+    [
+        new NavigationPanelSection
+        {
+            Id = NavigationPanelSectionType.GatherInformation,
+            TranslationKey = "panel-item-gather-info",
+            Items = []
+        },
+        new NavigationPanelSection
+        {
+            Id = NavigationPanelSectionType.SelectProducts,
+            TranslationKey = "panel-item-select-products",
+            Items = []
+        },
+        new NavigationPanelSection
+        {
+            Id = NavigationPanelSectionType.OpenAccount,
+            TranslationKey = "panel-item-open-account",
+            Items = []
+        }
+    ];
+
+    private static async Task<Guid> GetCurrentApplicationKey(IApplicationStateProvider stateProvider) =>
+        await stateProvider.GetCurrentApplicationKeyAsync() ?? throw new Exception("No application key was found");
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateVisibility(nav.Uri);
+        nav.LocationChanged += OnLocationChanged;
+
+        if (isVisible)
+        {
+            await InitializePanelDataAsync();
+        }
+    }
+
+    private async Task InitializePanelDataAsync()
+    {
+        try
+        {
+            var appKey = await GetCurrentApplicationKey(stateProvider);
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            var app = await db.UserApplications
+                .Include(userApplication => userApplication.ProductApplicationType)
+                .Include(userApplication => userApplication.ApplicationPeople)
+                .FirstAsync(app => app.ApplicationKey == appKey);
+
+            var appType = app.ProductApplicationType?.ApplicationType;
+
+            var fieldFeature = await db.FieldFeatures.GetActiveFeatureAsync(app.ProductApplicationTypeId);
+            fieldFeature ??= FieldFeature.Create();
+            var isEligibilityFeatureEnabled = fieldFeature.ApplicationFieldFeature.IsEligibilityEnabled;
+
+            var vendorFeatures = await db.VendorFeatures.GetActiveFeatureAsync(app.ProductApplicationTypeId);
+
+            isApplicationCommentFeatureEnabled = vendorFeatures?.CoreVendor.ApplicationNoteForApplicationCommentEnabled == true;
+
+            var isAppInProgress = app.UserApplicationStatus == UserApplicationStatusType.InProgressMember;
+
+            var applicationId = app.Id;
+
+            var completedStepQuery = db.CompletedApplicationSteps.Where(step => step.UserApplicationId == applicationId);
+
+            var isWelcomeStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.Started);
+
+            var isPrimaryApplicantInfoProvided = (app.ApplicationPeople ?? []).Any(x => x.PersonType == PersonType.Primary);
+
+            var applicableDisclosuresQuery = db.Disclosures
+                .GetEnabledDisclosures()
+                .Where(d => d.DisclosureApplicationTypeLinks!.Any(x => x.ProductApplicationTypeId == app.ProductApplicationTypeId));
+
+            var isAnyApplicationDisclosurePresent = await applicableDisclosuresQuery
+                .AnyAsync(d => d.DisclosureType == DisclosureType.Application);
+
+            var isAnyApplicantDisclosurePresent = await applicableDisclosuresQuery
+                .AnyAsync(d => d.DisclosureType == DisclosureType.Applicant);
+
+            var isDisclosureStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.ApplicationDisclosures);
+
+            var isEligibilityStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.Eligibility);
+
+            var isPeopleStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.People);
+
+            var isCreditDisclosureStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.ApplicantDisclosures);
+
+            var isProductsStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.Products);
+
+            var isProductOptionsStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.ProductOptions);
+
+            var isCardsStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.Cards);
+
+            var isFundingStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.Funding);
+
+            var isConfirmationStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.Confirmation);
+
+            var isApplicationQuestionnairesStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.ApplicationQuestionnaires);
+
+            var isApplicantQuestionnairesStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.ApplicantQuestionnaires);
+
+            var isProductQuestionnairesStepComplete = await completedStepQuery
+                .AnyAsync(step => step.Type == UserApplicationStepType.ProductQuestionnaires);
+
+            var isProductOptionsStepEnabled = appType == ApplicationType.Member
+                ? isPeopleStepComplete && isProductsStepComplete
+                : isPrimaryApplicantInfoProvided && isProductsStepComplete;
+
+            var isCardStepEnabled = isPeopleStepComplete && isProductsStepComplete;
+
+            var isFundingFeatureEnabled = await FeatureFlagUtils.IsFundingEnabledForAppTypeAsync(db, app.ProductApplicationTypeId);
+
+            var isAppAllowedToFund = await UserApplicationPermissionUtils
+                .IsFundingAllowedForUserApplicationAsync(db, appKey);
+
+            var isCardOrderingEnabled = await FeatureFlagUtils.IsCardOrderingEnabledForAppTypeAsync(db, app.ProductApplicationTypeId);
+            var isOnlineServicesEnabled = await UserApplicationPermissionUtils.IsOnlineServicesAllowedForUserApplicationAsync(db, appKey);
+
+            var isAnyApplicationQuestionnaireEnabled = await FeatureFlagUtils
+                .IsAnyApplicationQuestionnaireEnabledForAppType(db, app.ProductApplicationTypeId);
+
+            var isAnyApplicantQuestionnaireEnabled = await FeatureFlagUtils
+                .IsAnyApplicantQuestionnaireEnabledForAppType(db, app.ProductApplicationTypeId);
+
+            var isAnyProductQuestionnaireEnabled = await UserApplicationAnalysisUtils
+                .HasSelectedAnyProductsWithQuestionnaires(db, appKey);
+
+            var isPlaidIdvEnabled = vendorFeatures?.Identity.IdentityVerification == IdentityVerificationType.Plaid;
+            var isIdVerificationComplete = true;
+
+            if (isPlaidIdvEnabled)
+            {
+                isIdVerificationComplete = await IsIdVerificationCompleteAsync(db, appKey);
+            }
+
+            // Clear panel sections before populating new items
+            foreach (var panelSection in panelSections)
+            {
+                panelSection.Items.Clear();
+            }
+
+            var appItemPool = appType == ApplicationType.Member ? memberAppPanelItemPool : loanAppPanelItemPool;
+
+            if (appType == ApplicationType.Loan && fieldFeature.ApplicationFieldFeature.IsEligibilityAfterProductSelection == false)
+            {
+                var eligibility = appItemPool.First(x => x.Type == UserApplicationStepType.Eligibility);
+                appItemPool.Remove(eligibility);
+                appItemPool.Insert(1, eligibility with { SectionId = NavigationPanelSectionType.GatherInformation });
+            }
+
+            // Populate the panel items
+            var newItemPool = appItemPool.Aggregate(
+                ImmutableList.Create<NavigationPanelItem>(),
+                (acc, cur) => cur.Type switch
+                {
+                    UserApplicationStepType.Started =>
+                        acc.Add(cur with
+                        {
+                            IsComplete = isWelcomeStepComplete,
+                            IsEnabled = isAppInProgress
+                        }),
+
+                    UserApplicationStepType.PrimaryApplicantInfo =>
+                        acc.Add(cur with
+                        {
+                            IsComplete = isPrimaryApplicantInfoProvided,
+                            IsEnabled = !isPrimaryApplicantInfoProvided
+                        }),
+
+                    UserApplicationStepType.Eligibility =>
+                        isEligibilityFeatureEnabled
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isEligibilityStepComplete,
+                                IsEnabled = isAppInProgress
+                            })
+                            : acc,
+
+                    UserApplicationStepType.ApplicationDisclosures =>
+                        isAnyApplicationDisclosurePresent
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isDisclosureStepComplete,
+                                IsEnabled = isAppInProgress
+                            })
+                            : acc,
+
+                    UserApplicationStepType.ApplicationQuestionnaires =>
+                        isAnyApplicationQuestionnaireEnabled
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isApplicationQuestionnairesStepComplete,
+                                IsEnabled = isAppInProgress
+                            })
+                            : acc,
+
+                    UserApplicationStepType.People =>
+                        acc.Add(cur with
+                        {
+                            IsComplete = isPeopleStepComplete,
+                            IsEnabled = isAppInProgress
+                        }),
+
+                    UserApplicationStepType.ApplicantQuestionnaires =>
+                        isAnyApplicantQuestionnaireEnabled
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isApplicantQuestionnairesStepComplete,
+                                IsEnabled = isAppInProgress && isPeopleStepComplete && isIdVerificationComplete
+                            })
+                            : acc,
+
+                    UserApplicationStepType.ApplicantDisclosures =>
+                        isAnyApplicantDisclosurePresent
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isCreditDisclosureStepComplete,
+                                IsEnabled = isAppInProgress && isPeopleStepComplete && isIdVerificationComplete
+                            })
+                            : acc,
+
+                    UserApplicationStepType.Products =>
+                        acc.Add(cur with
+                        {
+                            IsComplete = isProductsStepComplete,
+                            IsEnabled = isAppInProgress && (appType == ApplicationType.Member
+                                ? isPeopleStepComplete && isIdVerificationComplete
+                                : isPrimaryApplicantInfoProvided)
+                        }),
+
+                    UserApplicationStepType.ProductQuestionnaires =>
+                        isAnyProductQuestionnaireEnabled
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isProductQuestionnairesStepComplete,
+                                IsEnabled = isAppInProgress && isProductsStepComplete && isIdVerificationComplete
+                            })
+                            : acc,
+
+                    UserApplicationStepType.ProductOptions =>
+                        acc.Add(cur with
+                        {
+                            IsComplete = isProductOptionsStepComplete,
+                            IsEnabled = isAppInProgress && isProductOptionsStepEnabled && isIdVerificationComplete
+                        }),
+
+                    UserApplicationStepType.Cards =>
+                        appType == ApplicationType.Member && isCardOrderingEnabled
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isCardsStepComplete,
+                                IsEnabled = isAppInProgress && isCardStepEnabled && isIdVerificationComplete
+                            })
+                            : acc,
+
+                    UserApplicationStepType.Funding =>
+                        appType == ApplicationType.Member && isFundingFeatureEnabled
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isFundingStepComplete,
+                                IsEnabled = isAppAllowedToFund && isIdVerificationComplete
+                            })
+                            : acc,
+
+                    UserApplicationStepType.Confirmation =>
+                        appType == ApplicationType.Member
+                            ? acc.Add(cur with
+                            {
+                                IsComplete = isFundingFeatureEnabled ? isFundingStepComplete : isConfirmationStepComplete,
+                                IsEnabled = isOnlineServicesEnabled && isIdVerificationComplete
+                            })
+                            : acc,
+
+                    _ => acc
+                });
+
+            panelSections = newItemPool.Aggregate(panelSections, (acc, cur) =>
+            {
+                if (!isCoreOfflineMode)
+                {
+                    switch (cur.SectionId)
+                    {
+                        case NavigationPanelSectionType.GatherInformation:
+                            acc[0].Items.Add(cur);
+                            break;
+                        case NavigationPanelSectionType.SelectProducts:
+                            acc[1].Items.Add(cur);
+                            break;
+                        case NavigationPanelSectionType.OpenAccount:
+                            acc[2].Items.Add(cur);
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
+                }
+                else
+                {
+                    switch (cur.SectionId)
+                    {
+                        case NavigationPanelSectionType.GatherInformation:
+                            acc[0].Items.Add(cur);
+                            break;
+                        case NavigationPanelSectionType.SelectProducts:
+                            acc[1].Items.Add(cur);
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
+                }
+
+                return acc;
+            });
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Initialization error: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> IsIdVerificationCompleteAsync(AlohaDb db, Guid appKey)
+    {
+        var primaryPersonId = await db.ApplicationPeople
+            .Where(p => p.UserApplication!.ApplicationKey == appKey && p.PersonType == PersonType.Primary)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync();
+
+        if (primaryPersonId == 0)
+            return false;
+
+        return await db.PlaidPeopleVerifications
+            .AnyAsync(v => v.ApplicationPersonId == primaryPersonId
+                && v.VerificationStatus == VerificationStatusType.Success);
+    }
+
+    private enum NavigationPanelSectionType
+    {
+        GatherInformation,
+        SelectProducts,
+        OpenAccount
+    };
+
+    private record NavigationPanelSection
+    {
+        public required NavigationPanelSectionType Id { get; init; }
+        public required string TranslationKey { get; init; }
+        public required IList<NavigationPanelItem> Items { get; init; }
+    }
+
+    private record NavigationPanelItem
+    {
+        public required UserApplicationStepType Type { get; init; }
+        public required NavigationPanelSectionType SectionId { get; init; }
+        public required string Href { get; init; }
+        public required string TranslationKey { get; init; }
+        public required bool IsComplete { get; init; }
+        public bool IsEnabled { get; init; } = true;
+    }
+}

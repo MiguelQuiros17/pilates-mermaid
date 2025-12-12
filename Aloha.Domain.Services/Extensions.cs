@@ -20,6 +20,7 @@ using Aloha.Domain.Services.Plaid.Item;
 using Aloha.Domain.Services.Plaid.Link;
 using Aloha.Domain.Services.Plaid.Monitor;
 using Aloha.Domain.Services.Plaid.Webhooks;
+using Aloha.Domain.Services.Theme.ColorUtilities;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Aloha.Domain.Services
@@ -77,6 +78,7 @@ namespace Aloha.Domain.Services
             services.AddScoped<ILocalizationImportExportService, LocalizationImportExportService>();
             services.AddScoped<Aloha.Domain.Services.Translations.ITranslationHelper, Aloha.Domain.Services.Translations.TranslationHelper>();
             services.AddScoped<Aloha.Domain.Services.Translations.ILanguageConfigurationService, Aloha.Domain.Services.Translations.LanguageConfigurationService>();
+            services.AddScoped<IThemeEditorService, ThemeEditorService>();
 
             return services;
         }

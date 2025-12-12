@@ -16,16 +16,62 @@
 
 @inject IDbContextFactory<AlohaDb> dbFactory
 @inject IJSRuntime js
-@inject UserManager<AdminUser> UserManager
-@inject IAdminActivityService adminActivityService
+@inject IServiceProvider ServiceProvider
 @inject AuthenticationStateProvider authStateProvider
 @inject IHttpContextAccessor HttpContextAccessor
 @inject Aloha.Domain.Services.Translations.ITranslationHelper TranslationHelper
 @rendermode InteractiveServer
 
-<h3>Questionnaire Review</h3>
+@if (Questionnaire != null)
+{
+    @* Component mode - render questionnaire card *@
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div class="flex-grow-1 me-3">
+                    <h5 class="card-title mb-2">@displayedQuestionnaireName</h5>
+                    @if (!string.IsNullOrWhiteSpace(displayedQuestionnaireDescription))
+                    {
+                        <p class="card-text text-muted mb-2">@displayedQuestionnaireDescription</p>
+                    }
+                    @if (ApplicationProductNames != null && ApplicationProductNames.Any())
+                    {
+                        <p class="text-muted small mb-0">
+                            @string.Join(", ", ApplicationProductNames)
+                        </p>
+                    }
+                </div>
+                <div class="flex-shrink-0">
+                    @if (IsComplete)
+                    {
+                        <span class="badge bg-success">Complete</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-warning">Incomplete</span>
+                    }
+                </div>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                @if (QuestionnaireResponseId.HasValue)
+                {
+                    <a href="@GetViewResponseUrl()" class="btn btn-outline-primary btn-sm rounded">View Response</a>
+                    <a href="@GetEditResponseUrl()" class="btn btn-primary btn-sm rounded">Edit Response</a>
+                }
+                else
+                {
+                    <a href="@GetFillOutUrl()" class="btn btn-primary btn-sm rounded">@(IsComplete ? "Fill Out Again" : "Fill Out")</a>
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @* Page mode - render reports page *@
+    <h3>Questionnaire Review</h3>
 
-<div class="mb-2">
+    <div class="mb-2">
     <div class="d-flex justify-content-between">
         <div>
             <button type="button" class="btn btn-outline-primary" @onclick="() => { filterCollapseRef?.ToggleAsync(); }">
@@ -148,8 +194,34 @@ Responsive="true"
         </GridColumn>
     </GridColumns>
 </Grid>
+}
 
 @code {
+    @* Component Parameters - used when this file is referenced as a component *@
+    [Parameter]
+    public Questionnaire? Questionnaire { get; set; }
+
+    [Parameter]
+    public bool IsComplete { get; set; }
+
+    [Parameter]
+    public int? QuestionnaireResponseId { get; set; }
+
+    [Parameter]
+    public int? ApplicationPersonId { get; set; }
+
+    [Parameter]
+    public int? ApplicationLoanProductId { get; set; }
+
+    [Parameter]
+    public int? ApplicationShareProductId { get; set; }
+
+    [Parameter]
+    public IList<string>? ApplicationProductNames { get; set; }
+
+    @* Component state for displaying questionnaire card *@
+    private string displayedQuestionnaireName = "";
+    private string? displayedQuestionnaireDescription = null;
 
     private Grid<QuestionnaireResponse>? gridRef;
     private readonly QuestionnaireSearchOptions searchOptions = new();
@@ -167,9 +239,27 @@ Responsive="true"
             .Where(status => status != UserApplicationStatusType.Declined)
             .ToArray();
     private AdminUser? AdminUser = default!;
+    
+    private UserManager<AdminUser>? GetUserManager() => ServiceProvider.GetService<UserManager<AdminUser>>();
+    private IAdminActivityService? GetAdminActivityService() => ServiceProvider.GetService<IAdminActivityService>();
 
     protected override async Task OnInitializedAsync()
     {
+        if (Questionnaire != null)
+        {
+            @* Component mode - load translations *@
+            var currentCulture = GetCurrentCulture();
+            Console.WriteLine($"[QuestionnaireCard] OnInitializedAsync - Questionnaire Id: {Questionnaire.Id}, Culture: {currentCulture ?? "null"}");
+            Console.WriteLine($"[QuestionnaireCard] Questionnaire.Name (entity): '{Questionnaire.Name}'");
+            displayedQuestionnaireName = await TranslationHelper.GetLocalTextAsync(Questionnaire, "Name", currentCulture) ?? Questionnaire.Name ?? "";
+            displayedQuestionnaireDescription = await TranslationHelper.GetLocalTextAsync(Questionnaire, "Description", currentCulture);
+            Console.WriteLine($"[QuestionnaireCard] displayedQuestionnaireName (translated): '{displayedQuestionnaireName}'");
+            Console.WriteLine($"[QuestionnaireCard] displayedQuestionnaireDescription (translated): '{displayedQuestionnaireDescription ?? "null"}'");
+            StateHasChanged(); // Ensure UI updates after loading translations
+            return;
+        }
+
+        @* Page mode - load reports data *@
         await using var db = await dbFactory.CreateDbContextAsync();
         productAppTypes = await db.ProductApplicationTypes.ToArrayAsync();
 
@@ -192,12 +282,107 @@ Responsive="true"
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && Questionnaire == null)
         {
-            var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
-            AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
-            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Reporting, $"Admin user viewed the Questionnaire report.");
+            var userManager = GetUserManager();
+            if (userManager != null)
+            {
+                var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+                AdminUser = await userManager.FindByEmailAsync(authUser.Identity!.Name!);
+                var activityService = GetAdminActivityService();
+                if (activityService != null && AdminUser != null)
+                {
+                    await activityService.TrackAdminUserActivityAsync(AdminUser, AdminActivityType.Reporting, $"Admin user viewed the Questionnaire report.");
+                }
+            }
         }
+    }
+
+    @* Component helper methods *@
+    private string? GetCurrentCulture()
+    {
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext != null)
+        {
+            var requestCulture = httpContext.Features.Get<Microsoft.AspNetCore.Localization.IRequestCultureFeature>();
+            if (requestCulture?.RequestCulture?.Culture != null)
+            {
+                var cultureName = requestCulture.RequestCulture.Culture.Name;
+                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
+                {
+                    return cultureName;
+                }
+                else if (cultureName.StartsWith("en"))
+                {
+                    return "en-US";
+                }
+                else if (cultureName.StartsWith("es"))
+                {
+                    return "es-CR";
+                }
+            }
+        }
+        return null;
+    }
+
+    private string GetFillOutUrl()
+    {
+        if (ApplicationPersonId.HasValue)
+        {
+            return $"/applications/people/{ApplicationPersonId.Value}/questionnaires/{Questionnaire!.Id}/respond";
+        }
+        else if (ApplicationLoanProductId.HasValue)
+        {
+            return $"/applications/products/Loan/{ApplicationLoanProductId.Value}/questionnaires/{Questionnaire!.Id}/respond";
+        }
+        else if (ApplicationShareProductId.HasValue)
+        {
+            return $"/applications/products/Share/{ApplicationShareProductId.Value}/questionnaires/{Questionnaire!.Id}/respond";
+        }
+        else
+        {
+            return $"/applications/questionnaires/{Questionnaire!.Id}/respond";
+        }
+    }
+
+    private string GetViewResponseUrl()
+    {
+        if (QuestionnaireResponseId.HasValue)
+        {
+            if (ApplicationPersonId.HasValue)
+            {
+                return $"/applications/people/questionnaires/responses/{QuestionnaireResponseId.Value}";
+            }
+            else if (ApplicationLoanProductId.HasValue || ApplicationShareProductId.HasValue)
+            {
+                return $"/applications/products/questionnaires/responses/{QuestionnaireResponseId.Value}";
+            }
+            else
+            {
+                return $"/applications/questionnaires/responses/{QuestionnaireResponseId.Value}";
+            }
+        }
+        return "#";
+    }
+
+    private string GetEditResponseUrl()
+    {
+        if (QuestionnaireResponseId.HasValue)
+        {
+            if (ApplicationPersonId.HasValue)
+            {
+                return $"/applications/people/questionnaires/responses/{QuestionnaireResponseId.Value}/edit";
+            }
+            else if (ApplicationLoanProductId.HasValue || ApplicationShareProductId.HasValue)
+            {
+                return $"/applications/products/questionnaires/responses/{QuestionnaireResponseId.Value}/edit";
+            }
+            else
+            {
+                return $"/applications/questionnaires/responses/{QuestionnaireResponseId.Value}/edit";
+            }
+        }
+        return "#";
     }
 
     private async Task SearchQuestionnairesAsync()
@@ -256,41 +441,6 @@ Responsive="true"
         }
     }
 
-    private string? GetCurrentCulture()
-    {
-        var httpContext = HttpContextAccessor.HttpContext;
-        if (httpContext != null)
-        {
-            var requestCulture = httpContext.Features.Get<Microsoft.AspNetCore.Localization.IRequestCultureFeature>();
-            if (requestCulture?.RequestCulture?.Culture != null)
-            {
-                var cultureName = requestCulture.RequestCulture.Culture.Name;
-                System.Diagnostics.Debug.WriteLine($"[Questionnaires] GetCurrentCulture: Detected culture from HttpContext: {cultureName}");
-                // Map to supported cultures
-                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
-                {
-                    return cultureName;
-                }
-                else if (cultureName.StartsWith("en"))
-                {
-                    return "en-US";
-                }
-                else if (cultureName.StartsWith("es"))
-                {
-                    return "es-CR";
-                }
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("[Questionnaires] GetCurrentCulture: IRequestCultureFeature is null or culture is null");
-            }
-        }
-        else
-        {
-            System.Diagnostics.Debug.WriteLine("[Questionnaires] GetCurrentCulture: HttpContext is null");
-        }
-        return null;
-    }
 
     private async Task<GridDataProviderResult<QuestionnaireResponse>> DataProvider(
         GridDataProviderRequest<QuestionnaireResponse> request)
@@ -302,7 +452,11 @@ Responsive="true"
     {
         var csvContent = await CreateCsvContentFromResponseList(questionnaireResponses);
         await js.InvokeVoidAsync("downloadFile", CsvFileName, "text/csv", "utf-8", csvContent);
-        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Reporting, $"Admin user exported the Questionnaire report.");
+        var activityService = GetAdminActivityService();
+        if (activityService != null && AdminUser != null)
+        {
+            await activityService.TrackAdminUserActivityAsync(AdminUser, AdminActivityType.Reporting, $"Admin user exported the Questionnaire report.");
+        }
     }
 
     private async Task<string> CreateCsvContentFromResponseList(IList<QuestionnaireResponse> responses)

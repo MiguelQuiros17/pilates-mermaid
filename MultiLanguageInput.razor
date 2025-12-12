@@ -158,23 +158,31 @@
             // If selected culture is primary language, return the primary language value
             if (SelectedCulture == primaryLanguage)
             {
-                return EnglishValue ?? string.Empty;
+                var result = EnglishValue ?? string.Empty;
+                Console.WriteLine($"[MultiLanguageInput.DisplayValue GET] SelectedCulture={SelectedCulture}, primaryLanguage={primaryLanguage}, returning EnglishValue: '{result}'");
+                return result;
             }
             // Otherwise, return the translation from the dictionary
-            return Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
+            var translation = Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
+            Console.WriteLine($"[MultiLanguageInput.DisplayValue GET] SelectedCulture={SelectedCulture}, primaryLanguage={primaryLanguage}, returning translation: '{translation}'");
+            return translation;
         }
         set
         {
+            Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] SelectedCulture={SelectedCulture}, primaryLanguage={primaryLanguage}, value: '{value}'");
             // If selected culture is primary language, update the primary language value
             if (SelectedCulture == primaryLanguage)
             {
+                Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] Updating EnglishValue (primary language) from '{EnglishValue}' to '{value}'");
                 EnglishValue = value;
                 EnglishValueChanged.InvokeAsync(value);
             }
             else
             {
                 // Update the translation in the dictionary
+                Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] Updating Translations[{SelectedCulture}] from '{Translations.GetValueOrDefault(SelectedCulture)}' to '{value}'");
                 Translations[SelectedCulture] = value;
+                Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] Translations dictionary now: {string.Join(", ", Translations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"))}");
                 TranslationsChanged.InvokeAsync(Translations);
             }
             OnValueChanged.InvokeAsync();

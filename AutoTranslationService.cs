@@ -121,10 +121,16 @@ namespace Aloha.Domain.Services.Translations
                     await db.SaveChangesAsync(cancellationToken);
                 }
 
-                // Get all English (en-US) strings, EXCLUDING entity-specific translations (e.g., ProductApplicationType.*)
-                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                // Get all English (en-US) strings, EXCLUDING entity-specific translations
+                // Entity-specific translations (Questionnaire, Question, QuestionGroup, MultipleChoiceOption, ProductApplicationType, etc.)
+                // are managed separately in admin and should not be processed by AutoTranslationService
                 var englishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == englishCulture.Id
-                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
+                    && !s.ResourceKey.StartsWith("ProductApplicationType.")
+                    && !s.ResourceKey.StartsWith("Questionnaire.")
+                    && !s.ResourceKey.StartsWith("Question.")
+                    && !s.ResourceKey.StartsWith("QuestionGroup.")
+                    && !s.ResourceKey.StartsWith("MultipleChoiceOption.")
+                    && !s.ResourceKey.StartsWith("DependentMultipleChoiceOption."));
                 var englishStrings = await englishQuery.ToListAsync(cancellationToken);
 
                 if (!englishStrings.Any())
@@ -134,9 +140,14 @@ namespace Aloha.Domain.Services.Translations
                 }
 
                 // Get all existing Spanish (es-CR) strings AFTER import, EXCLUDING entity-specific translations
-                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                // Entity-specific translations are managed separately in admin and should not be processed by AutoTranslationService
                 var spanishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id
-                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
+                    && !s.ResourceKey.StartsWith("ProductApplicationType.")
+                    && !s.ResourceKey.StartsWith("Questionnaire.")
+                    && !s.ResourceKey.StartsWith("Question.")
+                    && !s.ResourceKey.StartsWith("QuestionGroup.")
+                    && !s.ResourceKey.StartsWith("MultipleChoiceOption.")
+                    && !s.ResourceKey.StartsWith("DependentMultipleChoiceOption."));
                 var spanishStringsList = await spanishQuery.ToListAsync(cancellationToken);
                 
                 // Note: Duplicate keys in the database are fine - IStringLocalizer matches by both Key AND ResourceKey
@@ -210,8 +221,10 @@ namespace Aloha.Domain.Services.Translations
                     .Where(e =>
                     {
                         var spanish = spanishStrings[e.Key];
-                        var englishText = e.CurrentText ?? e.DefaultText;
-                        var spanishText = spanish.CurrentText ?? spanish.DefaultText;
+                        // IMPORTANT: Only use DefaultText for comparison, NOT CurrentText (overrides)
+                        // Overrides should only exist in the database, not in JSON/TXT files
+                        var englishText = e.DefaultText ?? string.Empty;
+                        var spanishText = spanish.DefaultText ?? string.Empty;
                         
                         // If Spanish text matches English text, it means either:
                         // - It was never translated (Spanish was created with English text)
@@ -353,8 +366,9 @@ namespace Aloha.Domain.Services.Translations
                 {
                     try
                     {
-                        // Use CurrentText if available, otherwise DefaultText
-                        var englishText = englishString.CurrentText ?? englishString.DefaultText;
+                        // IMPORTANT: Only use DefaultText for JSON/TXT export, NOT CurrentText (overrides)
+                        // Overrides should only exist in the database, not in JSON/TXT files
+                        var englishText = englishString.DefaultText ?? string.Empty;
                         
                         if (string.IsNullOrWhiteSpace(englishText))
                         {
@@ -535,9 +549,14 @@ namespace Aloha.Domain.Services.Translations
 
                 // Always create/update JSON and text files with all English strings
                 // Build lookup of existing Spanish DB translations keyed by (baseKey, resourceKey)
-                // EXCLUDE entity-specific translations (they're managed separately)
+                // EXCLUDE entity-specific translations (they're managed separately in admin)
                 var spanishQueryForFiles = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id
-                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
+                    && !s.ResourceKey.StartsWith("ProductApplicationType.")
+                    && !s.ResourceKey.StartsWith("Questionnaire.")
+                    && !s.ResourceKey.StartsWith("Question.")
+                    && !s.ResourceKey.StartsWith("QuestionGroup.")
+                    && !s.ResourceKey.StartsWith("MultipleChoiceOption.")
+                    && !s.ResourceKey.StartsWith("DependentMultipleChoiceOption."));
                 var spanishStringsListForFiles = await spanishQueryForFiles.ToListAsync(cancellationToken);
 
                 var spanishByKeyAndResource = spanishStringsListForFiles
@@ -549,7 +568,8 @@ namespace Aloha.Domain.Services.Translations
                     .ToDictionary(
                         g => (Key: g.Key.BaseKey, g.Key.ResourceKey),
                         g => g.OrderBy(x => x.Key.Length)
-                              .Select(x => x.CurrentText ?? x.DefaultText ?? string.Empty)
+                              // IMPORTANT: Only use DefaultText for JSON/TXT export, NOT CurrentText (overrides)
+                              .Select(x => x.DefaultText ?? string.Empty)
                               .FirstOrDefault() ?? string.Empty
                     );
 
@@ -741,9 +761,14 @@ namespace Aloha.Domain.Services.Translations
                 var localizationSet = db.Set<LocalizationString>();
 
                 // Load existing Spanish strings for this culture, EXCLUDING entity-specific translations
-                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                // Entity-specific translations are managed separately in admin and should not be processed by AutoTranslationService
                 var spanishQuery = Queryable.Where(localizationSet, s => s.LocalizationCultureId == spanishCulture.Id
-                    && !s.ResourceKey.StartsWith("ProductApplicationType."));
+                    && !s.ResourceKey.StartsWith("ProductApplicationType.")
+                    && !s.ResourceKey.StartsWith("Questionnaire.")
+                    && !s.ResourceKey.StartsWith("Question.")
+                    && !s.ResourceKey.StartsWith("QuestionGroup.")
+                    && !s.ResourceKey.StartsWith("MultipleChoiceOption.")
+                    && !s.ResourceKey.StartsWith("DependentMultipleChoiceOption."));
                 var spanishStringsList = await spanishQuery.ToListAsync(cancellationToken);
 
                 // Find English culture
@@ -757,10 +782,15 @@ namespace Aloha.Domain.Services.Translations
                 }
 
                 // Load all English strings, EXCLUDING entity-specific translations
-                // Entity-specific translations are managed separately and should not be processed by AutoTranslationService
+                // Entity-specific translations are managed separately in admin and should not be processed by AutoTranslationService
                 var englishStringsAll = await localizationSet
                     .Where(s => s.LocalizationCultureId == englishCulture.Id
-                        && !s.ResourceKey.StartsWith("ProductApplicationType."))
+                        && !s.ResourceKey.StartsWith("ProductApplicationType.")
+                        && !s.ResourceKey.StartsWith("Questionnaire.")
+                        && !s.ResourceKey.StartsWith("Question.")
+                        && !s.ResourceKey.StartsWith("QuestionGroup.")
+                        && !s.ResourceKey.StartsWith("MultipleChoiceOption.")
+                        && !s.ResourceKey.StartsWith("DependentMultipleChoiceOption."))
                     .ToListAsync(cancellationToken);
 
                 // Group and order English by key, build (key, index) → EnglishString map
@@ -851,7 +881,8 @@ namespace Aloha.Domain.Services.Translations
 
                     if (existingString != null)
                     {
-                        var currentText = existingString.CurrentText ?? existingString.DefaultText ?? string.Empty;
+                        // IMPORTANT: Only use DefaultText for JSON/TXT export, NOT CurrentText (overrides)
+                        var currentText = existingString.DefaultText ?? string.Empty;
 
                         // Always update if the values differ (including empty -> value, value -> empty, or value -> different value)
                         if (!string.Equals(currentText, translationValue, StringComparison.Ordinal))
@@ -968,7 +999,9 @@ namespace Aloha.Domain.Services.Translations
                         var numberedKey = $"{originalKey}#{occurrence}";
                         var keyForFile = numberedKey; // always show the #id in the file
 
-                        var english = (englishString.CurrentText ?? englishString.DefaultText ?? string.Empty)
+                        // IMPORTANT: Only use DefaultText for JSON/TXT export, NOT CurrentText (overrides)
+                        // Overrides should only exist in the database, not in JSON/TXT files
+                        var english = (englishString.DefaultText ?? string.Empty)
                             .Replace("\r\n", " ")
                             .Replace("\n", " ")
                             .Replace("\r", " ");

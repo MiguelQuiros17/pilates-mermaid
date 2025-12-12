@@ -13,15 +13,6 @@
           Context="dependentMultipleChoiceOptionFormContext"
           OnSubmit="HandleSubmitAsync">
     <FluentValidationValidator/>
-    @* Bulk translate button at the top *@
-    <BulkTranslateButton @ref="bulkTranslateButton"
-                        SelectedCulture="@bulkSelectedCulture"
-                        SelectedCultureChanged="@OnBulkCultureChanged"
-                        OnBulkTranslate="@OnBulkTranslateAll"
-                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                        HasEnglishTextFunc="@HasEnglishText" />
-
     @* Multi-language input for Option Name *@
     <MultiLanguageInput Label="Option Name"
                        FieldId="dependentOptionName"
@@ -32,8 +23,8 @@
                        EnglishValueChanged="@((string value) => input.Name = value)"
                        Translations="@input.NameTranslations"
                        TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       SelectedCultureOverride="@SelectedCulture"
+                       SelectedCultureOverrideChanged="@((string culture) => { })" />
 
     <div class="mb-2">
         <InputCheckbox class="form-check-input"
@@ -55,8 +46,8 @@
                            EnglishValueChanged="@((string value) => input.FreeFormFieldDescription = value)"
                            Translations="@input.FreeFormFieldDescriptionTranslations"
                            TranslationsChanged="@((Dictionary<string, string> trans) => input.FreeFormFieldDescriptionTranslations = trans)"
-                           SelectedCultureOverride="@bulkSelectedCulture"
-                           SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                           SelectedCultureOverride="@SelectedCulture"
+                           SelectedCultureOverrideChanged="@((string culture) => { })" />
     }
     <div class="d-flex flex-column">
         @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
@@ -86,9 +77,6 @@
     private Input input = default!;
     private ValidationMessageStore messageStore = default!;
     private EditContext editContext = default!;
-    private string bulkSelectedCulture = "en-US";
-    private string primaryLanguage = "en-US";
-    private BulkTranslateButton? bulkTranslateButton;
 
     [Parameter]
     public bool IsEditing { get; set; }
@@ -102,6 +90,9 @@
     [Parameter, EditorRequired]
     public EventCallback<Input> OnClose { get; set; }
 
+    [Parameter]
+    public string SelectedCulture { get; set; } = "en-US";
+
     protected override void OnInitialized()
     {
         initialValues = InitialValues;
@@ -112,21 +103,6 @@
         editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-        bulkSelectedCulture = primaryLanguage;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-            bulkSelectedCulture = primaryLanguage;
-            StateHasChanged();
-        }
-    }
 
     protected override void OnParametersSet()
     {
@@ -252,168 +228,6 @@
                 RuleFor(p => p.Name).NotEmpty().WithMessage("Dependent option name is required");
             });
         }
-    }
-
-    private async Task OnBulkCultureChanged(string culture)
-    {
-        bulkSelectedCulture = culture;
-        StateHasChanged();
-    }
-
-    private bool HasEnglishText()
-    {
-        return !string.IsNullOrWhiteSpace(input.Name) ||
-               !string.IsNullOrWhiteSpace(input.FreeFormFieldDescription);
-    }
-
-    private List<string> GetFieldsWithExistingText()
-    {
-        var fields = new List<string>();
-        if (input.NameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
-        {
-            fields.Add("Option Name");
-        }
-        if (input.FreeFormFieldDescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
-        {
-            fields.Add("Free Form Field Helper Text");
-        }
-        return fields;
-    }
-
-    private async Task OnBulkTranslateAll()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == primaryLanguage)
-        {
-            return;
-        }
-
-        var errors = new List<string>();
-
-        // Translate Name
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.Name, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.NameTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Option Name: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Option Name: {ex.Message}");
-            }
-        }
-
-        // Translate FreeFormFieldDescription
-        if (!string.IsNullOrWhiteSpace(input.FreeFormFieldDescription))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.FreeFormFieldDescription, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.FreeFormFieldDescriptionTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Free Form Field Helper Text: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Free Form Field Helper Text: {ex.Message}");
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
-    }
-
-    private async Task OnBulkTranslateAllLanguages()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
-        var errors = new List<string>();
-
-        // Translate Name to all languages
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                if (lang == primaryLanguage) continue;
-                
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.Name, lang);
-                    if (translated != null)
-                    {
-                        input.NameTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Option Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Option Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        // Translate FreeFormFieldDescription to all languages
-        if (!string.IsNullOrWhiteSpace(input.FreeFormFieldDescription))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                if (lang == primaryLanguage) continue;
-                
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.FreeFormFieldDescription, lang);
-                    if (translated != null)
-                    {
-                        input.FreeFormFieldDescriptionTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Free Form Field Helper Text ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Free Form Field Helper Text ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
     }
 
 }

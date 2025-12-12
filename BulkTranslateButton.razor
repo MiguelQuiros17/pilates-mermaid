@@ -5,56 +5,40 @@
 
 @if (isMultiLanguageEnabled)
 {
-    <div class="mb-3">
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <label class="form-label mb-0 fw-bold">Editing Culture:</label>
-                <InputSelect @bind-Value="SelectedCulture" 
-                            @bind-Value:after="OnCultureChanged"
-                            class="form-select" 
-                            style="width: auto; min-width: 200px;"
-                            id="bulk-culture-select">
-                    <option value="@primaryLanguage">@(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryDisplayName) ? primaryDisplayName : primaryLanguage) (Primary)</option>
-                    @foreach (var lang in AvailableLanguages)
-                    {
-                        <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
-                    }
-                </InputSelect>
-            </div>
-            @if (SelectedCulture == primaryLanguage)
-            {
-                <button type="button" 
-                        class="btn btn-primary"
-                        @onclick="OnBulkTranslateAllLanguagesClick"
-                        disabled="@(isTranslating || !HasEnglishText)">
-                    @if (isTranslating)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                    }
-                    Bulk Translate All Languages
-                </button>
-            }
-            else
-            {
-                <button type="button" 
-                        class="btn btn-primary"
-                        @onclick="OnBulkTranslateClick"
-                        disabled="@(isTranslating || !HasEnglishText)">
-                    @if (isTranslating)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                    }
-                    Auto-Translate to fill all @(languageDisplayNames.TryGetValue(SelectedCulture, out var selectedDisplayName) ? selectedDisplayName : SelectedCulture) fields
-                </button>
-            }
-        </div>
+    <div class="mb-0">
+        @if (SelectedCulture == primaryLanguage)
+        {
+            <button type="button" 
+                    class="btn btn-primary"
+                    @onclick="OnBulkTranslateAllLanguagesClick"
+                    disabled="@(isTranslating || !HasEnglishText)">
+                @if (isTranslating)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                Bulk Translate All Languages
+            </button>
+        }
+        else
+        {
+            <button type="button" 
+                    class="btn btn-primary"
+                    @onclick="OnBulkTranslateClick"
+                    disabled="@(isTranslating || !HasEnglishText)">
+                @if (isTranslating)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                Auto-Translate to fill all @(languageDisplayNames.TryGetValue(SelectedCulture, out var selectedDisplayName) ? selectedDisplayName : SelectedCulture) fields
+            </button>
+        }
     
-    @if (!string.IsNullOrWhiteSpace(TranslationError))
-    {
-        <div class="alert alert-danger mt-2" role="alert">
-            <strong>Translation Error:</strong> @TranslationError
-        </div>
-    }
+        @if (!string.IsNullOrWhiteSpace(TranslationError))
+        {
+            <div class="alert alert-danger mt-2" role="alert">
+                <strong>Translation Error:</strong> @TranslationError
+            </div>
+        }
     </div>
 }
 

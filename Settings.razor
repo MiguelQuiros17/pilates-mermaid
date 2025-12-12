@@ -1,0 +1,230 @@
+@page "/application/settings"
+
+@rendermode InteractiveServer
+
+@implements IDisposable
+
+@using Microsoft.AspNetCore.Localization
+
+@using Microsoft.AspNetCore.Http
+
+@using System.Globalization
+
+@using Aloha.Customer.Web.Components.Features.Applications.Settings
+
+@inject IJSRuntime js
+
+@inject IAppVisualStateProvider visualStateProvider
+
+@inject IStringLocalizer<Index> l
+
+@inject NavigationManager Nav
+
+@inject IHttpContextAccessor HttpContextAccessor
+
+<h1>@l["page-heading"]</h1>
+
+<p>@l["page-description"]</p>
+
+<LanguageSelector />
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="card-title m-0">@l["appearance-section-heading"]</h5>
+    </div>
+    <div class="card-body">
+        <p>@l["appearance-section-description"]</p>
+        <div class="form-check form-switch">
+            <InputCheckbox 
+                Value="visualStateProvider.IsDarkMode"
+                ValueExpression="() => visualStateProvider.IsDarkMode"
+                ValueChanged="(value) => { visualStateProvider.SetIsDarkMode(value); }"
+                class="form-check-input" 
+                role="switch" 
+                id="dark-mode-settings-switch"
+            />
+            <label class="form-check-label" for="dark-mode-settings-switch">
+                @l["appearance-section-color-mode-label"]
+            </label>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="form-check form-switch mb-3">
+            <InputCheckbox
+                class="form-check-input"
+                id="colorblind-mode-settings-switch"
+                role="switch"
+                Value="isColorblindModeEnabled"
+                ValueExpression="() => isColorblindModeEnabled"
+                ValueChanged="async (value) => await ToggleColorblindMode(value)" />
+            <label class="form-check-label" for="colorblind-mode-settings-switch">
+                @l["colorblind-section-enable-label"]
+            </label>
+        </div>
+
+        @if (isColorblindModeEnabled)
+        {
+            <fieldset>
+                <legend class="form-label mb-2">
+                    @l["colorblind-section-mode-label"]
+                </legend>
+
+                <InputRadioGroup
+                    Name="colorblind-mode"
+                    @bind-Value="selectedColorblindMode"
+                    @bind-Value:after="async () => await HandleColorblindModeChange(selectedColorblindMode)">
+
+                    @foreach (var mode in colorblindModes)
+                    {
+                        <div class="form-check d-flex align-items-center justify-content-between mb-2">
+                            <div>
+                                <InputRadio
+                                    class="form-check-input"
+                                    Name="colorblind-mode"
+                                    id=@($"colorblind-radio-{mode.Id}")
+                                    Value="@mode.Id" />
+                                <label
+                                    class="form-check-label ms-2"
+                                    for=@($"colorblind-radio-{mode.Id}")>
+                                    @mode.Label
+                                </label>
+                            </div>
+                            <div class=@($"colorblind-swatch colorblind-swatch-{mode.Id}") aria-hidden="true"></div>
+                        </div>
+                    }
+                </InputRadioGroup>
+            </fieldset>
+        }
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header">
+        <h5 class="card-title m-0">@l["font-section-heading"]</h5>
+    </div>
+    <div class="card-body">
+        <p>@l["font-section-description"]</p>
+        <fieldset>
+            <legend class="form-label mb-2">@l["font-section-preferred-font-label"]</legend>
+            <InputRadioGroup 
+                Name="preferred-font"
+                @bind-Value="preferredFont"
+                @bind-Value:after="async () => { await HandleFontChange(preferredFont); }"
+            >
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-dmsans" Value="@("dmsans")"/>
+                    <label for="font-radio-dmsans" class="form-check-label" style="font-family: 'DM Sans'">Default</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-arial" Value="@("arial")"/>
+                    <label for="font-radio-arial" class="form-check-label" style="font-family: 'Arial'">Arial</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-times" Value="@("times")"/>
+                    <label for="font-radio-times" class="form-check-label" style="font-family: 'Times New Roman'">Times New Roman</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-verdana" Value="@("verdana")"/>
+                    <label for="font-radio-verdana" class="form-check-label" style="font-family: 'Verdana'">Verdana</label>
+                </div>
+                <div class="form-check">    
+                    <InputRadio class="form-check-input" Name="preferred-font" id="font-radio-opendyslexic" Value="@("opendyslexic")"/>
+                    <label for="font-radio-opendyslexic" class="form-check-label" style="font-family: OpenDyslexic">OpenDyslexic</label>
+                </div>    
+            </InputRadioGroup>
+            <p class="form-text mb-0">@l["font-section-preferred-font-caption"]</p>
+        </fieldset>
+    </div>
+</div>
+
+@code {
+
+    private string? preferredFont = null;
+
+    private bool isColorblindModeEnabled;
+    private string? selectedColorblindMode;
+
+    private sealed class ColorblindModeOption
+    {
+        public string Id { get; init; } = default!;
+        public string Label { get; init; } = default!;
+    }
+
+    private readonly List<ColorblindModeOption> colorblindModes = new()
+    {
+        new() { Id = "achromatopsia", Label = "Achromatopsia" },
+        new() { Id = "achromatomaly", Label = "Achromatomaly" },
+        new() { Id = "deuteranomaly", Label = "Deuteranomaly" },
+        new() { Id = "deuteranopia",  Label = "Deuteranopia" },
+        new() { Id = "protanomaly",   Label = "Protanomaly" },
+        new() { Id = "protanopia",    Label = "Protanopia" },
+        new() { Id = "tritanomaly",   Label = "Tritanomaly" },
+        new() { Id = "tritanopia",    Label = "Tritanopia" }
+    };
+
+    protected override void OnInitialized()
+    {
+        visualStateProvider.OnChange += HandleVisualStateChanged;
+    }
+
+    private void HandleVisualStateChanged()
+    {
+        // Ensure we're on the right sync context
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        visualStateProvider.OnChange -= HandleVisualStateChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Font
+            var font = await js.InvokeAsync<string>("AlohaThemeManager.getPreferredFont");
+            preferredFont = string.IsNullOrWhiteSpace(font) ? "dmsans" : font;
+
+            // Colorblind mode
+            var mode = await js.InvokeAsync<string?>("AlohaThemeManager.getColorblindMode");
+            selectedColorblindMode = string.IsNullOrWhiteSpace(mode) ? null : mode;
+            isColorblindModeEnabled = selectedColorblindMode is not null;
+
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleFontChange(string? font)
+    {
+        await js.InvokeVoidAsync("AlohaThemeManager.changeFont", font);
+    }
+
+    private async Task ApplyCurrentColorblindStateAsync()
+    {
+        if (!isColorblindModeEnabled || string.IsNullOrWhiteSpace(selectedColorblindMode))
+        {
+            await js.InvokeVoidAsync("AlohaThemeManager.setColorblindMode", (string?)null);
+            return;
+        }
+
+        await js.InvokeVoidAsync("AlohaThemeManager.setColorblindMode", selectedColorblindMode);
+    }
+
+    private async Task ToggleColorblindMode(bool enabled)
+    {
+        isColorblindModeEnabled = enabled;
+
+        if (enabled && string.IsNullOrWhiteSpace(selectedColorblindMode))
+            selectedColorblindMode = "deuteranopia";
+
+        await ApplyCurrentColorblindStateAsync();
+    }
+
+    private async Task HandleColorblindModeChange(string? mode)
+    {
+        selectedColorblindMode = mode;
+        await ApplyCurrentColorblindStateAsync();
+    }
+}
+

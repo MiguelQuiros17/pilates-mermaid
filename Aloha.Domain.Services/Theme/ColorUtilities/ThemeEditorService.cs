@@ -13,12 +13,18 @@ public class ThemeEditorService : IThemeEditorService
     private readonly IDbContextFactory<AlohaDb> _dbFactory;
     private readonly IConfiguration _config;
     private readonly ILogger<ThemeEditorService> _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public ThemeEditorService(IDbContextFactory<AlohaDb> dbFactory, IConfiguration config, ILogger<ThemeEditorService> logger)
+    public ThemeEditorService(
+        IDbContextFactory<AlohaDb> dbFactory, 
+        IConfiguration config, 
+        ILogger<ThemeEditorService> logger,
+        IHttpClientFactory httpClientFactory)
     {
         _dbFactory = dbFactory;
         _config = config;
         _logger = logger;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<string> FetchActiveBootstrapCssAsync(string webRootPath, string contentRootPath)
@@ -216,20 +222,118 @@ public class ThemeEditorService : IThemeEditorService
 
     private async Task<string?> TryReadStaticFileFromCandidatesAsync(IEnumerable<string> candidates)
     {
-        foreach (var p in candidates)
+        foreach (var candidate in candidates)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(p) || !File.Exists(p)) continue;
-                var txt = await File.ReadAllTextAsync(p);
-                if (!string.IsNullOrWhiteSpace(txt)) return txt;
+                if (string.IsNullOrWhiteSpace(candidate)) continue;
+                
+                // Resolve full path to handle relative paths correctly
+                string fullPath;
+                try
+                {
+                    fullPath = Path.GetFullPath(candidate);
+                }
+                catch
+                {
+                    // Invalid path, skip
+                    continue;
+                }
+                
+                // Quick check - if directory doesn't exist, skip immediately
+                var directory = Path.GetDirectoryName(fullPath);
+                if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                {
+                    continue;
+                }
+                
+                // Check if file exists (this is faster than reading non-existent files)
+                if (!File.Exists(fullPath))
+                {
+                    continue;
+                }
+                
+                // File exists, read it
+                var txt = await File.ReadAllTextAsync(fullPath);
+                if (!string.IsNullOrWhiteSpace(txt))
+                {
+                    return txt;
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to read static file candidate: {FilePath}", p);
+                // Only log if it's not a "file not found" type error
+                if (ex is not FileNotFoundException && ex is not DirectoryNotFoundException)
+                {
+                    _logger.LogDebug(ex, "Failed to read static file candidate: {FilePath}", candidate);
+                }
             }
         }
         return null;
+    }
+
+    public async Task<string> FetchBootstrapCssViaHttpAsync(string baseUrl, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient("ThemeEditor");
+            using var response = await client.GetAsync($"{baseUrl}/api/branding/css/bootstrap", cancellationToken);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    _logger.LogInformation("Successfully fetched Bootstrap CSS via API: {Length} bytes", content.Length);
+                    return content;
+                }
+                else
+                {
+                    _logger.LogWarning("API returned empty content for Bootstrap CSS");
+                }
+            }
+            else
+            {
+                _logger.LogWarning("API returned non-success status for Bootstrap CSS: {Status}", response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch Bootstrap CSS via HTTP API");
+        }
+        return string.Empty;
+    }
+
+    public async Task<string> FetchAdditionalCssViaHttpAsync(string baseUrl, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient("ThemeEditor");
+            using var response = await client.GetAsync($"{baseUrl}/api/branding/css/custom-overrides", cancellationToken);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    _logger.LogInformation("Successfully fetched Additional CSS via API: {Length} bytes", content.Length);
+                    return content;
+                }
+                else
+                {
+                    _logger.LogWarning("API returned empty content for Additional CSS");
+                }
+            }
+            else
+            {
+                _logger.LogWarning("API returned non-success status for Additional CSS: {Status}", response.StatusCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch Additional CSS via HTTP API");
+        }
+        return string.Empty;
     }
 }
 

@@ -12,7 +12,6 @@
     "server": "nodemon server/index.js",
     "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
     "init-data": "node scripts/init-sample-data.js",
-    "init-classes": "node scripts/initialize-classes.js",
     "send-birthdays": "node scripts/send-birthday-notifications.js",
     "send-expirations": "node scripts/send-expiration-notifications.js",
     "backup": "node scripts/backup-database.js backup",

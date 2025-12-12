@@ -430,8 +430,25 @@
     {
         try
         {
+            // Try file system first (fast)
             bootstrapCssText = await themeEditorService.FetchActiveBootstrapCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
             additionalCssText = await themeEditorService.FetchAdditionalCssAsync(Env.WebRootPath ?? string.Empty, Env.ContentRootPath ?? string.Empty);
+            
+            // Fall back to HTTP API if file system didn't work (for Azure DevOps servers)
+            if (string.IsNullOrWhiteSpace(bootstrapCssText))
+            {
+                // Convert admin subdomain to web subdomain for API calls
+                var baseUrl = NavigationManager.BaseUri.Replace("-admin.", "-web.");
+                bootstrapCssText = await themeEditorService.FetchBootstrapCssViaHttpAsync(baseUrl);
+            }
+            
+            if (string.IsNullOrWhiteSpace(additionalCssText))
+            {
+                // Convert admin subdomain to web subdomain for API calls
+                var baseUrl = NavigationManager.BaseUri.Replace("-admin.", "-web.");
+                additionalCssText = await themeEditorService.FetchAdditionalCssViaHttpAsync(baseUrl);
+            }
+            
             colorList.Clear();
 
             CssColorExtractor.ExtractColors(bootstrapCssText ?? string.Empty, "bootstrap", colorList);
@@ -448,6 +465,7 @@
             filteredColorList = new List<ColorEntry>();
         }
     }
+    
 
     private void ApplyServerWhitelist()
     {

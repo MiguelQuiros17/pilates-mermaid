@@ -1,9 +1,13 @@
 @using Aloha.Customer.Web.Components.Common
 @using Aloha.Customer.Web.Components.Common.Forms
 @using Aloha.Domain.Questionnaires
+@using Aloha.Domain.Services.Translations
+@using Microsoft.AspNetCore.Localization
 @inject IDbContextFactory<AlohaDb> dbFactory
 @inject IStringLocalizer<MemberQuestionnaireForm> l
 @inject IStringLocalizer<SharedResources> sl
+@inject ITranslationHelper TranslationHelper
+@inject IHttpContextAccessor HttpContextAccessor
 @rendermode InteractiveServer
 
 @if (isLoading)
@@ -12,11 +16,11 @@
 }
 else
 {
-    <h2 class="h4 mb-1">@questionnaire!.Name</h2>
+    <h2 class="h4 mb-1">@displayedQuestionnaireName</h2>
 
-    @if (!string.IsNullOrWhiteSpace(questionnaire.Description))
+    @if (!string.IsNullOrWhiteSpace(displayedQuestionnaireDescription))
     {
-        <p>@questionnaire.Description</p>
+        <p>@displayedQuestionnaireDescription</p>
     }
 
     <RequiredFieldHelper/>
@@ -35,8 +39,13 @@ else
             <div class="mb-3">
                 @if (responseGroup.QuestionGroup is not null)
                 {
-                    <h3 class="h5 mb-1">@responseGroup.QuestionGroup.Name</h3>
-                    <p>@responseGroup.QuestionGroup.Description</p>
+                    var groupName = GetLocalizedText(responseGroup.QuestionGroup.Id, "Name");
+                    var groupDescription = GetLocalizedText(responseGroup.QuestionGroup.Id, "Description");
+                    <h3 class="h5 mb-1">@groupName</h3>
+                    @if (!string.IsNullOrWhiteSpace(groupDescription))
+                    {
+                        <p>@groupDescription</p>
+                    }
                 }
                 @foreach (var questionResponse in responseGroup.QuestionResponses)
                 {
@@ -45,10 +54,13 @@ else
                         <div class="mb-3">
                             <label for="@($"question-{questionResponse.Question.Id}-free-form-input")"
                                    class="form-label">
-                                @questionResponse.Question.Name
-                                @if (!string.IsNullOrWhiteSpace(questionResponse.Question.Description))
+                                @GetLocalizedText(questionResponse.Question.Id, "Name")
+                                @{
+                                    var questionDesc = GetLocalizedText(questionResponse.Question.Id, "Description");
+                                }
+                                @if (!string.IsNullOrWhiteSpace(questionDesc))
                                 {
-                                    <span> - @questionResponse.Question.Description</span>
+                                    <span> - @questionDesc</span>
                                 }
                                 @if (questionResponse.Question.IsRequired)
                                 {
@@ -68,7 +80,7 @@ else
                     {
                         <fieldset>
                             <legend class="mb-0">
-                                @questionResponse.Question.Name
+                                @GetLocalizedText(questionResponse.Question.Id, "Name")
                                 @if (questionResponse.Question.IsRequired)
                                 {
                                     <span class="text-danger">*</span>
@@ -90,7 +102,7 @@ else
                                         <label
                                             for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}")"
                                             class="form-check-label">
-                                            @multipleChoiceResponse.MultipleChoiceOption.Name
+                                            @GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "Name")
                                         </label>
                                     </div>
                                     <div style="margin-left: 2rem">
@@ -100,7 +112,7 @@ else
                                                 <label
                                                     class="form-label"
                                                     for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-free-form-field")">
-                                                    @multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName
+                                                    @GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "DependentQuestionName")
                                                 </label>
                                                 <InputText
                                                     @bind-Value="multipleChoiceResponse.FreeFormFieldValue"
@@ -114,7 +126,7 @@ else
                                         {
                                             <fieldset>
                                                 <legend
-                                                    class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                                    class="mb-0">@GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "DependentQuestionName")</legend>
                                                 <InputRadioGroup
                                                     Name="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-radio")"
                                                     @bind-Value="multipleChoiceResponse.SelectedDependentMultipleChoiceResponseId"
@@ -130,14 +142,17 @@ else
                                                             <label
                                                                 for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
                                                                 class="form-check-label">
-                                                                @depResponse.DependentMultipleChoiceOption.Name
+                                                                @GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "Name")
+                                                                @{
+                                                                    var depOptionDesc = GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "FreeFormFieldDescription");
+                                                                }
                                                                 @if (
                                                                     depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
-                                                                    !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                                    !string.IsNullOrWhiteSpace(depOptionDesc))
                                                                 {
                                                                     <span
                                                                         id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-single-select-free-form-field")">
-                                                                        - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                        - @depOptionDesc
                                                                     </span>
                                                                 }
                                                             </label>
@@ -159,7 +174,7 @@ else
                                         {
                                             <fieldset>
                                                 <legend
-                                                    class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                                    class="mb-0">@GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "DependentQuestionName")</legend>
                                                 @foreach (var depResponse in multipleChoiceResponse.DependentMultipleChoiceResponses)
                                                 {
                                                     <div class="form-check">
@@ -171,14 +186,17 @@ else
                                                         <label
                                                             for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
                                                             class="form-check-label">
-                                                            @depResponse.DependentMultipleChoiceOption.Name
+                                                            @GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "Name")
+                                                            @{
+                                                                var depOptionDescMultiple = GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "FreeFormFieldDescription");
+                                                            }
                                                             @if (
                                                                 depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
-                                                                !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                                !string.IsNullOrWhiteSpace(depOptionDescMultiple))
                                                             {
                                                                 <span
                                                                     id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-multiple-choice-free-form-field")">
-                                                                    - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                    - @depOptionDescMultiple
                                                                 </span>
                                                             }
                                                         </label>
@@ -205,7 +223,7 @@ else
                     {
                         <fieldset>
                             <legend class="mb-0">
-                                @questionResponse.Question.Name
+                                @GetLocalizedText(questionResponse.Question.Id, "Name")
                                 @if (questionResponse.Question.IsRequired)
                                 {
                                     <span class="text-danger">*</span>
@@ -222,7 +240,7 @@ else
                                         type="checkbox"/>
                                     <label for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}")"
                                            class="form-check-label">
-                                        @multipleChoiceResponse.MultipleChoiceOption.Name
+                                        @GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "Name")
                                     </label>
                                 </div>
                                 <div style="margin-left: 2rem">
@@ -232,7 +250,7 @@ else
                                             <label
                                                 class="form-label"
                                                 for="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-free-form-field")">
-                                                @multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName
+                                                @GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "DependentQuestionName")
                                             </label>
                                             <InputText
                                                 @bind-Value="multipleChoiceResponse.FreeFormFieldValue"
@@ -246,7 +264,7 @@ else
                                     {
                                         <fieldset>
                                             <legend
-                                                class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                                class="mb-0">@GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "DependentQuestionName")</legend>
                                             <InputRadioGroup
                                                 Name="@($"option-{multipleChoiceResponse.MultipleChoiceOption.Id}-radio")"
                                                 @bind-Value="multipleChoiceResponse.SelectedDependentMultipleChoiceResponseId"
@@ -261,14 +279,17 @@ else
                                                         <label
                                                             for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
                                                             class="form-check-label">
-                                                            @depResponse.DependentMultipleChoiceOption.Name
+                                                            @GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "Name")
+                                                            @{
+                                                                var depOptionDesc2 = GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "FreeFormFieldDescription");
+                                                            }
                                                             @if (
                                                                 depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
-                                                                !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                                !string.IsNullOrWhiteSpace(depOptionDesc2))
                                                             {
                                                                 <span
                                                                     id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-free-form-field")">
-                                                                    - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                    - @depOptionDesc2
                                                                 </span>
                                                             }
                                                         </label>
@@ -288,7 +309,7 @@ else
                                     {
                                         <fieldset>
                                             <legend
-                                                class="mb-0">@multipleChoiceResponse.MultipleChoiceOption.DependentQuestionName</legend>
+                                                class="mb-0">@GetLocalizedText(multipleChoiceResponse.MultipleChoiceOption.Id, "DependentQuestionName")</legend>
                                             @foreach (var depResponse in multipleChoiceResponse.DependentMultipleChoiceResponses)
                                             {
                                                 <div class="form-check">
@@ -300,14 +321,17 @@ else
                                                     <label
                                                         for="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}")"
                                                         class="form-check-label">
-                                                        @depResponse.DependentMultipleChoiceOption.Name
+                                                        @GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "Name")
+                                                        @{
+                                                            var depOptionDescMultiple2 = GetLocalizedText(depResponse.DependentMultipleChoiceOption.Id, "FreeFormFieldDescription");
+                                                        }
                                                         @if (
                                                             depResponse.DependentMultipleChoiceOption.HasFreeFormField &&
-                                                            !string.IsNullOrWhiteSpace(depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription))
+                                                            !string.IsNullOrWhiteSpace(depOptionDescMultiple2))
                                                         {
                                                             <span
                                                                 id="@($"dependent-option-{depResponse.DependentMultipleChoiceOption.Id}-free-form-field")">
-                                                                - @depResponse.DependentMultipleChoiceOption.FreeFormFieldDescription
+                                                                - @depOptionDescMultiple2
                                                             </span>
                                                         }
                                                     </label>
@@ -365,41 +389,54 @@ else
     private bool isLoading = true;
     private readonly Input input = new();
     private bool isEditingResponse => QuestionnaireResponseId is not null;
+    private string displayedQuestionnaireName = "";
+    private string? displayedQuestionnaireDescription = null;
+    private Dictionary<(int entityId, string propertyName), string> translationCache = new();
 
     protected override void OnInitialized()
     {
+        Console.WriteLine("[MemberQuestionnaireForm] OnInitialized START");
         editContext = new EditContext(input);
         messageStore = new ValidationMessageStore(editContext);
         editContext.OnValidationRequested += (s, e) => messageStore.Clear();
         editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
         editContext.SetFieldCssClassProvider(new CustomFieldClassProvider());
+        Console.WriteLine("[MemberQuestionnaireForm] OnInitialized END");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        Console.WriteLine($"[MemberQuestionnaireForm] OnAfterRenderAsync START - firstRender: {firstRender}");
         if (firstRender)
         {
+            Console.WriteLine("[MemberQuestionnaireForm] First render - starting data load");
             await using var db = await dbFactory.CreateDbContextAsync();
+            Console.WriteLine("[MemberQuestionnaireForm] Database context created");
 
             // Attempt pre-fill from existing responses if questionnaire response ID was provided
             if (QuestionnaireResponseId is not null)
             {
+                Console.WriteLine($"[MemberQuestionnaireForm] Loading existing response - QuestionnaireResponseId: {QuestionnaireResponseId}");
                 var questionnaireResponse = await db.QuestionnaireResponses
                     .Include(x => x.QuestionResponses)
                     .Include(x => x.QuestionResponseGroups!)
                     .ThenInclude(x => x.QuestionResponses)
                     .FirstAsync(x => x.Id == QuestionnaireResponseId);
+                Console.WriteLine($"[MemberQuestionnaireForm] QuestionnaireResponse loaded - QuestionnaireId: {questionnaireResponse.QuestionnaireId}");
 
                 questionnaire = await FetchQuestionnaireByIdAsync(db, questionnaireResponse.QuestionnaireId);
+                Console.WriteLine($"[MemberQuestionnaireForm] Questionnaire fetched - Id: {questionnaire?.Id}, Name: {questionnaire?.Name}");
 
                 // If current questionnaire version is different from version responded to, create empty form
                 if (questionnaire.Version != questionnaireResponse.QuestionnaireVersion)
                 {
+                    Console.WriteLine($"[MemberQuestionnaireForm] Version mismatch - creating empty form. Questionnaire Version: {questionnaire.Version}, Response Version: {questionnaireResponse.QuestionnaireVersion}");
                     input.QuestionResponseGroups = MapQuestionnaireToQuestionResponseGroupInputs(questionnaire);
                 }
                 // Otherwise, build form with fields pre-populated
                 else
                 {
+                    Console.WriteLine("[MemberQuestionnaireForm] Versions match - pre-populating form");
                     var lookup = MapQuestionnaireToDetailLookup(questionnaire);
                     input.QuestionResponseGroups = MapQuestionnaireResponseToQuestionResponseGroupInputs(lookup, questionnaireResponse);
                 }
@@ -407,18 +444,196 @@ else
             // Otherwise, create empty form from scratch
             else if (QuestionnaireId is not null)
             {
+                Console.WriteLine($"[MemberQuestionnaireForm] Loading questionnaire from scratch - QuestionnaireId: {QuestionnaireId}");
                 questionnaire = await FetchQuestionnaireByIdAsync(db, QuestionnaireId!.Value);
+                Console.WriteLine($"[MemberQuestionnaireForm] Questionnaire fetched - Id: {questionnaire?.Id}, Name: {questionnaire?.Name}");
                 input.QuestionResponseGroups = MapQuestionnaireToQuestionResponseGroupInputs(questionnaire);
+                Console.WriteLine($"[MemberQuestionnaireForm] QuestionResponseGroups mapped - Count: {input.QuestionResponseGroups?.Count ?? 0}");
+            }
+            else
+            {
+                Console.WriteLine("[MemberQuestionnaireForm] WARNING: Neither QuestionnaireResponseId nor QuestionnaireId provided!");
+            }
+
+            // Load all translations for questionnaire and nested entities
+            if (questionnaire != null)
+            {
+                Console.WriteLine("[MemberQuestionnaireForm] Starting to load translations");
+                await LoadAllTranslationsAsync(questionnaire);
+                Console.WriteLine("[MemberQuestionnaireForm] Translations loaded");
+            }
+            else
+            {
+                Console.WriteLine("[MemberQuestionnaireForm] WARNING: questionnaire is null, cannot load translations");
             }
 
             isLoading = false;
+            Console.WriteLine($"[MemberQuestionnaireForm] isLoading set to false, calling StateHasChanged. displayedQuestionnaireName: '{displayedQuestionnaireName}'");
             StateHasChanged();
+            Console.WriteLine("[MemberQuestionnaireForm] StateHasChanged called");
         }
+        else
+        {
+            Console.WriteLine("[MemberQuestionnaireForm] Not first render, skipping data load");
+        }
+        Console.WriteLine("[MemberQuestionnaireForm] OnAfterRenderAsync END");
+    }
+
+    private async Task LoadAllTranslationsAsync(Questionnaire q)
+    {
+        Console.WriteLine($"[MemberQuestionnaireForm] LoadAllTranslationsAsync START - Questionnaire Id: {q.Id}");
+        var currentCulture = GetCurrentCulture();
+        Console.WriteLine($"[MemberQuestionnaireForm] Current culture: {currentCulture ?? "null"}");
+        translationCache.Clear();
+        Console.WriteLine("[MemberQuestionnaireForm] Translation cache cleared");
+
+        // Load questionnaire translations
+        Console.WriteLine($"[MemberQuestionnaireForm] Loading questionnaire translations - Id: {q.Id}, Name (entity): '{q.Name}'");
+        displayedQuestionnaireName = await TranslationHelper.GetLocalTextAsync(q, "Name", currentCulture) ?? q.Name ?? "";
+        Console.WriteLine($"[MemberQuestionnaireForm] Questionnaire Name (translated): '{displayedQuestionnaireName}'");
+        displayedQuestionnaireDescription = await TranslationHelper.GetLocalTextAsync(q, "Description", currentCulture);
+        Console.WriteLine($"[MemberQuestionnaireForm] Questionnaire Description (translated): '{displayedQuestionnaireDescription ?? "null"}'");
+        translationCache[(q.Id, "Name")] = displayedQuestionnaireName;
+        if (displayedQuestionnaireDescription != null)
+        {
+            translationCache[(q.Id, "Description")] = displayedQuestionnaireDescription;
+        }
+
+        // Load question group translations
+        if (q.QuestionGroups != null)
+        {
+            Console.WriteLine($"[MemberQuestionnaireForm] Loading {q.QuestionGroups.Count} question group translations");
+            foreach (var group in q.QuestionGroups)
+            {
+                var groupName = await TranslationHelper.GetLocalTextAsync(group, "Name", currentCulture) ?? group.Name ?? "";
+                var groupDesc = await TranslationHelper.GetLocalTextAsync(group, "Description", currentCulture) ?? group.Description ?? "";
+                translationCache[(group.Id, "Name")] = groupName;
+                translationCache[(group.Id, "Description")] = groupDesc;
+                Console.WriteLine($"[MemberQuestionnaireForm] QuestionGroup {group.Id} - Name: '{groupName}', Description: '{groupDesc}'");
+            }
+        }
+        else
+        {
+            Console.WriteLine("[MemberQuestionnaireForm] No question groups to load");
+        }
+
+        // Load question translations
+        if (q.Questions != null)
+        {
+            Console.WriteLine($"[MemberQuestionnaireForm] Loading {q.Questions.Count} question translations");
+            foreach (var question in q.Questions)
+            {
+                var questionName = await TranslationHelper.GetLocalTextAsync(question, "Name", currentCulture) ?? question.Name ?? "";
+                var questionDesc = await TranslationHelper.GetLocalTextAsync(question, "Description", currentCulture) ?? question.Description ?? "";
+                translationCache[(question.Id, "Name")] = questionName;
+                translationCache[(question.Id, "Description")] = questionDesc;
+                Console.WriteLine($"[MemberQuestionnaireForm] Question {question.Id} - Name: '{questionName}', Description: '{questionDesc}'");
+
+                // Load option translations
+                if (question.MultipleChoiceOptions != null)
+                {
+                    Console.WriteLine($"[MemberQuestionnaireForm] Loading {question.MultipleChoiceOptions.Count} option translations for Question {question.Id}");
+                    foreach (var option in question.MultipleChoiceOptions)
+                    {
+                        var optionNameTranslated = await TranslationHelper.GetLocalTextAsync(option, "Name", currentCulture);
+                        var optionName = optionNameTranslated ?? option.Name ?? "";
+                        var depQuestionNameTranslated = await TranslationHelper.GetLocalTextAsync(option, "DependentQuestionName", currentCulture);
+                        var depQuestionName = depQuestionNameTranslated ?? option.DependentQuestionName ?? "";
+                        translationCache[(option.Id, "Name")] = optionName;
+                        translationCache[(option.Id, "DependentQuestionName")] = depQuestionName;
+                        Console.WriteLine($"[MemberQuestionnaireForm] Option {option.Id} - Translated Name: '{optionNameTranslated}', Final Name: '{optionName}', Translated DepQuestionName: '{depQuestionNameTranslated}', Final DepQuestionName: '{depQuestionName}'");
+
+                        // Load dependent option translations
+                        if (option.DependentMultipleChoiceOptions != null)
+                        {
+                            Console.WriteLine($"[MemberQuestionnaireForm] Loading {option.DependentMultipleChoiceOptions.Count} dependent option translations for Option {option.Id}");
+                            foreach (var depOption in option.DependentMultipleChoiceOptions)
+                            {
+                                var depOptionName = await TranslationHelper.GetLocalTextAsync(depOption, "Name", currentCulture) ?? depOption.Name ?? "";
+                                var depOptionDesc = await TranslationHelper.GetLocalTextAsync(depOption, "FreeFormFieldDescription", currentCulture) ?? depOption.FreeFormFieldDescription ?? "";
+                                translationCache[(depOption.Id, "Name")] = depOptionName;
+                                translationCache[(depOption.Id, "FreeFormFieldDescription")] = depOptionDesc;
+                                Console.WriteLine($"[MemberQuestionnaireForm] DependentOption {depOption.Id} - Name: '{depOptionName}', FreeFormFieldDescription: '{depOptionDesc}'");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            Console.WriteLine("[MemberQuestionnaireForm] No questions to load");
+        }
+        Console.WriteLine($"[MemberQuestionnaireForm] LoadAllTranslationsAsync END - Cache size: {translationCache.Count}");
+    }
+
+    private string? GetCurrentCulture()
+    {
+        Console.WriteLine("[MemberQuestionnaireForm] GetCurrentCulture START");
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext != null)
+        {
+            Console.WriteLine("[MemberQuestionnaireForm] HttpContext is not null");
+            var requestCulture = httpContext.Features.Get<IRequestCultureFeature>();
+            if (requestCulture?.RequestCulture?.Culture != null)
+            {
+                var cultureName = requestCulture.RequestCulture.Culture.Name;
+                Console.WriteLine($"[MemberQuestionnaireForm] Detected culture: {cultureName}");
+                // Map to supported cultures
+                if (cultureName == "en-US" || cultureName == "en-GB" || cultureName == "es-CR")
+                {
+                    Console.WriteLine($"[MemberQuestionnaireForm] GetCurrentCulture END - returning: {cultureName}");
+                    return cultureName;
+                }
+                else if (cultureName.StartsWith("en"))
+                {
+                    Console.WriteLine("[MemberQuestionnaireForm] GetCurrentCulture END - returning: en-US (mapped from en*)");
+                    return "en-US";
+                }
+                else if (cultureName.StartsWith("es"))
+                {
+                    Console.WriteLine("[MemberQuestionnaireForm] GetCurrentCulture END - returning: es-CR (mapped from es*)");
+                    return "es-CR";
+                }
+            }
+            else
+            {
+                Console.WriteLine("[MemberQuestionnaireForm] IRequestCultureFeature or Culture is null");
+            }
+        }
+        else
+        {
+            Console.WriteLine("[MemberQuestionnaireForm] HttpContext is null");
+        }
+        Console.WriteLine("[MemberQuestionnaireForm] GetCurrentCulture END - returning: null");
+        return null;
+    }
+
+    private string GetLocalizedText(int entityId, string propertyName)
+    {
+        var found = translationCache.TryGetValue((entityId, propertyName), out var text);
+        if (!found)
+        {
+            Console.WriteLine($"[MemberQuestionnaireForm] GetLocalizedText - Cache miss for entityId: {entityId}, propertyName: {propertyName}. Cache size: {translationCache.Count}");
+            if (translationCache.Count > 0)
+            {
+                var sampleKeys = string.Join(", ", translationCache.Keys.Take(10).Select(k => $"({k.entityId}, {k.propertyName})"));
+                Console.WriteLine($"[MemberQuestionnaireForm] GetLocalizedText - Sample cache keys: {sampleKeys}");
+            }
+            else
+            {
+                Console.WriteLine($"[MemberQuestionnaireForm] GetLocalizedText - WARNING: Translation cache is empty! This should not happen if translations were loaded correctly.");
+            }
+        }
+        var result = found ? text : "";
+        Console.WriteLine($"[MemberQuestionnaireForm] GetLocalizedText - entityId: {entityId}, propertyName: {propertyName}, found: {found}, result: '{result}'");
+        return result;
     }
 
     private async Task<Questionnaire> FetchQuestionnaireByIdAsync(AlohaDb db, int id)
     {
-        return await db.Questionnaires
+        Console.WriteLine($"[MemberQuestionnaireForm] FetchQuestionnaireByIdAsync START - id: {id}");
+        var questionnaire = await db.Questionnaires
             .AsSplitQuery()
             .Include(q => q.Questions!)
             .ThenInclude(q => q.QuestionGroup)
@@ -427,6 +642,8 @@ else
             .ThenInclude(q => q.DependentMultipleChoiceOptions)
             .Include(q => q.QuestionGroups)
             .FirstAsync(q => q.Id == id);
+        Console.WriteLine($"[MemberQuestionnaireForm] FetchQuestionnaireByIdAsync END - Questionnaire Id: {questionnaire.Id}, Questions Count: {questionnaire.Questions?.Count ?? 0}, QuestionGroups Count: {questionnaire.QuestionGroups?.Count ?? 0}");
+        return questionnaire;
     }
 
     private static IList<QuestionResponseGroupInput> MapQuestionnaireResponseToQuestionResponseGroupInputs(

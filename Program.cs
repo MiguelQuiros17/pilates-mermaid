@@ -78,6 +78,20 @@ builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuth
 builder.Services.AddCoreDomainServices(coreBackendUrl);
 builder.Services.AddAdminDomainServices();
 
+// Register CookieForwardingHandler for HttpClient message handler
+builder.Services.AddScoped<Aloha.Admin.Web.Utilities.CookieForwardingHandler>();
+
+// Configure ThemeEditorService HttpClient with cookie forwarding (must be after AddAdminDomainServices)
+// Use a named client to avoid conflicts with other HttpClient registrations
+builder.Services.AddHttpClient("ThemeEditor", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddHttpMessageHandler<Aloha.Admin.Web.Utilities.CookieForwardingHandler>();
+
+builder.Services.AddDbContextFactory<AlohaDb>(options =>
+    options.UseSqlServer(connectionString));
+
 builder.Services
     .AddAuthentication(options =>
     {

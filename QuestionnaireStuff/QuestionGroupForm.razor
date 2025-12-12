@@ -3,6 +3,7 @@
 @using Blazored.FluentValidation
 @using Aloha.Domain.Services.Translations
 @using System.Globalization
+@using Aloha.Admin.Web.Components.Features.Customization.Questionnaires
 @inject ITranslationHelper TranslationHelper
 @inject ILanguageConfigurationService LanguageConfigService
 @rendermode InteractiveServer
@@ -13,15 +14,6 @@
           Context="questionGroupFormContext"
           OnSubmit="HandleSubmitAsync">
     <FluentValidationValidator/>
-    @* Bulk translate button at the top *@
-    <BulkTranslateButton @ref="bulkTranslateButton"
-                        SelectedCulture="@bulkSelectedCulture"
-                        SelectedCultureChanged="@OnBulkCultureChanged"
-                        OnBulkTranslate="@OnBulkTranslateAll"
-                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                        HasEnglishTextFunc="@HasEnglishText" />
-
     @* Multi-language input for Name *@
     <MultiLanguageInput Label="Name"
                        FieldId="groupName"
@@ -32,8 +24,8 @@
                        EnglishValueChanged="@((string value) => input.Name = value)"
                        Translations="@input.NameTranslations"
                        TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       SelectedCultureOverride="@SelectedCulture"
+                       SelectedCultureOverrideChanged="@((string culture) => { })" />
 
     @* Multi-language input for Description *@
     <MultiLanguageInput Label="Description"
@@ -45,8 +37,8 @@
                        EnglishValueChanged="@((string value) => input.Description = value)"
                        Translations="@input.DescriptionTranslations"
                        TranslationsChanged="@((Dictionary<string, string> trans) => input.DescriptionTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       SelectedCultureOverride="@SelectedCulture"
+                       SelectedCultureOverrideChanged="@((string culture) => { })" />
     <div class="d-flex flex-column">
         @if (input.HasSubmitted && editContext.GetValidationMessages().Any())
         {
@@ -76,9 +68,6 @@
     private ValidationMessageStore messageStore = default!;
 
     private DraftInput? initialValues;
-    private string bulkSelectedCulture = "en-US";
-    private string primaryLanguage = "en-US";
-    private BulkTranslateButton? bulkTranslateButton;
 
     [Parameter, EditorRequired]
     public EventCallback<Input> OnSubmit { get; set; }
@@ -92,6 +81,9 @@
     [Parameter]
     public bool IsEditing { get; set; }
 
+    [Parameter]
+    public string SelectedCulture { get; set; } = "en-US";
+
     protected override void OnInitialized()
     {
         editContext = new EditContext(input);
@@ -100,21 +92,6 @@
         editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-        bulkSelectedCulture = primaryLanguage;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-            bulkSelectedCulture = primaryLanguage;
-            StateHasChanged();
-        }
-    }
 
     protected override void OnParametersSet()
     {
@@ -159,13 +136,25 @@
         public required string Name { get; set; }
         public string? Description { get; set; }
         public int SortOrder { get; set; }
-        public IList<QuestionForm.DraftInput> Questions { get; set; } = [];
+        public IList<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput> Questions { get; set; } = [];
         public Dictionary<string, string> NameTranslations { get; set; } = new();
         public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
 
-        public static DraftInput CreateFromQuestionGroup(QuestionGroup group, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? descriptionTranslations = null)
+        public static QuestionGroupForm.DraftInput CreateFromQuestionGroup(QuestionGroup group, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? descriptionTranslations = null)
         {
             var draftId = Guid.NewGuid();
+            
+            IList<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput> questionsList;
+            if (group.Questions != null && group.Questions.Any())
+            {
+                questionsList = group.Questions
+                    .Select((Question q) => Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput.CreateFromQuestion(q, draftId, nameTranslations: null, descriptionTranslations: null))
+                    .ToList();
+            }
+            else
+            {
+                questionsList = new List<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput>();
+            }
 
             return new DraftInput
             {
@@ -173,10 +162,7 @@
                 Name = group.Name,
                 Description = group.Description,
                 SortOrder = group.SortOrder,
-                Questions = group.Questions?
-                        .Select(q => QuestionForm.DraftInput.CreateFromQuestion(q, draftId))
-                        .ToList() ??
-                    [],
+                Questions = questionsList,
                 NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
                 DescriptionTranslations = descriptionTranslations ?? new Dictionary<string, string>()
             };
@@ -224,168 +210,6 @@
                 RuleFor(p => p.Name).NotEmpty().WithMessage("Group name is required");
             });
         }
-    }
-
-    private async Task OnBulkCultureChanged(string culture)
-    {
-        bulkSelectedCulture = culture;
-        StateHasChanged();
-    }
-
-    private bool HasEnglishText()
-    {
-        return !string.IsNullOrWhiteSpace(input.Name) ||
-               !string.IsNullOrWhiteSpace(input.Description);
-    }
-
-    private List<string> GetFieldsWithExistingText()
-    {
-        var fields = new List<string>();
-        if (input.NameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
-        {
-            fields.Add("Name");
-        }
-        if (input.DescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
-        {
-            fields.Add("Description");
-        }
-        return fields;
-    }
-
-    private async Task OnBulkTranslateAll()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == primaryLanguage)
-        {
-            return;
-        }
-
-        var errors = new List<string>();
-
-        // Translate Name
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.Name, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.NameTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Name: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Name: {ex.Message}");
-            }
-        }
-
-        // Translate Description
-        if (!string.IsNullOrWhiteSpace(input.Description))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.Description, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.DescriptionTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Description: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Description: {ex.Message}");
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
-    }
-
-    private async Task OnBulkTranslateAllLanguages()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
-        var errors = new List<string>();
-
-        // Translate Name to all languages
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                if (lang == primaryLanguage) continue;
-                
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.Name, lang);
-                    if (translated != null)
-                    {
-                        input.NameTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        // Translate Description to all languages
-        if (!string.IsNullOrWhiteSpace(input.Description))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                if (lang == primaryLanguage) continue;
-                
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.Description, lang);
-                    if (translated != null)
-                    {
-                        input.DescriptionTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
     }
 
 }

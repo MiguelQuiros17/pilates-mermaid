@@ -13,15 +13,6 @@
           Context="questionFormContext"
           FormName="AddQuestion">
     <FluentValidationValidator/>
-    @* Bulk translate button at the top *@
-    <BulkTranslateButton @ref="bulkTranslateButton"
-                        SelectedCulture="@bulkSelectedCulture"
-                        SelectedCultureChanged="@OnBulkCultureChanged"
-                        OnBulkTranslate="@OnBulkTranslateAll"
-                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                        HasEnglishTextFunc="@HasEnglishText" />
-
     @* Multi-language input for Name *@
     <MultiLanguageInput Label="Name"
                        FieldId="questionName"
@@ -32,8 +23,8 @@
                        EnglishValueChanged="@((string value) => input.Name = value)"
                        Translations="@input.NameTranslations"
                        TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       SelectedCultureOverride="@SelectedCulture"
+                       SelectedCultureOverrideChanged="@((string culture) => { })" />
 
     @* Multi-language input for Description *@
     <MultiLanguageInput Label="Description"
@@ -45,8 +36,8 @@
                        EnglishValueChanged="@((string value) => input.Description = value)"
                        Translations="@input.DescriptionTranslations"
                        TranslationsChanged="@((Dictionary<string, string> trans) => input.DescriptionTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       SelectedCultureOverride="@SelectedCulture"
+                       SelectedCultureOverrideChanged="@((string culture) => { })" />
     <div class="mb-2">
         <label class="form-label">Question Group</label>
         <InputSelect class="form-select" @bind-Value="input.GroupId">
@@ -109,14 +100,27 @@
                                     </div>
                                     <div class="flex-fill">
                                         <div>
-                                            @option.Name
+                                            @{
+                                                var optionName = GetLocalizedText(option.Name, option.NameTranslations, SelectedCulture, PrimaryLanguage);
+                                            }
+                                            @if (string.IsNullOrWhiteSpace(optionName))
+                                            {
+                                                <span class="text-danger">(empty)</span>
+                                            }
+                                            else
+                                            {
+                                                @optionName
+                                            }
                                             @if (option.HasDependentQuestion)
                                             {
-                                                @if (!string.IsNullOrWhiteSpace(option.DependentQuestionName))
+                                                var depQuestionName = GetLocalizedText(option.DependentQuestionName, option.DependentQuestionNameTranslations, SelectedCulture, PrimaryLanguage);
+                                                @if (string.IsNullOrWhiteSpace(depQuestionName))
                                                 {
-                                                    <span class="fst-italic">
-                                                        @($" - {option.DependentQuestionName}")
-                                                    </span>
+                                                    <span class="fst-italic text-danger"> - (empty)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="fst-italic"> - @depQuestionName</span>
                                                 }
 
                                                 <span> (@option.DependentQuestionType.ToDisplayName())</span>
@@ -131,14 +135,28 @@
                                                     {
                                                         <li>
                                                             <div class="flex-fill">
-                                                                @depOption.Name
+                                                                @{
+                                                                    var depOptionName = GetLocalizedText(depOption.Name, depOption.NameTranslations, SelectedCulture, PrimaryLanguage);
+                                                                }
+                                                                @if (string.IsNullOrWhiteSpace(depOptionName))
+                                                                {
+                                                                    <span class="text-danger">(empty)</span>
+                                                                }
+                                                                else
+                                                                {
+                                                                    @depOptionName
+                                                                }
                                                                 @if (depOption.HasFreeFormField)
                                                                 {
-                                                                    <span class="fst-italic">
-                                                                            @(depOption.FreeFormFieldDescription != null
-                                                                            ? $" - {depOption.FreeFormFieldDescription}"
-                                                                            : "") 
-                                                                        </span>
+                                                                    var freeFormDesc = GetLocalizedText(depOption.FreeFormFieldDescription, depOption.FreeFormFieldDescriptionTranslations, SelectedCulture, PrimaryLanguage);
+                                                                    @if (string.IsNullOrWhiteSpace(freeFormDesc))
+                                                                    {
+                                                                        <span class="fst-italic text-danger"> - (empty)</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span class="fst-italic"> - @freeFormDesc</span>
+                                                                    }
                                                                     <span> (Free Form)</span>
                                                                 }
                                                             </div>
@@ -162,7 +180,6 @@
                                     </div>
                                 </div>
                             </li>
-                            }
                         }
                     }
                 </ul>
@@ -181,6 +198,7 @@
                     IsEditing="isEditingOption"
                     OnClose="CloseEditMultipleChoiceOptionForm"
                     OnSubmit="@(isEditingOption ? EditMultipleChoiceOption : AddMultipleChoiceOption)"
+                    SelectedCulture="@SelectedCulture"
                 />
             </div>
         </div>
@@ -217,9 +235,6 @@
 
     private IList<QuestionGroupForm.DraftInput> questionGroups = [];
     private QuestionForm.DraftInput? initialValues;
-    private string bulkSelectedCulture = "en-US";
-    private string primaryLanguage = "en-US";
-    private BulkTranslateButton? bulkTranslateButton;
 
     [Parameter]
     public bool IsEditing { get; set; }
@@ -236,6 +251,27 @@
     [Parameter, EditorRequired]
     public IList<QuestionGroupForm.DraftInput> QuestionGroups { get; set; } = default!;
 
+    [Parameter]
+    public string SelectedCulture { get; set; } = "en-US";
+
+    [Parameter]
+    public string PrimaryLanguage { get; set; } = "en-US";
+
+    private string GetLocalizedText(string? primaryValue, Dictionary<string, string> translations, string selectedCulture, string primaryLang)
+    {
+        if (selectedCulture == primaryLang)
+        {
+            return primaryValue ?? "";
+        }
+        
+        if (translations.TryGetValue(selectedCulture, out var translatedValue))
+        {
+            return translatedValue ?? "";
+        }
+        
+        return primaryValue ?? "";
+    }
+
     protected override void OnInitialized()
     {
         questionGroups = QuestionGroups;
@@ -247,21 +283,6 @@
         editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-        bulkSelectedCulture = primaryLanguage;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-            bulkSelectedCulture = primaryLanguage;
-            StateHasChanged();
-        }
-    }
 
     protected override void OnParametersSet()
     {
@@ -318,11 +339,13 @@
     {
         var option = input.MultipleChoiceOptions.First(o => o.DraftId == optionBeingEdited!.DraftId);
         option.Name = values.Name!;
+        option.NameTranslations = new Dictionary<string, string>(values.NameTranslations);
         option.HasDependentQuestion = values.HasDependentQuestion;
 
         if (values.HasDependentQuestion)
         {
             option.DependentQuestionName = values.DependentQuestionName;
+            option.DependentQuestionNameTranslations = new Dictionary<string, string>(values.DependentQuestionNameTranslations);
             option.DependentQuestionType = values.DependentQuestionType;
 
             option.DependentMultipleChoiceOptions =
@@ -334,6 +357,7 @@
         else
         {
             option.DependentQuestionName = null;
+            option.DependentQuestionNameTranslations.Clear();
             option.DependentQuestionType = DependentQuestionType.None;
             option.DependentMultipleChoiceOptions = null;
         }
@@ -347,9 +371,13 @@
         {
             DraftId = Guid.NewGuid(),
             Name = values.Name!,
+            NameTranslations = new Dictionary<string, string>(values.NameTranslations),
             HasDependentQuestion = values.HasDependentQuestion,
             DependentQuestionType = values.HasDependentQuestion ? values.DependentQuestionType : DependentQuestionType.None,
             DependentQuestionName = values.HasDependentQuestion ? values.DependentQuestionName : null,
+            DependentQuestionNameTranslations = values.HasDependentQuestion 
+                ? new Dictionary<string, string>(values.DependentQuestionNameTranslations)
+                : new Dictionary<string, string>(),
             DependentMultipleChoiceOptions =
                 values.HasDependentQuestion &&
                 (values.DependentQuestionType == DependentQuestionType.SingleSelect ||
@@ -492,168 +520,6 @@
                         });
             });
         }
-    }
-
-    private async Task OnBulkCultureChanged(string culture)
-    {
-        bulkSelectedCulture = culture;
-        StateHasChanged();
-    }
-
-    private bool HasEnglishText()
-    {
-        return !string.IsNullOrWhiteSpace(input.Name) ||
-               !string.IsNullOrWhiteSpace(input.Description);
-    }
-
-    private List<string> GetFieldsWithExistingText()
-    {
-        var fields = new List<string>();
-        if (input.NameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
-        {
-            fields.Add("Name");
-        }
-        if (input.DescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
-        {
-            fields.Add("Description");
-        }
-        return fields;
-    }
-
-    private async Task OnBulkTranslateAll()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == primaryLanguage)
-        {
-            return;
-        }
-
-        var errors = new List<string>();
-
-        // Translate Name
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.Name, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.NameTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Name: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Name: {ex.Message}");
-            }
-        }
-
-        // Translate Description
-        if (!string.IsNullOrWhiteSpace(input.Description))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.Description, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.DescriptionTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Description: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Description: {ex.Message}");
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
-    }
-
-    private async Task OnBulkTranslateAllLanguages()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
-        var errors = new List<string>();
-
-        // Translate Name to all languages
-        if (!string.IsNullOrWhiteSpace(input.Name))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                if (lang == primaryLanguage) continue;
-                
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.Name, lang);
-                    if (translated != null)
-                    {
-                        input.NameTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        // Translate Description to all languages
-        if (!string.IsNullOrWhiteSpace(input.Description))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                if (lang == primaryLanguage) continue;
-                
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.Description, lang);
-                    if (translated != null)
-                    {
-                        input.DescriptionTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
     }
 
 }

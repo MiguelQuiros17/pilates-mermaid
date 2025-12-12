@@ -6569,113 +6569,12 @@ app.post('/api/attendance/record', requireAuth, requireRole(['admin', 'coach']),
   }
 })
 
-// Initialize all group classes endpoint
-app.post('/api/classes/initialize', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
-  try {
-    // Limpiar clases, reservas y asistencias existentes antes de recrear el calendario
-    await database.run('DELETE FROM attendance')
-    await database.run('DELETE FROM bookings')
-    await database.run('DELETE FROM classes')
-    
-    // Obtener el ID de Esmeralda García (coach)
-    const coach = await database.get('SELECT id FROM users WHERE nombre = ? AND role = ?', ['Esmeralda García', 'coach'])
-    if (!coach) {
-      return res.status(404).json({
-        success: false,
-        message: 'No se encontró el coach Esmeralda García'
-      })
-    }
-    
-    // Establecer fecha de inicio (una semana atrás desde hoy)
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - 7)
-    startDate.setHours(0, 0, 0, 0) // Resetear a medianoche para evitar problemas de zona horaria
-    
-    // Establecer fecha de fin (31 de diciembre de 2026)
-    const endDate = new Date(2026, 11, 31) // Mes 11 = Diciembre (0-indexed)
-    endDate.setHours(23, 59, 59, 999) // Final del día
-    
-    // Función helper para formatear fecha como YYYY-MM-DD sin problemas de zona horaria
-    const formatDate = (date) => {
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-    
-    let classCounter = 0
-    const classes = []
-    
-    // Generar clases para cada día desde startDate hasta endDate
-    const currentDate = new Date(startDate)
-    while (currentDate <= endDate) {
-      // Skip Tuesdays (day 2 = martes)
-      const dayOfWeek = currentDate.getDay()
-      if (dayOfWeek !== 2) { // Solo procesar si NO es martes
-        const times = ['06:00', '08:00', '18:00']
-        times.forEach(time => {
-          const classId = uuidv4()
-          const classData = {
-            id: classId,
-            title: 'Clase Grupal de Pilates',
-            description: 'Clase grupal de pilates mat',
-            date: formatDate(currentDate), // Usar formato local en lugar de ISO
-            time: time,
-            duration: 60,
-            max_capacity: 9,
-            current_bookings: 0,
-            coach_id: coach.id,
-            type: 'group',
-            status: 'scheduled'
-          }
-          
-          classes.push(classData)
-          classCounter++
-        })
-      }
-      
-      // Avanzar al siguiente día
-      currentDate.setDate(currentDate.getDate() + 1)
-    }
-    
-    // Insertar todas las clases en la base de datos
-    for (const classData of classes) {
-      await database.run(`
-        INSERT OR IGNORE INTO classes (
-          id, title, description, date, time, duration, max_capacity, 
-          current_bookings, coach_id, type, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        classData.id, classData.title, classData.description, classData.date,
-        classData.time, classData.duration, classData.max_capacity,
-        classData.current_bookings, classData.coach_id, classData.type,
-        classData.status
-      ])
-    }
-    
-    res.json({
-      success: true,
-      message: `Se inicializaron ${classCounter} clases grupales hasta diciembre de 2026`,
-      classesCreated: classCounter,
-      dateRange: {
-        start: formatDate(startDate),
-        end: formatDate(endDate)
-      },
-      schedule: {
-        days: 'Lunes, Miércoles, Jueves, Viernes, Sábado, Domingo',
-        excludedDays: ['Martes'],
-        times: ['06:00', '08:00', '18:00'],
-        maxCapacity: 9
-      }
-    })
-  } catch (error) {
-    console.error('Initialize classes error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Error al inicializar las clases'
-    })
-  }
-})
+// DEPRECATED: Initialize endpoint removed
+// This endpoint was deprecated because it:
+// 1. Created thousands of individual class instances instead of using recurring classes
+// 2. Was hardcoded to a specific coach and schedule
+// 3. Conflicted with the modern recurring class system
+// Use recurring classes instead - they are more flexible and maintainable
 
 // Email endpoints
 app.post('/api/email/send-class-confirmation', async (req, res) => {

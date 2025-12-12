@@ -2,6 +2,7 @@
 @using Aloha.Domain.Services.AdminAudit
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
+@using Aloha.Domain.Services.Theme.ColorUtilities
 @using Aloha.Infrastructure
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.AspNetCore.Components
@@ -17,6 +18,8 @@
 @inject IWebHostEnvironment Env
 @inject IConfiguration Configuration
 @inject ILogger<EditAdditionalCssOverridesForm> Logger
+@inject NavigationManager Navigation
+@inject IThemeEditorService themeEditorService
 @rendermode InteractiveServer
 
 <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin, ContentManager, Audit">
@@ -102,13 +105,15 @@
                         Restore Default Additional CSS
                     </Button>
 
-                    <button class="btn btn-outline-secondary"
+                    <button type="button"
+                            class="btn btn-outline-secondary"
                             disabled="@(isLoading || isSaving)"
                             @onclick="DownloadBootstrapAsync">
                         Download Bootstrap CSS
                     </button>
 
-                    <button class="btn btn-outline-secondary"
+                    <button type="button"
+                            class="btn btn-outline-secondary"
                             disabled="@(isLoading || isSaving)"
                             @onclick="DownloadAdditionalAsync">
                         Download Additional CSS
@@ -547,22 +552,56 @@
 
     private async Task<string?> TryReadStaticFileFromCandidatesAsync(IEnumerable<string> candidates)
     {
-        foreach (var p in candidates)
+        foreach (var candidate in candidates)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(p)) continue;
-                if (!File.Exists(p)) continue;
-                var txt = await File.ReadAllTextAsync(p);
-                if (!string.IsNullOrWhiteSpace(txt)) return txt;
+                if (string.IsNullOrWhiteSpace(candidate)) continue;
+                
+                // Resolve full path to handle relative paths correctly
+                string fullPath;
+                try
+                {
+                    fullPath = Path.GetFullPath(candidate);
+                }
+                catch
+                {
+                    // Invalid path, skip
+                    continue;
+                }
+                
+                // Quick check - if directory doesn't exist, skip immediately
+                var directory = Path.GetDirectoryName(fullPath);
+                if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                {
+                    continue;
+                }
+                
+                // Check if file exists (this is faster than reading non-existent files)
+                if (!File.Exists(fullPath))
+                {
+                    continue;
+                }
+                
+                // File exists, read it
+                var txt = await File.ReadAllTextAsync(fullPath);
+                if (!string.IsNullOrWhiteSpace(txt))
+                {
+                    return txt;
+                }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "Failed to read static file candidate: {FilePath}", p);
+                // Only log if it's not a "file not found" type error
+                if (ex is not FileNotFoundException && ex is not DirectoryNotFoundException)
+                {
+                    Logger.LogDebug(ex, "Failed to read static file candidate: {FilePath}", candidate);
+                }
             }
         }
         return null;
     }
+
 
     private string[] BuildBootstrapCandidates()
     {
@@ -649,6 +688,14 @@
                 css = await TryReadStaticFileFromCandidatesAsync(candidates) ?? string.Empty;
             }
 
+            // Try HTTP fallback using API endpoint
+            if (string.IsNullOrWhiteSpace(css))
+            {
+                // Convert admin subdomain to web subdomain for API calls
+                var baseUrl = Navigation.BaseUri.Replace("-admin.", "-web.");
+                css = await themeEditorService.FetchBootstrapCssViaHttpAsync(baseUrl);
+            }
+
             if (string.IsNullOrWhiteSpace(css))
             {
                 await JS.InvokeVoidAsync("alert", "No Bootstrap stylesheet found to download.");
@@ -685,6 +732,14 @@
             {
                 var candidates = BuildAdditionalCandidates();
                 css = await TryReadStaticFileFromCandidatesAsync(candidates) ?? string.Empty;
+            }
+
+            // Try HTTP fallback using API endpoint
+            if (string.IsNullOrWhiteSpace(css))
+            {
+                // Convert admin subdomain to web subdomain for API calls
+                var baseUrl = Navigation.BaseUri.Replace("-admin.", "-web.");
+                css = await themeEditorService.FetchAdditionalCssViaHttpAsync(baseUrl);
             }
 
             if (string.IsNullOrWhiteSpace(css))

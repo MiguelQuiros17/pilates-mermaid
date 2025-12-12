@@ -35,14 +35,37 @@
     <DataAnnotationsValidator/>
     <ValidationSummary/>
 
-    @* Bulk translate button at the top *@
-    <BulkTranslateButton @ref="bulkTranslateButton"
-                        SelectedCulture="@bulkSelectedCulture"
-                        SelectedCultureChanged="@OnBulkCultureChanged"
-                        OnBulkTranslate="@OnBulkTranslateAll"
-                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                        HasEnglishTextFunc="@HasEnglishText" />
+    @* Language selector at the top - sticky and full width *@
+    @if (isMultiLanguageEnabled)
+    {
+        <div class="sticky-top bg-white border-bottom p-3 mb-3 shadow-sm" style="z-index: 1020; margin-left: -15px; margin-right: -15px; padding-left: 15px !important; padding-right: 15px !important;">
+            <div class="d-flex align-items-end gap-3">
+                <div class="flex-grow-1">
+                    <label class="form-label fw-bold mb-2">Editing Language:</label>
+                    <InputSelect @bind-Value="bulkSelectedCulture" 
+                                @bind-Value:after="OnLanguageChanged"
+                                class="form-select" 
+                                style="width: 100%;"
+                                id="applicationtype-language-select">
+                        <option value="@primaryLanguage">@(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryDisplayName) ? primaryDisplayName : primaryLanguage) (Primary)</option>
+                        @foreach (var lang in availableLanguages)
+                        {
+                            <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="mb-0">
+                    <BulkTranslateButton @ref="bulkTranslateButton"
+                                        SelectedCulture="@bulkSelectedCulture"
+                                        SelectedCultureChanged="@OnBulkCultureChanged"
+                                        OnBulkTranslate="@OnBulkTranslateAll"
+                                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
+                                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
+                                        HasEnglishTextFunc="@HasEnglishText" />
+                </div>
+            </div>
+        </div>
+    }
 
     @* Multi-language input for Display Name *@
     <MultiLanguageInput Label="Display Name"
@@ -353,6 +376,9 @@
     private string bulkSelectedCulture = "en-US"; // Will be initialized to primary language in OnAfterRenderAsync
     private string primaryLanguage = "en-US";
     private BulkTranslateButton? bulkTranslateButton;
+    private bool isMultiLanguageEnabled = false;
+    private List<string> availableLanguages = new();
+    private Dictionary<string, string> languageDisplayNames = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -374,6 +400,22 @@
         {
             primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
             bulkSelectedCulture = primaryLanguage;
+            isMultiLanguageEnabled = await LanguageConfigService.IsMultiLanguageEnabledAsync();
+            
+            // Load available languages and display names
+            if (isMultiLanguageEnabled)
+            {
+                var allEnabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+                availableLanguages = allEnabledLanguages.Where(l => l != primaryLanguage).ToList();
+                
+                languageDisplayNames = new Dictionary<string, string>();
+                languageDisplayNames[primaryLanguage] = await LanguageConfigService.GetLanguageDisplayNameAsync(primaryLanguage);
+                foreach (var lang in availableLanguages)
+                {
+                    languageDisplayNames[lang] = await LanguageConfigService.GetLanguageDisplayNameAsync(lang);
+                }
+            }
+            
             await CheckRoleAndUpdateReadOnlyFlagAsync();
             await LoadData();
         }
@@ -428,6 +470,11 @@
         AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
         isReadOnly = !(authUser.IsInRole("MahaloAdmin") || authUser.IsInRole("MasterAdmin"));
         isExpressAppInputReadOnly = !authUser.IsInRole("MahaloAdmin");
+    }
+
+    private async Task OnLanguageChanged()
+    {
+        StateHasChanged();
     }
 
     private async Task OnBulkCultureChanged(string culture)
