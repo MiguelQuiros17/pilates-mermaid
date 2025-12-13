@@ -840,6 +840,20 @@ export default function ClassesPage(): JSX.Element {
     }
   }
 
+  // Helper function to check if a class/occurrence is in the past
+  const isClassInPast = (classItem: Class, occurrenceDate?: string): boolean => {
+    const classDate = occurrenceDate || classItem.date
+    if (!classDate || !classItem.time) return false
+    
+    // Parse the date and time
+    const [year, month, day] = classDate.split('-').map(Number)
+    const [hour, minute] = classItem.time.split(':').map(Number)
+    const classDateTime = new Date(year, month - 1, day, hour, minute || 0)
+    const now = new Date()
+    
+    return classDateTime < now
+  }
+
   const isUserBooked = (classId: string, occurrenceDate?: string) => {
     // Normalize occurrenceDate format (remove time if present, ensure YYYY-MM-DD)
     let normalizedOccurrenceDate: string | undefined = undefined
@@ -2987,32 +3001,40 @@ export default function ClassesPage(): JSX.Element {
                                       )}
                                       
                                       {/* Acciones según el rol */}
-                                      {user.role === 'cliente' && (
-                                        <button
-                                          onClick={() => {
-                                            if (isUserBooked(cls.id, occurrenceDate)) {
-                                              cancelBooking(cls.id, occurrenceDate)
-                                            } else {
-                                              // Register for this specific occurrence
-                                              bookClass(cls.id, occurrenceDate)
-                                            }
-                                          }}
-                                          disabled={!isCancelled && cls.current_bookings >= cls.max_capacity && !isUserBooked(cls.id, occurrenceDate)}
-                                          className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 whitespace-nowrap w-full sm:w-auto min-w-[140px] ${
-                                            isUserBooked(cls.id, occurrenceDate)
-                                              ? 'bg-red-500 text-white hover:bg-red-600'
-                                              : !isCancelled && cls.current_bookings >= cls.max_capacity
-                                              ? 'bg-gray-400 text-white cursor-not-allowed'
-                                              : 'bg-blue-500 text-white hover:bg-blue-600'
-                                          }`}
-                                        >
-                                          {isUserBooked(cls.id, occurrenceDate) 
-                                            ? 'Cancelar' 
-                                            : !isCancelled && cls.current_bookings >= cls.max_capacity
-                                            ? 'Llena'
-                                            : 'Reservar'}
-                                        </button>
-                                      )}
+                                      {user.role === 'cliente' && (() => {
+                                        const occurrenceIsPast = isClassInPast(cls, occurrenceDate)
+                                        const isFull = !isCancelled && cls.current_bookings >= cls.max_capacity && !isUserBooked(cls.id, occurrenceDate)
+                                        const isDisabled = isFull || occurrenceIsPast
+                                        
+                                        return (
+                                          <button
+                                            onClick={() => {
+                                              if (isUserBooked(cls.id, occurrenceDate)) {
+                                                cancelBooking(cls.id, occurrenceDate)
+                                              } else {
+                                                // Register for this specific occurrence
+                                                bookClass(cls.id, occurrenceDate)
+                                              }
+                                            }}
+                                            disabled={isDisabled || isUserBooked(cls.id, occurrenceDate)}
+                                            className={`px-6 py-2.5 rounded-xl font-medium transition-all duration-200 hover:scale-105 whitespace-nowrap w-full sm:w-auto min-w-[140px] ${
+                                              isUserBooked(cls.id, occurrenceDate)
+                                                ? 'bg-red-500 text-white hover:bg-red-600'
+                                                : isDisabled
+                                                ? 'bg-gray-400 text-white cursor-not-allowed'
+                                                : 'bg-blue-500 text-white hover:bg-blue-600'
+                                            }`}
+                                          >
+                                            {isUserBooked(cls.id, occurrenceDate) 
+                                              ? 'Cancelar' 
+                                              : occurrenceIsPast
+                                              ? 'Ya ocurrió'
+                                              : isFull
+                                              ? 'Llena'
+                                              : 'Reservar'}
+                                          </button>
+                                        )
+                                      })()}
                                       
                                       {(user.role === 'admin' || user.role === 'coach') && cls.type === 'group' && (
                                         <div className="text-sm text-gray-500 space-y-1 w-full sm:w-auto max-w-full">
@@ -4168,14 +4190,15 @@ export default function ClassesPage(): JSX.Element {
                           bookClass(viewingClass.id, (viewingClass as any).occurrence_date)
                           setShowViewClassModal(false)
                         }}
-                        disabled={viewingClass.current_bookings >= viewingClass.max_capacity}
+                        disabled={viewingClass.current_bookings >= viewingClass.max_capacity || isClassInPast(viewingClass, (viewingClass as any).occurrence_date)}
                         className={`w-full px-4 py-2.5 rounded-xl font-semibold transition-colors ${
-                          viewingClass.current_bookings >= viewingClass.max_capacity
+                          viewingClass.current_bookings >= viewingClass.max_capacity || isClassInPast(viewingClass, (viewingClass as any).occurrence_date)
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             : 'bg-blue-500 text-white hover:bg-blue-600'
                         }`}
                       >
-                        {viewingClass.current_bookings >= viewingClass.max_capacity ? 'Clase Llena' : (
+                        {isClassInPast(viewingClass, (viewingClass as any).occurrence_date) ? 'Ya ocurrió' :
+                         viewingClass.current_bookings >= viewingClass.max_capacity ? 'Clase Llena' : (
                           <span className="flex items-center justify-center gap-2">
                             Reservar Clase
                             <span className="px-2 py-0.5 bg-white/20 rounded text-xs">

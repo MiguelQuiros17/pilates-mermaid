@@ -5472,15 +5472,16 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
       })
     }
     
-    // Por defecto, mostrar todas las clases futuras o del día actual
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayStr = today.toISOString().split('T')[0]
+    // Show ALL classes regardless of date (including past classes)
+    // Past classes will be marked as non-bookable on the frontend
+    query += ` ORDER BY c.date ASC, c.time ASC LIMIT 5000`
     
-    // Aumentar el límite para incluir todas las clases hasta diciembre 2026
-    query += ` WHERE c.date >= ? ORDER BY c.date ASC, c.time ASC LIMIT 5000`
+    const rawClasses = await database.all(query)
     
-    const rawClasses = await database.all(query, [todayStr])
+    // Log class counts for debugging
+    const recurringCount = rawClasses.filter(c => c.is_recurring === 1 || c.is_recurring === '1' || c.is_recurring === true).length
+    const nonRecurringCount = rawClasses.length - recurringCount
+    console.log(`[GET /api/classes] Loaded ${rawClasses.length} classes (${recurringCount} recurring, ${nonRecurringCount} non-recurring)`)
 
     // Normalizar campo instructors a arreglo y calculate booking counts for recurring classes
     const classes = await Promise.all(rawClasses.map(async cls => {
