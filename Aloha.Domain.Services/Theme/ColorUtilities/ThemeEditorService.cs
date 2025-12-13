@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Aloha.Domain.Customization;
@@ -277,29 +278,26 @@ public class ThemeEditorService : IThemeEditorService
         try
         {
             var client = _httpClientFactory.CreateClient("ThemeEditor");
-            using var response = await client.GetAsync($"{baseUrl}/api/branding/css/bootstrap", cancellationToken);
+            var url = $"{baseUrl.TrimEnd('/')}/api/branding/css/bootstrap";
+            
+            using var response = await client.GetAsync(url, cancellationToken);
             
             if (response.IsSuccessStatusCode)
             {
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
                 if (!string.IsNullOrWhiteSpace(content))
                 {
-                    _logger.LogInformation("Successfully fetched Bootstrap CSS via API: {Length} bytes", content.Length);
                     return content;
-                }
-                else
-                {
-                    _logger.LogWarning("API returned empty content for Bootstrap CSS");
                 }
             }
             else
             {
-                _logger.LogWarning("API returned non-success status for Bootstrap CSS: {Status}", response.StatusCode);
+                _logger.LogWarning("Failed to fetch Bootstrap CSS: {Status}", response.StatusCode);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to fetch Bootstrap CSS via HTTP API");
+            _logger.LogError(ex, "Failed to fetch Bootstrap CSS via HTTP API");
         }
         return string.Empty;
     }
@@ -309,29 +307,26 @@ public class ThemeEditorService : IThemeEditorService
         try
         {
             var client = _httpClientFactory.CreateClient("ThemeEditor");
-            using var response = await client.GetAsync($"{baseUrl}/api/branding/css/custom-overrides", cancellationToken);
+            var url = $"{baseUrl.TrimEnd('/')}/api/branding/css/custom-overrides";
+            
+            using var response = await client.GetAsync(url, cancellationToken);
             
             if (response.IsSuccessStatusCode)
             {
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
                 if (!string.IsNullOrWhiteSpace(content))
                 {
-                    _logger.LogInformation("Successfully fetched Additional CSS via API: {Length} bytes", content.Length);
                     return content;
-                }
-                else
-                {
-                    _logger.LogWarning("API returned empty content for Additional CSS");
                 }
             }
             else
             {
-                _logger.LogWarning("API returned non-success status for Additional CSS: {Status}", response.StatusCode);
+                _logger.LogWarning("Failed to fetch Additional CSS: {Status}", response.StatusCode);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to fetch Additional CSS via HTTP API");
+            _logger.LogError(ex, "Failed to fetch Additional CSS via HTTP API");
         }
         return string.Empty;
     }

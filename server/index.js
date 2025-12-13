@@ -4608,7 +4608,7 @@ async function sendExpirationNotificationEmail(packageInfo) {
 app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
-    const { class_id, occurrence_date, payment_method, notes } = req.body
+    const { class_id, occurrence_date, payment_method, notes, confirm_overdraft } = req.body
     const userId = req.user.id
 
     // Validate class_id
@@ -4647,12 +4647,40 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
 
     const classType = classInfo.type
 
-    // Verificar que el usuario tiene clases disponibles
-    const userClasses = await database.checkUserAvailableClasses(userId)
-    if (!userClasses.hasClasses) {
+    // Get user's current class counts
+    const user = await database.getUserById(userId)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      })
+    }
+
+    const currentRemaining = classType === 'private' 
+      ? (user.private_classes_remaining || 0)
+      : (user.group_classes_remaining || 0)
+    
+    const newRemaining = currentRemaining - 1
+
+    // Check if user is at maximum overdraft limit (-2)
+    if (newRemaining < -2) {
       return res.status(400).json({
         success: false,
-        message: 'No tienes clases disponibles en tu paquete'
+        message: 'MAX_OVERDRAFT_REACHED',
+        currentBalance: currentRemaining,
+        wouldBeBalance: newRemaining,
+        maxOverdraft: -2
+      })
+    }
+
+    // Check if user has 0 or negative classes - they need to confirm overdraft
+    if (currentRemaining <= 0 && !confirm_overdraft) {
+      return res.status(400).json({
+        success: false,
+        message: 'OVERDRAFT_WARNING',
+        currentBalance: currentRemaining,
+        wouldBeBalance: newRemaining,
+        classType: classType
       })
     }
 
@@ -4746,8 +4774,14 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
     `, [class_id])
     }
 
-    // Descontar una clase del paquete del usuario según el tipo
-    await database.deductClassFromUser(userId, classType)
+    // Descontar una clase del paquete del usuario según el tipo (allow overdraft)
+    await database.deductClassFromUser(userId, classType, true)
+    
+    // Get updated user to return current balance
+    const updatedUser = await database.getUserById(userId)
+    const updatedRemaining = classType === 'private'
+      ? (updatedUser.private_classes_remaining || 0)
+      : (updatedUser.group_classes_remaining || 0)
 
     // Enviar email de confirmación
     try {
@@ -4795,7 +4829,8 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
       success: true,
       message: 'Clase reservada exitosamente',
       booking,
-      remainingClasses: userClasses.remaining - 1
+      remainingClasses: updatedRemaining,
+      currentBalance: updatedRemaining
     })
   } catch (error) {
     console.error('Create booking error:', error)

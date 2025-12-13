@@ -437,15 +437,13 @@
             // Fall back to HTTP API if file system didn't work (for Azure DevOps servers)
             if (string.IsNullOrWhiteSpace(bootstrapCssText))
             {
-                // Convert admin subdomain to web subdomain for API calls
-                var baseUrl = NavigationManager.BaseUri.Replace("-admin.", "-web.");
+                var baseUrl = ConvertToWebSubdomain(NavigationManager.BaseUri);
                 bootstrapCssText = await themeEditorService.FetchBootstrapCssViaHttpAsync(baseUrl);
             }
             
             if (string.IsNullOrWhiteSpace(additionalCssText))
             {
-                // Convert admin subdomain to web subdomain for API calls
-                var baseUrl = NavigationManager.BaseUri.Replace("-admin.", "-web.");
+                var baseUrl = ConvertToWebSubdomain(NavigationManager.BaseUri);
                 additionalCssText = await themeEditorService.FetchAdditionalCssViaHttpAsync(baseUrl);
             }
             
@@ -466,6 +464,12 @@
         }
     }
     
+
+    private string ConvertToWebSubdomain(string baseUri)
+    {
+        var baseUrl = baseUri.Replace("-admin.", "-web.");
+        return baseUrl == baseUri ? baseUri.Replace("admin.", "web.") : baseUrl;
+    }
 
     private void ApplyServerWhitelist()
     {

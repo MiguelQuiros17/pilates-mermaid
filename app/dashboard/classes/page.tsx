@@ -67,6 +67,12 @@ export default function ClassesPage(): JSX.Element {
   const [recurringBookingCounts, setRecurringBookingCounts] = useState<{ [classId: string]: { [occurrenceDate: string]: number } }>({})
   const [classCounts, setClassCounts] = useState<{private: number, group: number}>({private: 0, group: 0})
 
+  // Overdraft modal state
+  const [showOverdraftWarning, setShowOverdraftWarning] = useState(false)
+  const [overdraftData, setOverdraftData] = useState<{classId: string, occurrenceDate?: string, classType: 'group' | 'private', currentBalance: number, wouldBeBalance: number} | null>(null)
+  const [showMaxOverdraftModal, setShowMaxOverdraftModal] = useState(false)
+  const [maxOverdraftData, setMaxOverdraftData] = useState<{currentBalance: number, maxOverdraft: number} | null>(null)
+
   const [showEditClassModal, setShowEditClassModal] = useState(false)
   const [editingClass, setEditingClass] = useState<Class | null>(null)
   const [originalClientId, setOriginalClientId] = useState<string>('') // Store original client ID for comparison
@@ -683,8 +689,44 @@ export default function ClassesPage(): JSX.Element {
   }, [showEditClassModal])
 
   // Other functions
-  const bookClass = async (classId: string, occurrenceDate?: string) => {
+  const bookClass = async (classId: string, occurrenceDate?: string, confirmOverdraft: boolean = false) => {
     try {
+      // Get class info to determine type
+      const classInfo = classes.find(c => c.id === classId)
+      if (!classInfo) {
+        setNotification({
+          type: 'error',
+          message: 'Clase no encontrada.'
+        })
+        return
+      }
+
+      const classType = classInfo.type as 'group' | 'private'
+      const currentBalance = classType === 'private' ? classCounts.private : classCounts.group
+
+      // Check if user is at max overdraft (-2)
+      if (currentBalance <= -2) {
+        setMaxOverdraftData({
+          currentBalance: currentBalance,
+          maxOverdraft: -2
+        })
+        setShowMaxOverdraftModal(true)
+        return
+      }
+
+      // Check if user has 0 or negative classes and hasn't confirmed overdraft
+      if (currentBalance <= 0 && !confirmOverdraft) {
+        setOverdraftData({
+          classId,
+          occurrenceDate,
+          classType,
+          currentBalance: currentBalance,
+          wouldBeBalance: currentBalance - 1
+        })
+        setShowOverdraftWarning(true)
+        return
+      }
+
       const token = localStorage.getItem('token')
       const response = await fetch('/api/bookings', {
         method: 'POST',
@@ -695,7 +737,8 @@ export default function ClassesPage(): JSX.Element {
         body: JSON.stringify({
           class_id: classId,
           occurrence_date: occurrenceDate,
-          payment_method: 'package'
+          payment_method: 'package',
+          confirm_overdraft: confirmOverdraft || currentBalance < 0
         })
       })
 
@@ -715,10 +758,28 @@ export default function ClassesPage(): JSX.Element {
           loadRecurringBookingCounts()
         }, 300)
       } else {
-        setNotification({
-          type: 'error',
-          message: data.message || 'Error al reservar la clase.'
-        })
+        // Handle specific error cases
+        if (data.message === 'MAX_OVERDRAFT_REACHED') {
+          setMaxOverdraftData({
+            currentBalance: data.currentBalance || currentBalance,
+            maxOverdraft: data.maxOverdraft || -2
+          })
+          setShowMaxOverdraftModal(true)
+        } else if (data.message === 'OVERDRAFT_WARNING') {
+          setOverdraftData({
+            classId,
+            occurrenceDate,
+            classType,
+            currentBalance: data.currentBalance || currentBalance,
+            wouldBeBalance: data.wouldBeBalance || -1
+          })
+          setShowOverdraftWarning(true)
+        } else {
+          setNotification({
+            type: 'error',
+            message: data.message || 'Error al reservar la clase.'
+          })
+        }
       }
     } catch (error) {
       console.error('Error booking class:', error)
@@ -4244,6 +4305,112 @@ export default function ClassesPage(): JSX.Element {
                   }`}
                 >
                   {confirmAction.type === 'cancel' ? 'Cancelar clase' : 'Eliminar clase'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Overdraft Warning Modal */}
+        {showOverdraftWarning && overdraftData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9700]" onClick={() => setShowOverdraftWarning(false)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  ⚠️ Advertencia de Sobregiro
+                </h3>
+                <button
+                  onClick={() => setShowOverdraftWarning(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-yellow-800 font-medium mb-2">
+                  No tienes clases disponibles
+                </p>
+                <p className="text-sm text-yellow-700 mb-3">
+                  Actualmente tienes <strong>{overdraftData.currentBalance}</strong> clase(s) {overdraftData.classType === 'group' ? 'grupales' : 'privadas'} disponibles.
+                </p>
+                <p className="text-sm text-yellow-700 mb-3">
+                  Si procedes con esta reserva, entrarás en sobregiro y deberás <strong>{Math.abs(overdraftData.wouldBeBalance)}</strong> clase(s). Esta deuda se resolverá:
+                </p>
+                <ul className="text-sm text-yellow-700 list-disc list-inside space-y-1 mb-3">
+                  <li>Si renuevas tu paquete, se deducirá automáticamente de tu nuevo saldo</li>
+                  <li>O permanecerá hasta que la resuelvas</li>
+                </ul>
+                <p className="text-sm text-yellow-800 font-semibold">
+                  Tu saldo después de esta reserva será: <strong>{overdraftData.wouldBeBalance}</strong>
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowOverdraftWarning(false)}
+                  className="flex-1 px-4 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    setShowOverdraftWarning(false)
+                    if (overdraftData) {
+                      bookClass(overdraftData.classId, overdraftData.occurrenceDate, true)
+                    }
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-yellow-600 text-white rounded-xl hover:bg-yellow-700 transition-colors font-medium"
+                >
+                  Proceder (Saldo: {overdraftData.wouldBeBalance})
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Max Overdraft Reached Modal */}
+        {showMaxOverdraftModal && maxOverdraftData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9700]" onClick={() => setShowMaxOverdraftModal(false)}>
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  🚫 Límite de Sobregiro Alcanzado
+                </h3>
+                <button
+                  onClick={() => setShowMaxOverdraftModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-red-800 font-medium mb-2">
+                  Has alcanzado el límite máximo de sobregiro
+                </p>
+                <p className="text-sm text-red-700 mb-3">
+                  Tu saldo actual es <strong>{maxOverdraftData.currentBalance}</strong> clase(s), que es el límite máximo permitido ({maxOverdraftData.maxOverdraft}).
+                </p>
+                <p className="text-sm text-red-700 mb-3">
+                  No puedes reservar más clases hasta que resuelvas tu deuda.
+                </p>
+                <p className="text-sm text-red-800 font-semibold">
+                  Recomendaciones:
+                </p>
+                <ul className="text-sm text-red-700 list-disc list-inside space-y-1 mt-2">
+                  <li>Cancela una clase existente para liberar espacio</li>
+                  <li>Contacta al propietario o instructor para obtener más clases</li>
+                  <li>Renueva tu paquete para resolver la deuda</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowMaxOverdraftModal(false)}
+                  className="flex-1 px-4 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+                >
+                  Entendido
                 </button>
               </div>
             </div>
