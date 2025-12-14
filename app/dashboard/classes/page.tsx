@@ -1846,18 +1846,20 @@ export default function ClassesPage(): JSX.Element {
          cls.is_recurring === true)
 
       if (!isRecurring) {
-        // Non-recurring: show on all dates (no date filtering)
-        // Apply template replacement for non-recurring classes
-        const [clsYear, clsMonth, clsDay] = baseDateStr.split('-').map(Number)
-        const clsDate = new Date(clsYear, clsMonth - 1, clsDay)
-        clsDate.setHours(0, 0, 0, 0)
-        
-        const processedClass = {
-          ...cls,
-          title: replaceTemplateVariables(cls.title || '', clsDate, cls),
-          description: replaceTemplateVariables(cls.description || '', clsDate, cls)
+        // Non-recurring: only show on its specific date
+        if (baseDateStr === dateStr) {
+          // Apply template replacement for non-recurring classes
+          const [clsYear, clsMonth, clsDay] = baseDateStr.split('-').map(Number)
+          const clsDate = new Date(clsYear, clsMonth - 1, clsDay)
+          clsDate.setHours(0, 0, 0, 0)
+          
+          const processedClass = {
+            ...cls,
+            title: replaceTemplateVariables(cls.title || '', clsDate, cls),
+            description: replaceTemplateVariables(cls.description || '', clsDate, cls)
+          }
+          filtered.push(processedClass)
         }
-        filtered.push(processedClass)
         return
       }
 
