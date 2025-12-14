@@ -5447,6 +5447,14 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
 app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
   try {
     const { filter } = req.query
+    
+    // Log the request for tracking
+    console.log(`[GET /api/classes] Request from ${req.user?.correo || req.user?.id} (${req.user?.role}) - filter: ${filter || 'none'}`)
+    
+    // First, get total count from DB before any filtering
+    const totalCountBefore = await database.get('SELECT COUNT(*) as count FROM classes')
+    console.log(`[GET /api/classes] Total classes in database: ${totalCountBefore?.count || 0}`)
+    
     let query = `
       SELECT c.*, u.nombre as coach_name 
       FROM classes c 
@@ -5466,6 +5474,8 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
       
       const classes = await database.all(query, [firstDayStr, lastDayStr])
       
+      console.log(`[GET /api/classes] Returning ${classes.length} classes (filtered to current month)`)
+      
       return res.json({
         success: true,
         classes: classes
@@ -5481,7 +5491,11 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
     // Log class counts for debugging
     const recurringCount = rawClasses.filter(c => c.is_recurring === 1 || c.is_recurring === '1' || c.is_recurring === true).length
     const nonRecurringCount = rawClasses.length - recurringCount
-    console.log(`[GET /api/classes] Loaded ${rawClasses.length} classes (${recurringCount} recurring, ${nonRecurringCount} non-recurring)`)
+    console.log(`[GET /api/classes] Loaded ${rawClasses.length} classes (${recurringCount} recurring, ${nonRecurringCount} non-recurring) from database`)
+    
+    if (totalCountBefore && totalCountBefore.count !== rawClasses.length) {
+      console.warn(`[GET /api/classes] ⚠️  WARNING: Query returned ${rawClasses.length} classes but DB has ${totalCountBefore.count} total!`)
+    }
 
     // Normalizar campo instructors a arreglo y calculate booking counts for recurring classes
     const classes = await Promise.all(rawClasses.map(async cls => {
@@ -6362,11 +6376,17 @@ app.delete('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), asy
     }
 
     // Delete all related records first, then the class
+    console.log(`[DELETE /api/classes/:id] Deleting class ${id} (type: ${classType}, recurring: ${isRecurring})`)
+    console.log(`[DELETE /api/classes/:id] User: ${req.user?.correo || req.user?.id} (${req.user?.role})`)
+    console.log(`[DELETE /api/classes/:id] IP: ${req.ip || req.connection?.remoteAddress}`)
+    
     await database.run('DELETE FROM attendance_records WHERE class_id = ?', [id])
     await database.run('DELETE FROM class_history WHERE class_id = ?', [id])
     await database.run('DELETE FROM bookings WHERE class_id = ?', [id])
     await database.run('DELETE FROM recurring_class_cancellations WHERE class_id = ?', [id])
     await database.run('DELETE FROM classes WHERE id = ?', [id])
+    
+    console.log(`[DELETE /api/classes/:id] ✅ Successfully deleted class ${id}`)
 
     const message = isRecurring 
       ? `Clase recurrente eliminada. ${refundedCount} estudiante(s) reembolsados.`
