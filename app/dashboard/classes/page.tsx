@@ -207,14 +207,8 @@ export default function ClassesPage(): JSX.Element {
       if (response.ok) {
         const data = await response.json()
         const now = new Date()
-        now.setHours(0, 0, 0, 0)
-        const todayStr = now.toISOString().split('T')[0]
-        
-        let filteredClasses = (data.classes || []).filter((cls: any) => {
-          if (!cls.date) return false
-          const classDateStr = cls.date.split('T')[0]
-          return classDateStr >= todayStr
-        })
+        // No date filtering - show all classes regardless of date
+        let filteredClasses = data.classes || []
 
         // Decode HTML entities in titles and descriptions
         filteredClasses = filteredClasses.map((cls: any) => ({
@@ -1852,44 +1846,26 @@ export default function ClassesPage(): JSX.Element {
          cls.is_recurring === true)
 
       if (!isRecurring) {
-        // Non-recurring: only on its specific date
-        if (baseDateStr === dateStr) {
-          // Apply template replacement for non-recurring classes too
-          const [clsYear, clsMonth, clsDay] = baseDateStr.split('-').map(Number)
-          const clsDate = new Date(clsYear, clsMonth - 1, clsDay)
-          clsDate.setHours(0, 0, 0, 0)
-          
-          const processedClass = {
-            ...cls,
-            title: replaceTemplateVariables(cls.title || '', clsDate, cls),
-            description: replaceTemplateVariables(cls.description || '', clsDate, cls)
-          }
-          filtered.push(processedClass)
+        // Non-recurring: show on all dates (no date filtering)
+        // Apply template replacement for non-recurring classes
+        const [clsYear, clsMonth, clsDay] = baseDateStr.split('-').map(Number)
+        const clsDate = new Date(clsYear, clsMonth - 1, clsDay)
+        clsDate.setHours(0, 0, 0, 0)
+        
+        const processedClass = {
+          ...cls,
+          title: replaceTemplateVariables(cls.title || '', clsDate, cls),
+          description: replaceTemplateVariables(cls.description || '', clsDate, cls)
         }
+        filtered.push(processedClass)
         return
       }
 
-      // Recurring class - check if it should appear on this day
+      // Recurring class - show on all dates (no date filtering)
       // Parse dates as local dates to avoid timezone issues
       const [targetYear, targetMonth, targetDay] = dateStr.split('-').map(Number)
       const target = new Date(targetYear, targetMonth - 1, targetDay)
       target.setHours(0, 0, 0, 0)
-
-      const [baseYear, baseMonth, baseDay] = baseDateStr.split('-').map(Number)
-      const baseDate = new Date(baseYear, baseMonth - 1, baseDay)
-      baseDate.setHours(0, 0, 0, 0)
-
-      // Must be on or after start date
-      if (target < baseDate) return
-
-      // If recurrence_end_date is set, enforce upper bound
-      if ((cls as any).recurrence_end_date) {
-        const endDateStr = (cls as any).recurrence_end_date.split('T')[0] // Handle datetime strings
-        const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number)
-        const end = new Date(endYear, endMonth - 1, endDay)
-        end.setHours(0, 0, 0, 0)
-        if (target > end) return
-      }
 
       // Check if this day of week matches the recurrence pattern
       const dayOfWeek = target.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
@@ -1932,6 +1908,9 @@ export default function ClassesPage(): JSX.Element {
         }
       } else {
         // Fallback: show weekly (same day of week as start date)
+        const [baseYear, baseMonth, baseDay] = baseDateStr.split('-').map(Number)
+        const baseDate = new Date(baseYear, baseMonth - 1, baseDay)
+        baseDate.setHours(0, 0, 0, 0)
         const startDayOfWeek = baseDate.getDay()
         if (dayOfWeek === startDayOfWeek) {
       const diffDays = Math.floor((target.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -2680,69 +2659,62 @@ export default function ClassesPage(): JSX.Element {
                   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
                   const dayNamesShort = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
                   
-                  const today = new Date()
-                  today.setHours(0, 0, 0, 0)
-                  const endLimit = (cls as any).recurrence_end_date 
-                    ? new Date((cls as any).recurrence_end_date + 'T00:00:00')
-                    : null
+                  // No date filtering - show all occurrences regardless of date
+                  // Get the start date from the class
+                  const [baseYear, baseMonth, baseDay] = cls.date.split('T')[0].split('-').map(Number)
+                  const baseDate = new Date(baseYear, baseMonth - 1, baseDay)
+                  baseDate.setHours(0, 0, 0, 0)
 
                   const entries: any[] = []
 
                   recurrenceDays.forEach((dayOfWeek: number) => {
-                    // Find the next occurrence by checking dates starting from today
-                    // Look up to 8 weeks ahead to find the next occurrence
-                    let found = false
-                    for (let weeksAhead = 0; weeksAhead < 8; weeksAhead++) {
-                      for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-                        const checkDate = new Date(today)
-                        checkDate.setDate(today.getDate() + (weeksAhead * 7) + dayOffset)
-                        checkDate.setHours(0, 0, 0, 0)
+                    // Generate occurrences for a wide date range (past and future)
+                    // Check from 1 year ago to 1 year ahead to show all occurrences
+                    const today = new Date()
+                    today.setHours(0, 0, 0, 0)
+                    const startCheck = new Date(today)
+                    startCheck.setFullYear(today.getFullYear() - 1) // Start 1 year ago
+                    const endCheck = new Date(today)
+                    endCheck.setFullYear(today.getFullYear() + 1) // End 1 year ahead
 
-                        // Skip if past end date
-                        if (endLimit && checkDate > endLimit) {
-                          break
-                        }
+                    // Find all occurrences in this range
+                    for (let checkDate = new Date(startCheck); checkDate <= endCheck; checkDate.setDate(checkDate.getDate() + 1)) {
+                      checkDate.setHours(0, 0, 0, 0)
 
-                        // Check if this date matches the day of week
-                        if (checkDate.getDay() !== dayOfWeek) continue
+                      // Check if this date matches the day of week
+                      if (checkDate.getDay() !== dayOfWeek) continue
 
-                        // Use getClassesForDate to see if this class appears on this date
-                        // This ensures we match the calendar's logic exactly
-                        const classesOnDate = getClassesForDate(checkDate)
-                        const matchingClass = classesOnDate.find(c => c.id === cls.id)
+                      // Use getClassesForDate to see if this class appears on this date
+                      // This ensures we match the calendar's logic exactly
+                      const classesOnDate = getClassesForDate(checkDate)
+                      const matchingClass = classesOnDate.find(c => c.id === cls.id)
 
-                        if (matchingClass) {
-                          // Found the next occurrence!
-                          const occurrenceDateStr = checkDate.toISOString().split('T')[0]
+                      if (matchingClass) {
+                        const occurrenceDateStr = checkDate.toISOString().split('T')[0]
 
-                          // Use the class data from getClassesForDate (already has template vars replaced)
-                          const occurrenceTitle = matchingClass.title || cls.title || ''
-                          const occurrenceDescription = matchingClass.description || cls.description || ''
+                        // Use the class data from getClassesForDate (already has template vars replaced)
+                        const occurrenceTitle = matchingClass.title || cls.title || ''
+                        const occurrenceDescription = matchingClass.description || cls.description || ''
 
-                          // Use occurrence-specific booking counts
-                          const bookingCounts = recurringBookingCounts[cls.id] || {}
-                          const occurrenceBookings = bookingCounts[occurrenceDateStr] ?? matchingClass.current_bookings ?? cls.current_bookings
+                        // Use occurrence-specific booking counts
+                        const bookingCounts = recurringBookingCounts[cls.id] || {}
+                        const occurrenceBookings = bookingCounts[occurrenceDateStr] ?? matchingClass.current_bookings ?? cls.current_bookings
 
-                          entries.push({
-                            ...matchingClass,
-                            ...cls, // Keep original class properties
-                            title: occurrenceTitle,
-                            description: occurrenceDescription,
-                            dayOfWeek,
-                            dayName: dayNames[dayOfWeek],
-                            dayNameShort: dayNamesShort[dayOfWeek],
-                            recurrence_end_date: (cls as any).recurrence_end_date,
-                            is_recurring_entry: true,
-                            occurrence_date: occurrenceDateStr,
-                            date: occurrenceDateStr,
-                            current_bookings: occurrenceBookings
-                          })
-
-                          found = true
-                          break
-                        }
+                        entries.push({
+                          ...matchingClass,
+                          ...cls, // Keep original class properties
+                          title: occurrenceTitle,
+                          description: occurrenceDescription,
+                          dayOfWeek,
+                          dayName: dayNames[dayOfWeek],
+                          dayNameShort: dayNamesShort[dayOfWeek],
+                          recurrence_end_date: (cls as any).recurrence_end_date,
+                          is_recurring_entry: true,
+                          occurrence_date: occurrenceDateStr,
+                          date: occurrenceDateStr,
+                          current_bookings: occurrenceBookings
+                        })
                       }
-                      if (found) break
                     }
                   })
 

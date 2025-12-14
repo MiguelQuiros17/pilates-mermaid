@@ -5461,29 +5461,9 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
       LEFT JOIN users u ON c.coach_id = u.id 
     `
     
-    // Si se solicita filtrar por mes actual, agregar el filtro
-    if (filter === 'current_month') {
-      const today = new Date()
-      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      const firstDayStr = firstDayOfMonth.toISOString().split('T')[0]
-      const lastDayStr = lastDayOfMonth.toISOString().split('T')[0]
-      
-      query += ` WHERE c.date >= ? AND c.date <= ?`
-      query += ` ORDER BY c.date ASC, c.time ASC`
-      
-      const classes = await database.all(query, [firstDayStr, lastDayStr])
-      
-      console.log(`[GET /api/classes] Returning ${classes.length} classes (filtered to current month)`)
-      
-      return res.json({
-        success: true,
-        classes: classes
-      })
-    }
-    
     // Show ALL classes regardless of date (including past classes)
     // Past classes will be marked as non-bookable on the frontend
+    // No date filtering - show everything
     query += ` ORDER BY c.date ASC, c.time ASC LIMIT 5000`
     
     const rawClasses = await database.all(query)
