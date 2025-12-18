@@ -2,12 +2,14 @@
 
 @using Aloha.Domain.Services.Localization
 @using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Localization
 @using Microsoft.AspNetCore.Authorization
 @using Aloha.Domain.Services.AdminAudit
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
 @using Microsoft.AspNetCore.Identity
 @using System.Globalization
+@using Microsoft.EntityFrameworkCore
 @attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, ContentManager, Audit")]
 
 @inject AuthenticationStateProvider authStateProvider
@@ -52,15 +54,6 @@
                             <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
                         }
                     </InputSelect>
-                </div>
-                <div class="mb-0">
-                    <BulkTranslateButton @ref="bulkTranslateButton"
-                                        SelectedCulture="@(input.SelectedCulture ?? primaryLanguage)"
-                                        SelectedCultureChanged="@OnBulkCultureChanged"
-                                        OnBulkTranslate="@OnBulkTranslateAll"
-                                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                                        HasEnglishTextFunc="@HasEnglishText" />
                 </div>
             </div>
         </div>
@@ -147,13 +140,28 @@
                 </div>
                 @resource.DefaultText
             </div>
-            <InputTextArea @bind-Value="resource.CurrentText"
-            class="form-control"
-            disabled="@isReadOnly"
-            id="@($"stringResource-{resource.Id}")"
-            rows="1"
-            type="text" />
-            <ValidationMessage For="() => resource.CurrentText" />
+            @if (isMultiLanguageEnabled)
+            {
+                <MultiLanguageInput Label=""
+                                   FieldId="@($"stringResource-{resource.Id}")"
+                                   Placeholder="Enter override text"
+                                   Rows="1"
+                                   IsDisabled="@isReadOnly"
+                                   Field="@resource.Field"
+                                   FieldChanged="@((MultilingualField f) => resource.Field = f)"
+                                   SelectedCultureOverride="@input.SelectedCulture"
+                                   SelectedCultureOverrideChanged="@((string culture) => { })" />
+            }
+            else
+            {
+                <InputTextArea @bind-Value="resource.CurrentText"
+                               class="form-control"
+                               disabled="@isReadOnly"
+                               id="@($"stringResource-{resource.Id}")"
+                               rows="1"
+                               type="text" />
+                <ValidationMessage For="() => resource.CurrentText" />
+            }
         </div>
     }
 
@@ -202,7 +210,6 @@
     private string primaryLanguage = "en-US";
     private bool isMultiLanguageEnabled = false;
     private Dictionary<string, string> languageDisplayNames = new();
-    private BulkTranslateButton? bulkTranslateButton;
 
     protected override void OnInitialized()
     {
@@ -260,26 +267,39 @@
             messageRef?.SetSaving(true);
             await using var db = await dbFactory.CreateDbContextAsync();
 
-            var ids = input.LocalizationStrings.Select(x => x.Id);
-
-            var localizationStrings = await db.LocalizationStrings
-                .Include(x => x.LocalizationCulture)
-                .Where(x => ids.Contains(x.Id))
-                .ToListAsync();
-
-            foreach (var localizedString in localizationStrings)
+            foreach (var resource in filteredLocalizationStrings)
             {
-                var inputString = input.LocalizationStrings.First(x => x.Id == localizedString.Id);
-
-                var stringEquals = string.Equals(localizedString.CurrentText, inputString.CurrentText, StringComparison.OrdinalIgnoreCase);
-
-                if (!stringEquals)
+                // Get the current value from MultilingualField based on selected culture
+                var currentValue = resource.Field.Get(input.SelectedCulture ?? primaryLanguage, primaryLanguage);
+                
+                // Get the existing LocalizationString for the selected culture
+                var culture = input.SelectedCulture ?? primaryLanguage;
+                var cultureEntity = await db.Set<LocalizationCulture>()
+                    .FirstOrDefaultAsync(c => c.Culture == culture);
+                
+                if (cultureEntity == null)
                 {
-                    var currentText = string.IsNullOrEmpty(localizedString.CurrentText) ? localizedString.DefaultText : localizedString.CurrentText;
-
-                    var updatedText = string.IsNullOrEmpty(inputString.CurrentText) ? localizedString.DefaultText : inputString.CurrentText;
-
-                    var message = $"{inputString.Key}-{inputString.ResourceKey} text was updated From: \"{currentText}\" To: \"{updatedText}\"";
+                    continue;
+                }
+                
+                var existingString = await db.LocalizationStrings
+                    .Include(x => x.LocalizationCulture)
+                    .FirstOrDefaultAsync(x => x.Id == resource.Id);
+                
+                if (existingString == null)
+                {
+                    continue;
+                }
+                
+                // Get the old value for audit
+                var oldValue = existingString.CurrentText ?? existingString.DefaultText;
+                
+                // Update CurrentText (override) - null if empty to allow removal
+                var newValue = string.IsNullOrWhiteSpace(currentValue) ? null : currentValue;
+                
+                if (!string.Equals(existingString.CurrentText, newValue, StringComparison.OrdinalIgnoreCase))
+                {
+                    var message = $"{resource.Key}-{resource.ResourceKey} text was updated From: \"{oldValue}\" To: \"{newValue ?? existingString.DefaultText}\"";
 
                     if (AdminUser != null)
                     {
@@ -287,33 +307,28 @@
                     }
                 }
 
-                if (string.IsNullOrEmpty(inputString.CurrentText))
-                {
-                    /*
-                    * Explictly set to null. This allows the user
-                    * to remove the previous customization. Otherwise
-                    * we will display an empty string.
-                    *
-                    */
-                    inputString.CurrentText = null;
-                }
-
                 // Update database only - this does NOT write to JSON/TXT files
-                localizedString.Update(inputString.CurrentText);
+                existingString.Update(newValue);
             }
 
             // Save to database only - this does NOT write to JSON/TXT files
             await db.SaveChangesAsync();
 
             // Update cache with changed translations
-            foreach (var localizedString in localizationStrings)
+            foreach (var resource in filteredLocalizationStrings)
             {
-                var culture = localizedString.LocalizationCulture?.Culture;
-                if (!string.IsNullOrWhiteSpace(culture))
+                var existingString = await db.LocalizationStrings
+                    .Include(x => x.LocalizationCulture)
+                    .FirstOrDefaultAsync(x => x.Id == resource.Id);
+                
+                if (existingString?.LocalizationCulture?.Culture != null)
                 {
-                    // Get the actual text value (CurrentText if set, otherwise DefaultText)
-                    var text = localizedString.CurrentText ?? localizedString.DefaultText ?? "";
-                    Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(culture, localizedString.ResourceKey, localizedString.Key, text);
+                    var text = existingString.CurrentText ?? existingString.DefaultText ?? "";
+                    Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(
+                        existingString.LocalizationCulture.Culture, 
+                        existingString.ResourceKey, 
+                        existingString.Key, 
+                        text);
                 }
             }
 
@@ -342,50 +357,6 @@
         FilterLocalizationStrings();
     }
 
-    private async Task OnBulkCultureChanged(string culture)
-    {
-        input.SelectedCulture = culture;
-        await CultureSelected();
-    }
-
-    private bool HasEnglishText()
-    {
-        // Check if any text resources have English text
-        return filteredLocalizationStrings.Any(s => !string.IsNullOrWhiteSpace(s.DefaultText) || !string.IsNullOrWhiteSpace(s.CurrentText));
-    }
-
-    private List<string> GetFieldsWithExistingText()
-    {
-        var fields = new List<string>();
-        var culture = input.SelectedCulture ?? primaryLanguage;
-        
-        // Check which fields already have translations for the selected culture
-        foreach (var resource in filteredLocalizationStrings)
-        {
-            if (!string.IsNullOrWhiteSpace(resource.CurrentText))
-            {
-                fields.Add($"{resource.Key} ({resource.ResourceKey})");
-            }
-        }
-        
-        return fields;
-    }
-
-    private async Task OnBulkTranslateAll()
-    {
-        bulkTranslateButton?.ClearError();
-        // Bulk translate functionality would go here
-        // For now, just a placeholder
-        await Task.CompletedTask;
-    }
-
-    private async Task OnBulkTranslateAllLanguages()
-    {
-        bulkTranslateButton?.ClearError();
-        // Bulk translate all languages functionality would go here
-        // For now, just a placeholder
-        await Task.CompletedTask;
-    }
 
     private async Task ResourceSelected()
     {
@@ -585,20 +556,56 @@
         var culture = input.SelectedCulture ?? primaryLanguage;
 
         // Load ALL strings for the culture (up to 2000)
-        allLocalizationStrings = await db.LocalizationStrings
+        var dbStrings = await db.LocalizationStrings
             .Where(x => x.LocalizationCulture!.Culture == culture)
             .OrderBy(x => x.ResourceKey)
             .ThenBy(x => x.Key)
             .Take(2000)
-            .Select(x => new CustomizableString
+            .ToListAsync();
+
+        // Get all resource keys and keys we need to load translations for
+        var resourceKeysToLoad = dbStrings.Select(x => new { x.ResourceKey, x.Key }).Distinct().ToList();
+        
+        // Load all translations for these resource keys across all cultures
+        var allTranslations = await db.LocalizationStrings
+            .Where(s => resourceKeysToLoad.Any(r => r.ResourceKey == s.ResourceKey && r.Key == s.Key))
+            .Include(s => s.LocalizationCulture)
+            .ToListAsync();
+        
+        // Group translations by resource key and key
+        var translationsByResource = allTranslations
+            .GroupBy(t => new { t.ResourceKey, t.Key })
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Convert to CustomizableString with MultilingualField
+        allLocalizationStrings = dbStrings.Select(x => 
+        {
+            var field = new MultilingualField();
+            // Primary value is the current culture's value
+            field.PrimaryValue = x.CurrentText ?? x.DefaultText ?? "";
+            
+            // Load all translations for this resource key
+            if (translationsByResource.TryGetValue(new { x.ResourceKey, x.Key }, out var translations))
+            {
+                foreach (var trans in translations)
+                {
+                    if (trans.LocalizationCulture?.Culture != null && trans.LocalizationCulture.Culture != culture)
+                    {
+                        field.Translations[trans.LocalizationCulture.Culture] = trans.CurrentText ?? trans.DefaultText ?? "";
+                    }
+                }
+            }
+            
+            return new CustomizableString
             {
                 CurrentText = x.CurrentText,
                 DefaultText = x.DefaultText,
                 ResourceKey = x.ResourceKey,
                 Key = x.Key,
                 Id = x.Id,
-            })
-            .ToListAsync();
+                Field = field
+            };
+        }).ToList();
 
         // Filter using the same algorithm as dropdown
         FilterLocalizationStrings();
@@ -688,6 +695,7 @@
         public string ResourceKey { get; set; } = default!;
         public string? DefaultText { get; set; }
         public string? CurrentText { get; set; }
+        public MultilingualField Field { get; set; } = new();
     }
 
     private record ResourceKeyOption

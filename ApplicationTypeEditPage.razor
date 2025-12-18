@@ -35,36 +35,15 @@
     <DataAnnotationsValidator/>
     <ValidationSummary/>
 
-    @* Language selector at the top - sticky and full width *@
+    @* BulkTranslateButton includes the language selector *@
     @if (isMultiLanguageEnabled)
     {
-        <div class="sticky-top bg-white border-bottom p-3 mb-3 shadow-sm" style="z-index: 1020; margin-left: -15px; margin-right: -15px; padding-left: 15px !important; padding-right: 15px !important;">
-            <div class="d-flex align-items-end gap-3">
-                <div class="flex-grow-1">
-                    <label class="form-label fw-bold mb-2">Editing Language:</label>
-                    <InputSelect @bind-Value="bulkSelectedCulture" 
-                                @bind-Value:after="OnLanguageChanged"
-                                class="form-select" 
-                                style="width: 100%;"
-                                id="applicationtype-language-select">
-                        <option value="@primaryLanguage">@(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryDisplayName) ? primaryDisplayName : primaryLanguage) (Primary)</option>
-                        @foreach (var lang in availableLanguages)
-                        {
-                            <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
-                        }
-                    </InputSelect>
-                </div>
-                <div class="mb-0">
-                    <BulkTranslateButton @ref="bulkTranslateButton"
-                                        SelectedCulture="@bulkSelectedCulture"
-                                        SelectedCultureChanged="@OnBulkCultureChanged"
-                                        OnBulkTranslate="@OnBulkTranslateAll"
-                                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                                        HasEnglishTextFunc="@HasEnglishText" />
-                </div>
-            </div>
-        </div>
+        <BulkTranslateButton @ref="bulkTranslateButton"
+                            SelectedCulture="@bulkSelectedCulture"
+                            SelectedCultureChanged="@OnBulkCultureChanged"
+                            Fields="@input.Fields"
+                            FieldsChanged="@((Dictionary<string, MultilingualField> fields) => input.Fields = fields)"
+                            FieldIdPrefix="applicationtype" />
     }
 
     @* Multi-language input for Display Name *@
@@ -73,12 +52,10 @@
                        Placeholder="Enter display name"
                        Rows="1"
                        IsDisabled="@isReadOnly"
-                       EnglishValue="@input.ApplicationDisplayName"
-                       EnglishValueChanged="@((string value) => input.ApplicationDisplayName = value)"
-                       Translations="@input.DisplayNameTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DisplayNameTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       Field="@input.DisplayNameField"
+                       FieldChanged="@((MultilingualField f) => input.DisplayNameField = f)"
+                       SelectedCultureOverride="@bulkTranslateButton?.CurrentCulture" />
+    <ValidationMessage For="() => input.ApplicationDisplayName" />
 
     @* Multi-language input for Display Description *@
     <MultiLanguageInput Label="Display Description"
@@ -86,12 +63,10 @@
                        Placeholder="Enter display description"
                        Rows="3"
                        IsDisabled="@isReadOnly"
-                       EnglishValue="@input.ApplicationDisplayDescription"
-                       EnglishValueChanged="@((string value) => input.ApplicationDisplayDescription = value)"
-                       Translations="@input.DisplayDescriptionTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DisplayDescriptionTranslations = trans)"
-                       SelectedCultureOverride="@bulkSelectedCulture"
-                       SelectedCultureOverrideChanged="@OnBulkCultureChanged" />
+                       Field="@input.DescriptionField"
+                       FieldChanged="@((MultilingualField f) => input.DescriptionField = f)"
+                       SelectedCultureOverride="@bulkTranslateButton?.CurrentCulture" />
+    <ValidationMessage For="() => input.ApplicationDisplayDescription" />
 
     @if (!isCoreOfflineMode)
     {
@@ -373,12 +348,10 @@
     private const long MAX_IMAGE_FILE_BYTES = 1024000L;
     bool isCoreOfflineMode = false;
     private AdminUser? AdminUser = default!;
-    private string bulkSelectedCulture = "en-US"; // Will be initialized to primary language in OnAfterRenderAsync
+    private string? bulkSelectedCulture; // Will be initialized to primary language in OnAfterRenderAsync
     private string primaryLanguage = "en-US";
     private BulkTranslateButton? bulkTranslateButton;
     private bool isMultiLanguageEnabled = false;
-    private List<string> availableLanguages = new();
-    private Dictionary<string, string> languageDisplayNames = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -401,20 +374,6 @@
             primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
             bulkSelectedCulture = primaryLanguage;
             isMultiLanguageEnabled = await LanguageConfigService.IsMultiLanguageEnabledAsync();
-            
-            // Load available languages and display names
-            if (isMultiLanguageEnabled)
-            {
-                var allEnabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
-                availableLanguages = allEnabledLanguages.Where(l => l != primaryLanguage).ToList();
-                
-                languageDisplayNames = new Dictionary<string, string>();
-                languageDisplayNames[primaryLanguage] = await LanguageConfigService.GetLanguageDisplayNameAsync(primaryLanguage);
-                foreach (var lang in availableLanguages)
-                {
-                    languageDisplayNames[lang] = await LanguageConfigService.GetLanguageDisplayNameAsync(lang);
-                }
-            }
             
             await CheckRoleAndUpdateReadOnlyFlagAsync();
             await LoadData();
@@ -472,166 +431,9 @@
         isExpressAppInputReadOnly = !authUser.IsInRole("MahaloAdmin");
     }
 
-    private async Task OnLanguageChanged()
-    {
-        StateHasChanged();
-    }
-
-    private async Task OnBulkCultureChanged(string culture)
+    private async Task OnBulkCultureChanged(string? culture)
     {
         bulkSelectedCulture = culture;
-        StateHasChanged();
-    }
-
-    private bool HasEnglishText()
-    {
-        return !string.IsNullOrWhiteSpace(input.ApplicationDisplayName) ||
-               !string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription);
-    }
-
-    private List<string> GetFieldsWithExistingText()
-    {
-        var fields = new List<string>();
-        if (input.DisplayNameTranslations.TryGetValue(bulkSelectedCulture, out var nameTrans) && !string.IsNullOrWhiteSpace(nameTrans))
-        {
-            fields.Add("Display Name");
-        }
-        if (input.DisplayDescriptionTranslations.TryGetValue(bulkSelectedCulture, out var descTrans) && !string.IsNullOrWhiteSpace(descTrans))
-        {
-            fields.Add("Display Description");
-        }
-        return fields;
-    }
-
-    private async Task OnBulkTranslateAll()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        if (string.IsNullOrWhiteSpace(bulkSelectedCulture) || bulkSelectedCulture == "en-US")
-        {
-            return;
-        }
-
-        var errors = new List<string>();
-
-        // Translate Display Name
-        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayName))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayName, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.DisplayNameTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Display Name: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Display Name: {ex.Message}");
-            }
-        }
-
-        // Translate Display Description
-        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription))
-        {
-            try
-            {
-                var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayDescription, bulkSelectedCulture);
-                if (translated != null)
-                {
-                    input.DisplayDescriptionTranslations[bulkSelectedCulture] = translated;
-                }
-                else
-                {
-                    errors.Add($"Display Description: Translation failed (no result returned)");
-                }
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Display Description: {ex.Message}");
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
-        StateHasChanged();
-    }
-
-    private async Task OnBulkTranslateAllLanguages()
-    {
-        bulkTranslateButton?.ClearError();
-        
-        var availableLanguages = await TranslationHelper.GetAvailableLanguagesAsync();
-        var errors = new List<string>();
-
-        // Translate Display Name to all languages
-        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayName))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayName, lang);
-                    if (translated != null)
-                    {
-                        input.DisplayNameTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Display Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Display Name ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        // Translate Display Description to all languages
-        if (!string.IsNullOrWhiteSpace(input.ApplicationDisplayDescription))
-        {
-            foreach (var lang in availableLanguages)
-            {
-                try
-                {
-                    var translated = await TranslationHelper.TranslateAsync(input.ApplicationDisplayDescription, lang);
-                    if (translated != null)
-                    {
-                        input.DisplayDescriptionTranslations[lang] = translated;
-                    }
-                    else
-                    {
-                        errors.Add($"Display Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): Translation failed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"Display Description ({CultureInfo.GetCultureInfo(lang).DisplayName}): {ex.Message}");
-                }
-            }
-        }
-
-        if (errors.Any())
-        {
-            var isApiConfigured = TranslationHelper.IsTranslationApiConfigured();
-            var errorMessage = isApiConfigured 
-                ? $"Some translations failed: {string.Join("; ", errors)}. Please check your API configuration."
-                : "Translation API is not configured. Please configure Azure Translator or Google Translate API keys in appsettings.json.";
-            bulkTranslateButton?.SetError(errorMessage);
-        }
-
         StateHasChanged();
     }
 
@@ -686,9 +488,13 @@
                 .FirstAsync(x => x.Id == Id);
             var originalConfig = db.Entry(applicationType).CurrentValues.Clone().ToObject();
 
+            // Get English values from MultilingualField
+            var englishDisplayName = input.DisplayNameField.Get("en-US", primaryLanguage);
+            var englishDescription = input.DescriptionField.Get("en-US", primaryLanguage);
+            
             applicationType.Update(
-                input.ApplicationDisplayName!,
-                input.ApplicationDisplayDescription!,
+                englishDisplayName,
+                englishDescription,
                 input.CoreTypeIdentifier,
                 input.CoreChannelIdentifier,
                 input.CoreAccountTypeIdentifier,
@@ -707,149 +513,16 @@
                 input.CorelationAppDeclinedIdentifier,
                 input.CoreApplicationAccountTypeIndentifier!);
 
-            // Save translations to LocalizationStrings table
+            // Save translations using MultilingualFieldHelper
             var resourceKey = $"ProductApplicationType.{Id}";
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.DisplayNameField, db, resourceKey, "DisplayName", primaryLanguage);
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.DescriptionField, db, resourceKey, "DisplayDescription", primaryLanguage);
             
-            // Get all cultures from database
-            var cultures = await db.Set<LocalizationCulture>().ToListAsync();
-            var cultureMap = cultures.ToDictionary(c => c.Culture, c => c.Id);
-            
-            // Get primary language to determine save strategy
-            var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-            
-            // Save DisplayName translations
-            // Note: Translations dictionary contains all non-primary language translations
-            // Primary language value is stored in ApplicationDisplayName property
-            foreach (var translation in input.DisplayNameTranslations)
-            {
-                if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-                {
-                    continue; // Skip if culture doesn't exist
-                }
-                
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "DisplayName");
-                
-                if (existing != null)
-                {
-                    existing.UpdateDefault(translation.Value ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: cultureId,
-                        resourceKey: resourceKey,
-                        key: "DisplayName",
-                        defaultText: translation.Value ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-            
-            // Save primary language DisplayName to database if primary is not English
-            // (When primary is English, it's saved in the entity property, not in LocalizationStrings)
-            if (!primaryLanguage.StartsWith("en"))
-            {
-                if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-                {
-                    var existing = await db.Set<LocalizationString>()
-                        .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                               && s.ResourceKey == resourceKey 
-                                               && s.Key == "DisplayName");
-                    
-                    if (existing != null)
-                    {
-                        existing.UpdateDefault(input.ApplicationDisplayName ?? "");
-                    }
-                    else
-                    {
-                        var newString = LocalizationString.Create(
-                            localizationCultureId: primaryCultureId,
-                            resourceKey: resourceKey,
-                            key: "DisplayName",
-                            defaultText: input.ApplicationDisplayName ?? ""
-                        );
-                        db.Set<LocalizationString>().Add(newString);
-                    }
-                }
-            }
-            
-            // Save DisplayDescription translations
-            foreach (var translation in input.DisplayDescriptionTranslations)
-            {
-                if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-                {
-                    continue; // Skip if culture doesn't exist
-                }
-                
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "DisplayDescription");
-                
-                if (existing != null)
-                {
-                    existing.UpdateDefault(translation.Value ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: cultureId,
-                        resourceKey: resourceKey,
-                        key: "DisplayDescription",
-                        defaultText: translation.Value ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-            
-            // Save primary language DisplayDescription to database if primary is not English
-            // (When primary is English, it's saved in the entity property, not in LocalizationStrings)
-            if (!primaryLanguage.StartsWith("en"))
-            {
-                if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-                {
-                    var existing = await db.Set<LocalizationString>()
-                        .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                               && s.ResourceKey == resourceKey 
-                                               && s.Key == "DisplayDescription");
-                    
-                    if (existing != null)
-                    {
-                        existing.UpdateDefault(input.ApplicationDisplayDescription ?? "");
-                    }
-                    else
-                    {
-                        var newString = LocalizationString.Create(
-                            localizationCultureId: primaryCultureId,
-                            resourceKey: resourceKey,
-                            key: "DisplayDescription",
-                            defaultText: input.ApplicationDisplayDescription ?? ""
-                        );
-                        db.Set<LocalizationString>().Add(newString);
-                    }
-                }
-            }
-
-            // Update cache with saved translations
-            foreach (var translation in input.DisplayNameTranslations)
-            {
-                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "DisplayName", translation.Value ?? "");
-            }
-            if (!primaryLanguage.StartsWith("en") && cultureMap.TryGetValue(primaryLanguage, out _))
-            {
-                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "DisplayName", input.ApplicationDisplayName ?? "");
-            }
-            foreach (var translation in input.DisplayDescriptionTranslations)
-            {
-                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "DisplayDescription", translation.Value ?? "");
-            }
-            if (!primaryLanguage.StartsWith("en") && cultureMap.TryGetValue(primaryLanguage, out _))
-            {
-                Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "DisplayDescription", input.ApplicationDisplayDescription ?? "");
-            }
+            // Update cache
+            MultilingualFieldHelper.UpdateCache(input.DisplayNameField, resourceKey, "DisplayName", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(input.DescriptionField, resourceKey, "DisplayDescription", primaryLanguage);
 
             foreach (var link in input.LoanLinks)
             {
@@ -950,40 +623,23 @@
             return;
         }
 
-        // Load existing translations from LocalizationStrings table FIRST
-        // We need this to determine what values to load into ApplicationDisplayName/Description vs Translations
+        // Load translations using MultilingualFieldHelper
         var resourceKey = $"ProductApplicationType.{Id}";
-        
-        var translations = await db.Set<LocalizationString>()
-            .Where(s => s.ResourceKey == resourceKey 
-                     && (s.Key == "DisplayName" || s.Key == "DisplayDescription"))
-            .Include(s => s.LocalizationCulture)
-            .ToListAsync();
-        
-        // Get all enabled languages to know which translations to load
         var enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
         
-        // Load primary language values into ApplicationDisplayName/Description
-        // If primary language is English, use entity properties
-        // If primary language is Spanish, load from database translations
-        if (primaryLanguage.StartsWith("en"))
+        await MultilingualFieldHelper.LoadTranslationsAsync(
+            input.DisplayNameField, db, resourceKey, "DisplayName", primaryLanguage,
+            applicationType.ApplicationDisplayName, enabledLanguages);
+        await MultilingualFieldHelper.LoadTranslationsAsync(
+            input.DescriptionField, db, resourceKey, "DisplayDescription", primaryLanguage,
+            applicationType.ApplicationDisplayDescription, enabledLanguages);
+        
+        // Initialize Fields dictionary for BulkTranslateButton
+        input.Fields = new Dictionary<string, MultilingualField>
         {
-            // Primary language is English, so entity properties contain the primary language value
-            input.ApplicationDisplayName = applicationType.ApplicationDisplayName;
-            input.ApplicationDisplayDescription = applicationType.ApplicationDisplayDescription;
-        }
-        else
-        {
-            // Primary language is Spanish, so we need to load Spanish from database
-            // If Spanish translation exists, use it; otherwise use English as fallback
-            var spanishDisplayName = translations
-                .FirstOrDefault(t => t.LocalizationCulture?.Culture == primaryLanguage && t.Key == "DisplayName");
-            input.ApplicationDisplayName = spanishDisplayName?.DefaultText ?? applicationType.ApplicationDisplayName;
-            
-            var spanishDisplayDesc = translations
-                .FirstOrDefault(t => t.LocalizationCulture?.Culture == primaryLanguage && t.Key == "DisplayDescription");
-            input.ApplicationDisplayDescription = spanishDisplayDesc?.DefaultText ?? applicationType.ApplicationDisplayDescription;
-        }
+            { "DisplayName", input.DisplayNameField },
+            { "DisplayDescription", input.DescriptionField }
+        };
         
         // Load all other property values
         input.CoreTypeIdentifier = applicationType.CoreTypeIdentifier;
@@ -1002,57 +658,6 @@
         input.SymitarAutoApprovalCode = applicationType.SymitarAutoApprovalCode;
         input.CorelationAppApprovalIdentifier = applicationType.CorelationAppApprovalIdentifier;
         input.CorelationAppDeclinedIdentifier = applicationType.CorelationAppDeclinedIdentifier;
-        
-        // Load all non-primary language translations into the Translations dictionary
-        foreach (var trans in translations)
-        {
-            var culture = trans.LocalizationCulture?.Culture;
-            if (string.IsNullOrWhiteSpace(culture))
-            {
-                continue;
-            }
-            
-            // Skip primary language culture - it's stored in ApplicationDisplayName/Description
-            if (culture == primaryLanguage)
-            {
-                continue;
-            }
-            
-            // Only load translations for enabled languages
-            if (!enabledLanguages.Contains(culture))
-            {
-                continue;
-            }
-            
-            if (trans.Key == "DisplayName")
-            {
-                input.DisplayNameTranslations[culture] = trans.DefaultText ?? "";
-            }
-            else if (trans.Key == "DisplayDescription")
-            {
-                input.DisplayDescriptionTranslations[culture] = trans.DefaultText ?? "";
-            }
-        }
-        
-        // If primary language is not English, put English values (from entity properties) into Translations dictionary
-        // so they can be displayed when English is selected
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-            if (englishCulture != null)
-            {
-                // Use entity property values for English (they're always in English)
-                // Only set if not already loaded from database
-                if (!input.DisplayNameTranslations.ContainsKey(englishCulture))
-                {
-                    input.DisplayNameTranslations[englishCulture] = applicationType.ApplicationDisplayName ?? "";
-                }
-                if (!input.DisplayDescriptionTranslations.ContainsKey(englishCulture))
-                {
-                    input.DisplayDescriptionTranslations[englishCulture] = applicationType.ApplicationDisplayDescription ?? "";
-                }
-            }
-        }
 
         var loanProducts = await db.LoanProducts.Where(x => !x.IsDeleted).ToListAsync();
         var shareProducts = await db.ShareProducts.Where(x => !x.IsDeleted).ToListAsync();
@@ -1124,17 +729,29 @@
 
     private class Input
     {
+        // Validation attributes are checked via PrimaryValue in the form
+        public MultilingualField DisplayNameField { get; set; } = new();
+        public MultilingualField DescriptionField { get; set; } = new();
+        
+        // Fields dictionary for BulkTranslateButton
+        public Dictionary<string, MultilingualField> Fields { get; set; } = new();
+        
+        // Helper properties for validation
         [Required]
         [MaxLength(50)]
-        public string? ApplicationDisplayName { get; set; }
+        public string? ApplicationDisplayName 
+        { 
+            get => DisplayNameField.PrimaryValue; 
+            set => DisplayNameField.PrimaryValue = value ?? string.Empty; 
+        }
 
         [Required]
         [MaxLength(800)]
-        public string? ApplicationDisplayDescription { get; set; }
-
-        // Translation dictionaries - key is language code (e.g., "es-CR"), value is translated text
-        public Dictionary<string, string> DisplayNameTranslations { get; set; } = new();
-        public Dictionary<string, string> DisplayDescriptionTranslations { get; set; } = new();
+        public string? ApplicationDisplayDescription 
+        { 
+            get => DescriptionField.PrimaryValue; 
+            set => DescriptionField.PrimaryValue = value ?? string.Empty; 
+        }
 
         [MaxLength(20)]
         public string? CoreTypeIdentifier { get; set; }

@@ -24,36 +24,17 @@
 <p class="form-text">* Indicate Required Fields</p>
 @if (questionnaireToEdit is not null)
 {
-    @* Language selector at the top - controls all text inputs - sticky and full width *@
+    @* BulkTranslateButton includes the language selector *@
     @if (isMultiLanguageEnabled)
     {
-        <div class="sticky-top bg-white border-bottom p-3 mb-3 shadow-sm" style="z-index: 1020; margin-left: -15px; margin-right: -15px; padding-left: 15px !important; padding-right: 15px !important;">
-            <div class="d-flex align-items-end gap-3">
-                <div class="flex-grow-1">
-                    <label class="form-label fw-bold mb-2">Editing Language:</label>
-                    <InputSelect @bind-Value="bulkSelectedCulture" 
-                                @bind-Value:after="OnLanguageChanged"
-                                class="form-select" 
-                                style="width: 100%;"
-                                id="questionnaire-language-select">
-                        <option value="@primaryLanguage">@(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryDisplayName) ? primaryDisplayName : primaryLanguage) (Primary)</option>
-                        @foreach (var lang in availableLanguages)
-                        {
-                            <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
-                        }
-                    </InputSelect>
-                </div>
-                <div class="mb-0">
-                    <BulkTranslateButton @ref="bulkTranslateButton"
-                                        SelectedCulture="@bulkSelectedCulture"
-                                        SelectedCultureChanged="@OnBulkCultureChanged"
-                                        OnBulkTranslate="@OnBulkTranslateAll"
-                                        OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
-                                        GetFieldsWithExistingText="@GetFieldsWithExistingText"
-                                        HasEnglishTextFunc="@HasEnglishText" />
-                </div>
-            </div>
-        </div>
+        <BulkTranslateButton @ref="bulkTranslateButton"
+                            SelectedCulture="@bulkSelectedCulture"
+                            SelectedCultureChanged="@OnBulkCultureChanged"
+                            OnBulkTranslate="@OnBulkTranslateAll"
+                            OnBulkTranslateAllLanguages="@OnBulkTranslateAllLanguages"
+                            GetFieldsWithExistingText="@GetFieldsWithExistingText"
+                            HasEnglishTextFunc="@HasEnglishText"
+                            FieldIdPrefix="questionnaire" />
     }
 
     <QuestionnaireForm 
@@ -301,32 +282,36 @@
 
     private async Task HandleSubmit(QuestionnaireForm.Input values)
     {
-        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] START");
-        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.Name: '{values.Name}'");
-        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.Description: '{values.Description}'");
-        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.NameTranslations: {string.Join(", ", values.NameTranslations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"))}");
-        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.DescriptionTranslations: {string.Join(", ", values.DescriptionTranslations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"))}");
+        Console.WriteLine("[EditQuestionnaire.HandleSubmit] START");
+        var nameValue = values.NameField.PrimaryValue ?? "";
+        var descValue = values.DescriptionField.PrimaryValue ?? "";
+        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.Name: '{nameValue}'");
+        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.Description: '{descValue}'");
+        var nameTransStr = string.Join(", ", values.NameField.Translations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"));
+        var descTransStr = string.Join(", ", values.DescriptionField.Translations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"));
+        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.NameTranslations: {nameTransStr}");
+        Console.WriteLine($"[EditQuestionnaire.HandleSubmit] values.DescriptionTranslations: {descTransStr}");
         
         // Log all questions
         foreach (var question in values.UngroupedQuestions)
         {
-            var nameTranslationsArray = question.NameTranslations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
+            var nameTranslationsArray = question.NameField.Translations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
             var nameTranslationsStr = string.Join(", ", (IEnumerable<string>)nameTranslationsArray);
-            var questionName = question.Name ?? "";
+            var questionName = question.NameField.PrimaryValue ?? "";
             Console.WriteLine($"[EditQuestionnaire.HandleSubmit] Ungrouped Question - Name: '{questionName}', NameTranslations: {nameTranslationsStr}");
         }
         
         foreach (var group in values.QuestionGroups)
         {
-            var groupNameTranslationsArray = group.NameTranslations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
+            var groupNameTranslationsArray = group.NameField.Translations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
             var groupNameTranslationsStr = string.Join(", ", (IEnumerable<string>)groupNameTranslationsArray);
-            var groupName = group.Name ?? "";
+            var groupName = group.NameField.PrimaryValue ?? "";
             Console.WriteLine($"[EditQuestionnaire.HandleSubmit] Group - Name: '{groupName}', NameTranslations: {groupNameTranslationsStr}");
             foreach (var question in group.Questions)
             {
-                var questionNameTranslationsArray = question.NameTranslations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
+                var questionNameTranslationsArray = question.NameField.Translations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
                 var questionNameTranslationsStr = string.Join(", ", (IEnumerable<string>)questionNameTranslationsArray);
-                var questionName2 = question.Name ?? "";
+                var questionName2 = question.NameField.PrimaryValue ?? "";
                 Console.WriteLine($"[EditQuestionnaire.HandleSubmit] Grouped Question - Name: '{questionName2}', NameTranslations: {questionNameTranslationsStr}");
             }
         }
@@ -377,45 +362,9 @@
             string englishQuestionName;
             string? englishQuestionDescription;
             
-            if (primaryLanguage.StartsWith("en"))
-            {
-                // Primary language is English, so draftQuestion.Name contains English
-                englishQuestionName = draftQuestion.Name ?? "";
-                englishQuestionDescription = draftQuestion.Description;
-            }
-            else
-            {
-                // Primary language is Spanish, so get English from translations dictionary
-                Console.WriteLine($"[UpdateQuestionnaire] Primary language is Spanish, extracting English from translations");
-                var draftQuestionName = draftQuestion.Name ?? "";
-                Console.WriteLine($"[UpdateQuestionnaire] draftQuestion.Name (Spanish): '{draftQuestionName}'");
-                var nameTranslationsArray = draftQuestion.NameTranslations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
-                var nameTranslationsStr = string.Join(", ", (IEnumerable<string>)nameTranslationsArray);
-                Console.WriteLine($"[UpdateQuestionnaire] draftQuestion.NameTranslations: {nameTranslationsStr}");
-                var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                if (englishCulture != null && draftQuestion.NameTranslations.TryGetValue(englishCulture, out var enName))
-                {
-                    englishQuestionName = enName;
-                    Console.WriteLine($"[UpdateQuestionnaire] Found English in NameTranslations[{englishCulture}]: '{englishQuestionName}'");
-                }
-                else
-                {
-                    // Fallback to draftQuestion.Name if English translation not found
-                    englishQuestionName = draftQuestion.Name ?? "";
-                    Console.WriteLine($"[UpdateQuestionnaire] English not found in NameTranslations, using fallback draftQuestion.Name: '{englishQuestionName}'");
-                }
-                
-                if (englishCulture != null && draftQuestion.DescriptionTranslations.TryGetValue(englishCulture, out var enDesc))
-                {
-                    englishQuestionDescription = enDesc;
-                    Console.WriteLine($"[UpdateQuestionnaire] Found English in DescriptionTranslations[{englishCulture}]: '{englishQuestionDescription}'");
-                }
-                else
-                {
-                    englishQuestionDescription = draftQuestion.Description;
-                    Console.WriteLine($"[UpdateQuestionnaire] English not found in DescriptionTranslations, using fallback draftQuestion.Description: '{englishQuestionDescription}'");
-                }
-            }
+            // Get English values from MultilingualField
+            englishQuestionName = draftQuestion.NameField.Get("en-US", primaryLanguage);
+            englishQuestionDescription = draftQuestion.DescriptionField.Get("en-US", primaryLanguage);
             
             Console.WriteLine($"[UpdateQuestionnaire] Final englishQuestionName: '{englishQuestionName}'");
             Console.WriteLine($"[UpdateQuestionnaire] Final englishQuestionDescription: '{englishQuestionDescription}'");
@@ -432,19 +381,14 @@
             db.Add(question);
             await db.SaveChangesAsync();
 
-            // Save question translations
-            Console.WriteLine($"[UpdateQuestionnaire] Before SaveQuestionTranslations - QuestionId: {question.Id}");
-            var draftQuestionName2 = draftQuestion.Name ?? "";
-            var draftQuestionDesc = draftQuestion.Description ?? "";
-            Console.WriteLine($"[UpdateQuestionnaire] draftQuestion.Name: '{draftQuestionName2}'");
-            Console.WriteLine($"[UpdateQuestionnaire] draftQuestion.Description: '{draftQuestionDesc}'");
-            var nameTranslationsArray2 = draftQuestion.NameTranslations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
-            var nameTranslationsStr2 = string.Join(", ", (IEnumerable<string>)nameTranslationsArray2);
-            var descTranslationsArray = draftQuestion.DescriptionTranslations.Select(kvp => string.Format("{0}='{1}'", kvp.Key, kvp.Value)).ToArray();
-            var descTranslationsStr = string.Join(", ", (IEnumerable<string>)descTranslationsArray);
-            Console.WriteLine($"[UpdateQuestionnaire] draftQuestion.NameTranslations: {nameTranslationsStr2}");
-            Console.WriteLine($"[UpdateQuestionnaire] draftQuestion.DescriptionTranslations: {descTranslationsStr}");
-            await SaveQuestionTranslations(db, question.Id, draftQuestion.Name, draftQuestion.Description, draftQuestion.NameTranslations, draftQuestion.DescriptionTranslations);
+            // Save question translations using MultilingualFieldHelper
+            var questionResourceKey = $"Question.{question.Id}";
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                draftQuestion.NameField, db, questionResourceKey, "Name", primaryLanguage);
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                draftQuestion.DescriptionField, db, questionResourceKey, "Description", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(draftQuestion.NameField, questionResourceKey, "Name", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(draftQuestion.DescriptionField, questionResourceKey, "Description", primaryLanguage);
 
             var excludedQuestionProperties = new List<string> { nameof(question.QuestionnaireId), nameof(question.QuestionGroupId), nameof(question.MultipleChoiceOptions), nameof(question.Questionnaire), nameof(question.QuestionGroup) };
             await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Question created for questionnaire {questionnaire.Name}: ", oldConfig, question, excludedQuestionProperties);
@@ -456,38 +400,9 @@
             {
                 foreach (var draftOption in draftQuestion.MultipleChoiceOptions!)
                 {
-                    // Entity properties always contain English values, regardless of primary language setting
-                    string englishOptionName;
-                    string? englishDependentQuestionName;
-                    
-                    if (primaryLanguage.StartsWith("en"))
-                    {
-                        // Primary language is English
-                        englishOptionName = draftOption.Name ?? "";
-                        englishDependentQuestionName = draftOption.DependentQuestionName;
-                    }
-                    else
-                    {
-                        // Primary language is Spanish, so get English from translations dictionary
-                        var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                        if (englishCulture != null && draftOption.NameTranslations.TryGetValue(englishCulture, out var enName))
-                        {
-                            englishOptionName = enName;
-                        }
-                        else
-                        {
-                            englishOptionName = draftOption.Name ?? "";
-                        }
-                        
-                        if (englishCulture != null && draftOption.DependentQuestionNameTranslations.TryGetValue(englishCulture, out var enDepName))
-                        {
-                            englishDependentQuestionName = enDepName;
-                        }
-                        else
-                        {
-                            englishDependentQuestionName = draftOption.DependentQuestionName;
-                        }
-                    }
+                    // Get English values from MultilingualField
+                    var englishOptionName = draftOption.NameField.Get("en-US", primaryLanguage);
+                    var englishDependentQuestionName = draftOption.DependentQuestionNameField.Get("en-US", primaryLanguage);
                     
                     var option = MultipleChoiceOption.Create(
                         englishOptionName,
@@ -499,8 +414,14 @@
                     db.Add(option);
                     await db.SaveChangesAsync();
 
-                    // Save option translations
-                    await SaveOptionTranslations(db, option.Id, draftOption.Name, draftOption.DependentQuestionName, draftOption.NameTranslations, draftOption.DependentQuestionNameTranslations);
+                    // Save option translations using MultilingualFieldHelper
+                    var optionResourceKey = $"MultipleChoiceOption.{option.Id}";
+                    await MultilingualFieldHelper.SaveTranslationsAsync(
+                        draftOption.NameField, db, optionResourceKey, "Name", primaryLanguage);
+                    await MultilingualFieldHelper.SaveTranslationsAsync(
+                        draftOption.DependentQuestionNameField, db, optionResourceKey, "DependentQuestionName", primaryLanguage);
+                    MultilingualFieldHelper.UpdateCache(draftOption.NameField, optionResourceKey, "Name", primaryLanguage);
+                    MultilingualFieldHelper.UpdateCache(draftOption.DependentQuestionNameField, optionResourceKey, "DependentQuestionName", primaryLanguage);
 
                     var excludedOptionProperties = new List<string> { nameof(option.DependentQuestionName), nameof(option.QuestionId), nameof(option.DependentMultipleChoiceOptions) };
                     await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Option created for question {question.Name}: ", option, excludedOptionProperties);
@@ -512,38 +433,9 @@
                     {
                         foreach (var draftDependentOption in draftOption.DependentMultipleChoiceOptions!)
                         {
-                            // Entity properties always contain English values, regardless of primary language setting
-                            string englishDepOptionName;
-                            string? englishFreeFormDescription;
-                            
-                            if (primaryLanguage.StartsWith("en"))
-                            {
-                                // Primary language is English
-                                englishDepOptionName = draftDependentOption.Name ?? "";
-                                englishFreeFormDescription = draftDependentOption.FreeFormFieldDescription;
-                            }
-                            else
-                            {
-                                // Primary language is Spanish, so get English from translations dictionary
-                                var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                                if (englishCulture != null && draftDependentOption.NameTranslations.TryGetValue(englishCulture, out var enName))
-                                {
-                                    englishDepOptionName = enName;
-                                }
-                                else
-                                {
-                                    englishDepOptionName = draftDependentOption.Name ?? "";
-                                }
-                                
-                                if (englishCulture != null && draftDependentOption.FreeFormFieldDescriptionTranslations.TryGetValue(englishCulture, out var enDesc))
-                                {
-                                    englishFreeFormDescription = enDesc;
-                                }
-                                else
-                                {
-                                    englishFreeFormDescription = draftDependentOption.FreeFormFieldDescription;
-                                }
-                            }
+                            // Get English values from MultilingualField
+                            var englishDepOptionName = draftDependentOption.NameField.Get("en-US", primaryLanguage);
+                            var englishFreeFormDescription = draftDependentOption.FreeFormFieldDescriptionField.Get("en-US", primaryLanguage);
                             
                             var dependentOption = DependentMultipleChoiceOption.Create(
                                 englishDepOptionName,
@@ -555,8 +447,14 @@
                             db.Add(dependentOption);
                             await db.SaveChangesAsync();
 
-                            // Save dependent option translations
-                            await SaveDependentOptionTranslations(db, dependentOption.Id, draftDependentOption.Name, draftDependentOption.FreeFormFieldDescription, draftDependentOption.NameTranslations, draftDependentOption.FreeFormFieldDescriptionTranslations);
+                            // Save dependent option translations using MultilingualFieldHelper
+                            var depOptionResourceKey = $"DependentMultipleChoiceOption.{dependentOption.Id}";
+                            await MultilingualFieldHelper.SaveTranslationsAsync(
+                                draftDependentOption.NameField, db, depOptionResourceKey, "Name", primaryLanguage);
+                            await MultilingualFieldHelper.SaveTranslationsAsync(
+                                draftDependentOption.FreeFormFieldDescriptionField, db, depOptionResourceKey, "FreeFormFieldDescription", primaryLanguage);
+                            MultilingualFieldHelper.UpdateCache(draftDependentOption.NameField, depOptionResourceKey, "Name", primaryLanguage);
+                            MultilingualFieldHelper.UpdateCache(draftDependentOption.FreeFormFieldDescriptionField, depOptionResourceKey, "FreeFormFieldDescription", primaryLanguage);
 
                             var excludedDependentOptionProperties = new List<string> { nameof(dependentOption.MultipleChoiceOptionId), nameof(dependentOption.MultipleChoiceOption) };
                             await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Dependent Option created for option {option.Name}: ", dependentOption, excludedDependentOptionProperties);
@@ -575,39 +473,9 @@
         // Create Question Groups
         foreach (var draftQuestionGroup in values.QuestionGroups)
         {
-            // Entity properties always contain English values, regardless of primary language setting
-            string englishGroupName;
-            string? englishGroupDescription;
-            
-            if (primaryLanguage.StartsWith("en"))
-            {
-                // Primary language is English, so draftQuestionGroup.Name contains English
-                englishGroupName = draftQuestionGroup.Name ?? "";
-                englishGroupDescription = draftQuestionGroup.Description;
-            }
-            else
-            {
-                // Primary language is Spanish, so get English from translations dictionary
-                var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                if (englishCulture != null && draftQuestionGroup.NameTranslations.TryGetValue(englishCulture, out var enName))
-                {
-                    englishGroupName = enName;
-                }
-                else
-                {
-                    // Fallback to draftQuestionGroup.Name if English translation not found
-                    englishGroupName = draftQuestionGroup.Name ?? "";
-                }
-                
-                if (englishCulture != null && draftQuestionGroup.DescriptionTranslations.TryGetValue(englishCulture, out var enDesc))
-                {
-                    englishGroupDescription = enDesc;
-                }
-                else
-                {
-                    englishGroupDescription = draftQuestionGroup.Description;
-                }
-            }
+            // Get English values from MultilingualField
+            var englishGroupName = draftQuestionGroup.NameField.Get("en-US", primaryLanguage);
+            var englishGroupDescription = draftQuestionGroup.DescriptionField.Get("en-US", primaryLanguage);
             
             var questionGroup = QuestionGroup.Create(
                 englishGroupName,
@@ -618,8 +486,14 @@
             db.Add(questionGroup);
             await db.SaveChangesAsync();
 
-            // Save question group translations
-            await SaveQuestionGroupTranslations(db, questionGroup.Id, draftQuestionGroup.Name!, draftQuestionGroup.Description, draftQuestionGroup.NameTranslations, draftQuestionGroup.DescriptionTranslations);
+            // Save question group translations using MultilingualFieldHelper
+            var groupResourceKey = $"QuestionGroup.{questionGroup.Id}";
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                draftQuestionGroup.NameField, db, groupResourceKey, "Name", primaryLanguage);
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                draftQuestionGroup.DescriptionField, db, groupResourceKey, "Description", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(draftQuestionGroup.NameField, groupResourceKey, "Name", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(draftQuestionGroup.DescriptionField, groupResourceKey, "Description", primaryLanguage);
 
             var excludedQuestionGroupProperties = new List<string> { nameof(questionGroup.QuestionnaireId), nameof(questionGroup.Questions), nameof(questionGroup.Questionnaire) };
             await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Question group created for questionnaire {questionnaire.Name}: ", questionGroup, excludedQuestionGroupProperties);
@@ -627,39 +501,9 @@
             // Create Grouped Questions
             foreach (var draftQuestion in draftQuestionGroup.Questions)
             {
-                // Entity properties always contain English values, regardless of primary language setting
-                string englishQuestionName;
-                string? englishQuestionDescription;
-                
-                if (primaryLanguage.StartsWith("en"))
-                {
-                    // Primary language is English, so draftQuestion.Name contains English
-                    englishQuestionName = draftQuestion.Name ?? "";
-                    englishQuestionDescription = draftQuestion.Description;
-                }
-                else
-                {
-                    // Primary language is Spanish, so get English from translations dictionary
-                    var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                    if (englishCulture != null && draftQuestion.NameTranslations.TryGetValue(englishCulture, out var enName))
-                    {
-                        englishQuestionName = enName;
-                    }
-                    else
-                    {
-                        // Fallback to draftQuestion.Name if English translation not found
-                        englishQuestionName = draftQuestion.Name ?? "";
-                    }
-                    
-                    if (englishCulture != null && draftQuestion.DescriptionTranslations.TryGetValue(englishCulture, out var enDesc))
-                    {
-                        englishQuestionDescription = enDesc;
-                    }
-                    else
-                    {
-                        englishQuestionDescription = draftQuestion.Description;
-                    }
-                }
+                // Get English values from MultilingualField
+                var englishQuestionName = draftQuestion.NameField.Get("en-US", primaryLanguage);
+                var englishQuestionDescription = draftQuestion.DescriptionField.Get("en-US", primaryLanguage);
                 
                 var question = Question.Create(
                     questionnaire.Id,
@@ -673,8 +517,14 @@
                 db.Add(question);
                 await db.SaveChangesAsync();
 
-                // Save question translations
-                await SaveQuestionTranslations(db, question.Id, draftQuestion.Name, draftQuestion.Description, draftQuestion.NameTranslations, draftQuestion.DescriptionTranslations);
+                // Save question translations using MultilingualFieldHelper
+                var questionResourceKey2 = $"Question.{question.Id}";
+                await MultilingualFieldHelper.SaveTranslationsAsync(
+                    draftQuestion.NameField, db, questionResourceKey2, "Name", primaryLanguage);
+                await MultilingualFieldHelper.SaveTranslationsAsync(
+                    draftQuestion.DescriptionField, db, questionResourceKey2, "Description", primaryLanguage);
+                MultilingualFieldHelper.UpdateCache(draftQuestion.NameField, questionResourceKey2, "Name", primaryLanguage);
+                MultilingualFieldHelper.UpdateCache(draftQuestion.DescriptionField, questionResourceKey2, "Description", primaryLanguage);
 
                 // Create multiple choice options
                 if (draftQuestion.Type is QuestionType.SingleSelect or QuestionType.MultipleSelect &&
@@ -683,38 +533,9 @@
                 {
                     foreach (var draftOption in draftQuestion.MultipleChoiceOptions!)
                     {
-                        // Entity properties always contain English values, regardless of primary language setting
-                        string englishOptionName;
-                        string? englishDependentQuestionName;
-                        
-                        if (primaryLanguage.StartsWith("en"))
-                        {
-                            // Primary language is English
-                            englishOptionName = draftOption.Name ?? "";
-                            englishDependentQuestionName = draftOption.DependentQuestionName;
-                        }
-                        else
-                        {
-                            // Primary language is Spanish, so get English from translations dictionary
-                            var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                            if (englishCulture != null && draftOption.NameTranslations.TryGetValue(englishCulture, out var enName))
-                            {
-                                englishOptionName = enName;
-                            }
-                            else
-                            {
-                                englishOptionName = draftOption.Name ?? "";
-                            }
-                            
-                            if (englishCulture != null && draftOption.DependentQuestionNameTranslations.TryGetValue(englishCulture, out var enDepName))
-                            {
-                                englishDependentQuestionName = enDepName;
-                            }
-                            else
-                            {
-                                englishDependentQuestionName = draftOption.DependentQuestionName;
-                            }
-                        }
+                        // Get English values from MultilingualField
+                        var englishOptionName = draftOption.NameField.Get("en-US", primaryLanguage);
+                        var englishDependentQuestionName = draftOption.DependentQuestionNameField.Get("en-US", primaryLanguage);
                         
                         var option = MultipleChoiceOption.Create(
                             englishOptionName,
@@ -726,8 +547,14 @@
                         db.Add(option);
                         await db.SaveChangesAsync();
 
-                        // Save option translations
-                        await SaveOptionTranslations(db, option.Id, draftOption.Name, draftOption.DependentQuestionName, draftOption.NameTranslations, draftOption.DependentQuestionNameTranslations);
+                        // Save option translations using MultilingualFieldHelper
+                        var optionResourceKey = $"MultipleChoiceOption.{option.Id}";
+                        await MultilingualFieldHelper.SaveTranslationsAsync(
+                            draftOption.NameField, db, optionResourceKey, "Name", primaryLanguage);
+                        await MultilingualFieldHelper.SaveTranslationsAsync(
+                            draftOption.DependentQuestionNameField, db, optionResourceKey, "DependentQuestionName", primaryLanguage);
+                        MultilingualFieldHelper.UpdateCache(draftOption.NameField, optionResourceKey, "Name", primaryLanguage);
+                        MultilingualFieldHelper.UpdateCache(draftOption.DependentQuestionNameField, optionResourceKey, "DependentQuestionName", primaryLanguage);
 
                         var excludedQuestionProperties = new List<string> { nameof(question.QuestionnaireId), nameof(question.QuestionGroupId), nameof(question.MultipleChoiceOptions), nameof(question.Questionnaire), nameof(question.QuestionGroup) };
                         await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Grouped Question created for questionnaire {questionnaire.Name}: ", question, excludedQuestionProperties);
@@ -739,38 +566,9 @@
                         {
                             foreach (var draftDependentOption in draftOption.DependentMultipleChoiceOptions!)
                             {
-                                // Entity properties always contain English values, regardless of primary language setting
-                                string englishDepOptionName;
-                                string? englishFreeFormDescription;
-                                
-                                if (primaryLanguage.StartsWith("en"))
-                                {
-                                    // Primary language is English
-                                    englishDepOptionName = draftDependentOption.Name ?? "";
-                                    englishFreeFormDescription = draftDependentOption.FreeFormFieldDescription;
-                                }
-                                else
-                                {
-                                    // Primary language is Spanish, so get English from translations dictionary
-                                    var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-                                    if (englishCulture != null && draftDependentOption.NameTranslations.TryGetValue(englishCulture, out var enName))
-                                    {
-                                        englishDepOptionName = enName;
-                                    }
-                                    else
-                                    {
-                                        englishDepOptionName = draftDependentOption.Name ?? "";
-                                    }
-                                    
-                                    if (englishCulture != null && draftDependentOption.FreeFormFieldDescriptionTranslations.TryGetValue(englishCulture, out var enDesc))
-                                    {
-                                        englishFreeFormDescription = enDesc;
-                                    }
-                                    else
-                                    {
-                                        englishFreeFormDescription = draftDependentOption.FreeFormFieldDescription;
-                                    }
-                                }
+                            // Get English values from MultilingualField
+                            var englishDepOptionName = draftDependentOption.NameField.Get("en-US", primaryLanguage);
+                            var englishFreeFormDescription = draftDependentOption.FreeFormFieldDescriptionField.Get("en-US", primaryLanguage);
                                 
                                 var dependentOption = DependentMultipleChoiceOption.Create(
                                     englishDepOptionName,
@@ -783,7 +581,14 @@
                                 await db.SaveChangesAsync();
 
                                 // Save dependent option translations
-                                await SaveDependentOptionTranslations(db, dependentOption.Id, draftDependentOption.Name, draftDependentOption.FreeFormFieldDescription, draftDependentOption.NameTranslations, draftDependentOption.FreeFormFieldDescriptionTranslations);
+                                // Save dependent option translations using MultilingualFieldHelper
+                                var depOptionResourceKey2 = $"DependentMultipleChoiceOption.{dependentOption.Id}";
+                                await MultilingualFieldHelper.SaveTranslationsAsync(
+                                    draftDependentOption.NameField, db, depOptionResourceKey2, "Name", primaryLanguage);
+                                await MultilingualFieldHelper.SaveTranslationsAsync(
+                                    draftDependentOption.FreeFormFieldDescriptionField, db, depOptionResourceKey2, "FreeFormFieldDescription", primaryLanguage);
+                                MultilingualFieldHelper.UpdateCache(draftDependentOption.NameField, depOptionResourceKey2, "Name", primaryLanguage);
+                                MultilingualFieldHelper.UpdateCache(draftDependentOption.FreeFormFieldDescriptionField, depOptionResourceKey2, "FreeFormFieldDescription", primaryLanguage);
 
                                 var excludedDependentOptionProperties = new List<string> { nameof(dependentOption.MultipleChoiceOptionId), nameof(dependentOption.MultipleChoiceOption) };
                                 await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Questionnaires, $"Dependent Option created for option {option.Name}: ", dependentOption, excludedDependentOptionProperties);
@@ -842,188 +647,24 @@
 
             await db.SaveChangesAsync();
         }
-
-        // Entity properties always contain English values, regardless of primary language setting
-        // When primary language is English: values.Name contains English
-        // When primary language is Spanish: values.NameTranslations["en-US"] contains English
-        string englishName;
-        string? englishDescription;
         
-        if (primaryLanguage.StartsWith("en"))
-        {
-            // Primary language is English, so values.Name contains English
-            englishName = values.Name ?? "";
-            englishDescription = values.Description;
-        }
-        else
-        {
-            // Primary language is Spanish, so get English from translations dictionary
-            var englishCulture = enabledLanguages.FirstOrDefault(l => l.StartsWith("en"));
-            if (englishCulture != null && values.NameTranslations.TryGetValue(englishCulture, out var enName))
-            {
-                englishName = enName;
-            }
-            else
-            {
-                // Fallback to values.Name if English translation not found (shouldn't happen, but safety check)
-                englishName = values.Name ?? "";
-            }
-            
-            if (englishCulture != null && values.DescriptionTranslations.TryGetValue(englishCulture, out var enDesc))
-            {
-                englishDescription = enDesc;
-            }
-            else
-            {
-                englishDescription = values.Description;
-            }
-        }
+        // Get English values from MultilingualField
+        var englishName = values.NameField.Get("en-US", primaryLanguage);
+        var englishDescription = values.DescriptionField.Get("en-US", primaryLanguage);
         
         questionnaire.Update(englishName, values.IsEnabled, values.IsRequired, values.Level, englishDescription);
         questionnaire.BumpVersion();
 
         await db.SaveChangesAsync();
 
-        // Save translations to LocalizationStrings table
+        // Save translations using MultilingualFieldHelper
         var resourceKey = $"Questionnaire.{questionnaireId}";
-        
-        // Get all cultures from database
-        var cultures = await db.Set<LocalizationCulture>().ToListAsync();
-        var cultureMap = cultures.ToDictionary(c => c.Culture, c => c.Id);
-        
-        // Save Name translations from QuestionnaireForm.Input
-        foreach (var translation in values.NameTranslations)
-        {
-            if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-            {
-                continue; // Skip if culture doesn't exist
-            }
-            
-            var existing = await db.Set<LocalizationString>()
-                .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                       && s.ResourceKey == resourceKey 
-                                       && s.Key == "Name");
-            
-            if (existing != null)
-            {
-                existing.UpdateDefault(translation.Value ?? "");
-            }
-            else
-            {
-                var newString = LocalizationString.Create(
-                    localizationCultureId: cultureId,
-                    resourceKey: resourceKey,
-                    key: "Name",
-                    defaultText: translation.Value ?? ""
-                );
-                db.Set<LocalizationString>().Add(newString);
-            }
-        }
-        
-        // Save primary language Name to database if primary is not English
-        // (When primary is English, it's saved in the entity property, not in LocalizationStrings)
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-            {
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "Name");
-                
-                if (existing != null)
-                {
-                    existing.UpdateDefault(values.Name ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: primaryCultureId,
-                        resourceKey: resourceKey,
-                        key: "Name",
-                        defaultText: values.Name ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-        }
-        
-        // Save Description translations from QuestionnaireForm.Input
-        foreach (var translation in values.DescriptionTranslations)
-        {
-            if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-            {
-                continue; // Skip if culture doesn't exist
-            }
-            
-            var existing = await db.Set<LocalizationString>()
-                .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                       && s.ResourceKey == resourceKey 
-                                       && s.Key == "Description");
-            
-            if (existing != null)
-            {
-                existing.UpdateDefault(translation.Value ?? "");
-            }
-            else
-            {
-                var newString = LocalizationString.Create(
-                    localizationCultureId: cultureId,
-                    resourceKey: resourceKey,
-                    key: "Description",
-                    defaultText: translation.Value ?? ""
-                );
-                db.Set<LocalizationString>().Add(newString);
-            }
-        }
-        
-        // Save primary language Description to database if primary is not English
-        // (When primary is English, it's saved in the entity property, not in LocalizationStrings)
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-            {
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "Description");
-                
-                if (existing != null)
-                {
-                    existing.UpdateDefault(values.Description ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: primaryCultureId,
-                        resourceKey: resourceKey,
-                        key: "Description",
-                        defaultText: values.Description ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-        }
-
-        await db.SaveChangesAsync();
-
-        // Update cache with saved translations
-        foreach (var translation in values.NameTranslations)
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "Name", translation.Value ?? "");
-        }
-        if (!primaryLanguage.StartsWith("en") && cultureMap.TryGetValue(primaryLanguage, out _))
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "Name", values.Name ?? "");
-        }
-        foreach (var translation in values.DescriptionTranslations)
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "Description", translation.Value ?? "");
-        }
-        if (!primaryLanguage.StartsWith("en") && cultureMap.TryGetValue(primaryLanguage, out _))
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "Description", values.Description ?? "");
-        }
+        await MultilingualFieldHelper.SaveTranslationsAsync(
+            values.NameField, db, resourceKey, "Name", primaryLanguage);
+        await MultilingualFieldHelper.SaveTranslationsAsync(
+            values.DescriptionField, db, resourceKey, "Description", primaryLanguage);
+        MultilingualFieldHelper.UpdateCache(values.NameField, resourceKey, "Name", primaryLanguage);
+        MultilingualFieldHelper.UpdateCache(values.DescriptionField, resourceKey, "Description", primaryLanguage);
 
         var excludedProperties = new List<string> { nameof(questionnaire.Questions), nameof(questionnaire.QuestionGroups), nameof(questionnaire.QuestionnaireResponses),
                 nameof(questionnaire.QuestionnaireShareProductLinks), nameof(questionnaire.QuestionnaireApplicationTypeLinks), nameof(questionnaire.QuestionnaireLoanProductLinks) };
@@ -1040,7 +681,7 @@
         var cultures = await db.Set<LocalizationCulture>().ToListAsync();
         var cultureMap = cultures.ToDictionary(c => c.Culture, c => c.Id);
         var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-        
+
         Console.WriteLine($"[SaveQuestionTranslations] QuestionId: {questionId}, PrimaryLanguage: {primaryLanguage}");
         Console.WriteLine($"[SaveQuestionTranslations] name parameter (primary language value): '{name}'");
         Console.WriteLine($"[SaveQuestionTranslations] nameTranslations dictionary: {string.Join(", ", nameTranslations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"))}");
@@ -1378,309 +1019,6 @@
         }
     }
 
-    private async Task SaveOptionTranslations(AlohaDb db, int optionId, string name, string? dependentQuestionName, Dictionary<string, string> nameTranslations, Dictionary<string, string> dependentQuestionNameTranslations)
-    {
-        var resourceKey = $"MultipleChoiceOption.{optionId}";
-        var cultures = await db.Set<LocalizationCulture>().ToListAsync();
-        var cultureMap = cultures.ToDictionary(c => c.Culture, c => c.Id);
-        var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-
-        // Save Name translations (excluding primary language - it's saved separately)
-        foreach (var translation in nameTranslations)
-        {
-            // Skip primary language - it's saved separately below
-            if (translation.Key == primaryLanguage)
-            {
-                continue;
-            }
-            
-            if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-            {
-                continue;
-            }
-
-            var existing = await db.Set<LocalizationString>()
-                .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                       && s.ResourceKey == resourceKey 
-                                       && s.Key == "Name");
-
-            if (existing != null)
-            {
-                existing.UpdateDefault(translation.Value ?? "");
-            }
-            else
-            {
-                var newString = LocalizationString.Create(
-                    localizationCultureId: cultureId,
-                    resourceKey: resourceKey,
-                    key: "Name",
-                    defaultText: translation.Value ?? ""
-                );
-                db.Set<LocalizationString>().Add(newString);
-            }
-        }
-
-        // Save primary language Name if not English
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-            {
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "Name");
-
-                if (existing != null)
-                {
-                    existing.UpdateDefault(name ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: primaryCultureId,
-                        resourceKey: resourceKey,
-                        key: "Name",
-                        defaultText: name ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-        }
-
-        // Save DependentQuestionName translations (excluding primary language - it's saved separately)
-        foreach (var translation in dependentQuestionNameTranslations)
-        {
-            // Skip primary language - it's saved separately below
-            if (translation.Key == primaryLanguage)
-            {
-                continue;
-            }
-            
-            if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-            {
-                continue;
-            }
-
-            var existing = await db.Set<LocalizationString>()
-                .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                       && s.ResourceKey == resourceKey 
-                                       && s.Key == "DependentQuestionName");
-
-            if (existing != null)
-            {
-                existing.UpdateDefault(translation.Value ?? "");
-            }
-            else
-            {
-                var newString = LocalizationString.Create(
-                    localizationCultureId: cultureId,
-                    resourceKey: resourceKey,
-                    key: "DependentQuestionName",
-                    defaultText: translation.Value ?? ""
-                );
-                db.Set<LocalizationString>().Add(newString);
-            }
-        }
-
-        // Save primary language DependentQuestionName if not English
-        if (!primaryLanguage.StartsWith("en") && !string.IsNullOrWhiteSpace(dependentQuestionName))
-        {
-            if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-            {
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "DependentQuestionName");
-
-                if (existing != null)
-                {
-                    existing.UpdateDefault(dependentQuestionName ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: primaryCultureId,
-                        resourceKey: resourceKey,
-                        key: "DependentQuestionName",
-                        defaultText: dependentQuestionName ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-        }
-
-        await db.SaveChangesAsync();
-        
-        // Update cache with saved translations
-        foreach (var translation in nameTranslations)
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "Name", translation.Value ?? "");
-        }
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "Name", name ?? "");
-        }
-        foreach (var translation in dependentQuestionNameTranslations)
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "DependentQuestionName", translation.Value ?? "");
-        }
-        if (!primaryLanguage.StartsWith("en") && !string.IsNullOrWhiteSpace(dependentQuestionName))
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "DependentQuestionName", dependentQuestionName ?? "");
-        }
-    }
-
-    private async Task SaveDependentOptionTranslations(AlohaDb db, int dependentOptionId, string name, string? freeFormDescription, Dictionary<string, string> nameTranslations, Dictionary<string, string> freeFormDescriptionTranslations)
-    {
-        var resourceKey = $"DependentMultipleChoiceOption.{dependentOptionId}";
-        var cultures = await db.Set<LocalizationCulture>().ToListAsync();
-        var cultureMap = cultures.ToDictionary(c => c.Culture, c => c.Id);
-        var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
-
-        // Save Name translations (excluding primary language - it's saved separately)
-        foreach (var translation in nameTranslations)
-        {
-            // Skip primary language - it's saved separately below
-            if (translation.Key == primaryLanguage)
-            {
-                continue;
-            }
-            
-            if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-            {
-                continue;
-            }
-
-            var existing = await db.Set<LocalizationString>()
-                .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                       && s.ResourceKey == resourceKey 
-                                       && s.Key == "Name");
-
-            if (existing != null)
-            {
-                existing.UpdateDefault(translation.Value ?? "");
-            }
-            else
-            {
-                var newString = LocalizationString.Create(
-                    localizationCultureId: cultureId,
-                    resourceKey: resourceKey,
-                    key: "Name",
-                    defaultText: translation.Value ?? ""
-                );
-                db.Set<LocalizationString>().Add(newString);
-            }
-        }
-
-        // Save primary language Name if not English
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-            {
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "Name");
-
-                if (existing != null)
-                {
-                    existing.UpdateDefault(name ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: primaryCultureId,
-                        resourceKey: resourceKey,
-                        key: "Name",
-                        defaultText: name ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-        }
-
-        // Save FreeFormFieldDescription translations (excluding primary language - it's saved separately)
-        foreach (var translation in freeFormDescriptionTranslations)
-        {
-            // Skip primary language - it's saved separately below
-            if (translation.Key == primaryLanguage)
-            {
-                continue;
-            }
-            
-            if (!cultureMap.TryGetValue(translation.Key, out var cultureId))
-            {
-                continue;
-            }
-
-            var existing = await db.Set<LocalizationString>()
-                .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == cultureId 
-                                       && s.ResourceKey == resourceKey 
-                                       && s.Key == "FreeFormFieldDescription");
-
-            if (existing != null)
-            {
-                existing.UpdateDefault(translation.Value ?? "");
-            }
-            else
-            {
-                var newString = LocalizationString.Create(
-                    localizationCultureId: cultureId,
-                    resourceKey: resourceKey,
-                    key: "FreeFormFieldDescription",
-                    defaultText: translation.Value ?? ""
-                );
-                db.Set<LocalizationString>().Add(newString);
-            }
-        }
-
-        // Save primary language FreeFormFieldDescription if not English
-        if (!primaryLanguage.StartsWith("en") && !string.IsNullOrWhiteSpace(freeFormDescription))
-        {
-            if (cultureMap.TryGetValue(primaryLanguage, out var primaryCultureId))
-            {
-                var existing = await db.Set<LocalizationString>()
-                    .FirstOrDefaultAsync(s => EF.Property<int>(s, "LocalizationCultureId") == primaryCultureId 
-                                           && s.ResourceKey == resourceKey 
-                                           && s.Key == "FreeFormFieldDescription");
-
-                if (existing != null)
-                {
-                    existing.UpdateDefault(freeFormDescription ?? "");
-                }
-                else
-                {
-                    var newString = LocalizationString.Create(
-                        localizationCultureId: primaryCultureId,
-                        resourceKey: resourceKey,
-                        key: "FreeFormFieldDescription",
-                        defaultText: freeFormDescription ?? ""
-                    );
-                    db.Set<LocalizationString>().Add(newString);
-                }
-            }
-        }
-
-        await db.SaveChangesAsync();
-        
-        // Update cache with saved translations
-        foreach (var translation in nameTranslations)
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "Name", translation.Value ?? "");
-        }
-        if (!primaryLanguage.StartsWith("en"))
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "Name", name ?? "");
-        }
-        foreach (var translation in freeFormDescriptionTranslations)
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(translation.Key, resourceKey, "FreeFormFieldDescription", translation.Value ?? "");
-        }
-        if (!primaryLanguage.StartsWith("en") && !string.IsNullOrWhiteSpace(freeFormDescription))
-        {
-            Aloha.Domain.Services.Translations.TranslationHelper.UpdateCacheEntry(primaryLanguage, resourceKey, "FreeFormFieldDescription", freeFormDescription ?? "");
-        }
-    }
 
     private static async Task DeleteQuestionnaireLinkedEntities(AlohaDb db, int questionnaireId)
     {

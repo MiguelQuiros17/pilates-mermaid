@@ -896,7 +896,7 @@ app.post('/api/auth/login', preserveOriginalEmail, [
   }
 })
 
-// Verify token endpoint - Enhanced security
+// Verify token endpoint - Enhanced security with automatic token refresh
 app.get('/api/auth/verify', requireAuth, async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
@@ -933,10 +933,20 @@ app.get('/api/auth/verify', requireAuth, async (req, res) => {
     // Return user data without sensitive information
     const { password_hash, ...safeUser } = freshUser
 
-    res.json({
+    // Check if a new token was generated (for expired tokens)
+    const newToken = req.regeneratedToken
+    const response = {
       success: true,
       user: safeUser
-    })
+    }
+    
+    // Include new token if one was generated (for expired tokens)
+    if (newToken) {
+      response.token = newToken
+      console.log(`[Token Regeneration] Regenerated expired token for user ${user.id}`)
+    }
+
+    res.json(response)
   } catch (error) {
     console.error('Verify token error:', error)
     const clientIP = SecurityService.getClientIP(req)

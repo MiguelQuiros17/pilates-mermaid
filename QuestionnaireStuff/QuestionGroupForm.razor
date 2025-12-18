@@ -20,10 +20,8 @@
                        Placeholder="Enter group name"
                        Rows="1"
                        IsDisabled="false"
-                       EnglishValue="@input.Name"
-                       EnglishValueChanged="@((string value) => input.Name = value)"
-                       Translations="@input.NameTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
+                       Field="@input.NameField"
+                       FieldChanged="@((MultilingualField f) => input.NameField = f)"
                        SelectedCultureOverride="@SelectedCulture"
                        SelectedCultureOverrideChanged="@((string culture) => { })" />
 
@@ -33,10 +31,8 @@
                        Placeholder="Enter group description"
                        Rows="3"
                        IsDisabled="false"
-                       EnglishValue="@input.Description"
-                       EnglishValueChanged="@((string value) => input.Description = value)"
-                       Translations="@input.DescriptionTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DescriptionTranslations = trans)"
+                       Field="@input.DescriptionField"
+                       FieldChanged="@((MultilingualField f) => input.DescriptionField = f)"
                        SelectedCultureOverride="@SelectedCulture"
                        SelectedCultureOverrideChanged="@((string culture) => { })" />
     <div class="d-flex flex-column">
@@ -133,39 +129,61 @@
     public class DraftInput
     {
         public required Guid DraftId { get; set; }
-        public required string Name { get; set; }
-        public string? Description { get; set; }
+        public MultilingualField NameField { get; set; } = new();
+        public MultilingualField DescriptionField { get; set; } = new();
         public int SortOrder { get; set; }
-        public IList<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput> Questions { get; set; } = [];
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
+        public IList<QuestionForm.DraftInput> Questions { get; set; } = [];
 
-        public static QuestionGroupForm.DraftInput CreateFromQuestionGroup(QuestionGroup group, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? descriptionTranslations = null)
+        public static QuestionGroupForm.DraftInput CreateFromQuestionGroup(QuestionGroup group, MultilingualField? nameField = null, MultilingualField? descriptionField = null)
         {
             var draftId = Guid.NewGuid();
             
-            IList<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput> questionsList;
+            IList<QuestionForm.DraftInput> questionsList;
             if (group.Questions != null && group.Questions.Any())
             {
                 questionsList = group.Questions
-                    .Select((Question q) => Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput.CreateFromQuestion(q, draftId, nameTranslations: null, descriptionTranslations: null))
+                    .Select((Question q) => QuestionForm.DraftInput.CreateFromQuestion(q, draftId, nameField: null, descriptionField: null))
                     .ToList();
             }
             else
             {
-                questionsList = new List<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionForm.DraftInput>();
+                questionsList = new List<QuestionForm.DraftInput>();
             }
 
-            return new DraftInput
+            var result = new DraftInput
             {
                 DraftId = draftId,
-                Name = group.Name,
-                Description = group.Description,
                 SortOrder = group.SortOrder,
-                Questions = questionsList,
-                NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
-                DescriptionTranslations = descriptionTranslations ?? new Dictionary<string, string>()
+                Questions = questionsList
             };
+
+            if (nameField != null)
+            {
+                result.NameField = new MultilingualField { PrimaryValue = nameField.PrimaryValue };
+                foreach (var kvp in nameField.Translations)
+                {
+                    result.NameField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.NameField.PrimaryValue = group.Name;
+            }
+
+            if (descriptionField != null)
+            {
+                result.DescriptionField = new MultilingualField { PrimaryValue = descriptionField.PrimaryValue };
+                foreach (var kvp in descriptionField.Translations)
+                {
+                    result.DescriptionField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.DescriptionField.PrimaryValue = group.Description ?? string.Empty;
+            }
+
+            return result;
         }
     }
 
@@ -173,31 +191,34 @@
     {
         public bool HasSubmitted { get; set; }
 
-        public string? Name { get; set; }
-        public string? Description { get; set; }
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
+        public MultilingualField NameField { get; set; } = new();
+        public MultilingualField DescriptionField { get; set; } = new();
 
         public void UpdateFromDraft(DraftInput draft)
         {
-            Name = draft.Name;
-            Description = draft.Description;
-            NameTranslations = new Dictionary<string, string>(draft.NameTranslations);
-            DescriptionTranslations = new Dictionary<string, string>(draft.DescriptionTranslations);
+            NameField = new MultilingualField { PrimaryValue = draft.NameField.PrimaryValue };
+            foreach (var kvp in draft.NameField.Translations)
+            {
+                NameField.Translations[kvp.Key] = kvp.Value;
+            }
+
+            DescriptionField = new MultilingualField { PrimaryValue = draft.DescriptionField.PrimaryValue };
+            foreach (var kvp in draft.DescriptionField.Translations)
+            {
+                DescriptionField.Translations[kvp.Key] = kvp.Value;
+            }
         }
 
         public void Trim()
         {
-            Name = Name?.Trim();
-            Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
+            NameField.PrimaryValue = NameField.PrimaryValue?.Trim() ?? string.Empty;
+            DescriptionField.PrimaryValue = DescriptionField.PrimaryValue?.Trim() ?? string.Empty;
         }
 
         public void Clear()
         {
-            Name = null;
-            Description = null;
-            NameTranslations.Clear();
-            DescriptionTranslations.Clear();
+            NameField.Clear();
+            DescriptionField.Clear();
         }
     }
 
@@ -207,7 +228,7 @@
         {
             When(input => input.HasSubmitted, () =>
             {
-                RuleFor(p => p.Name).NotEmpty().WithMessage("Group name is required");
+                RuleFor(p => p.NameField.PrimaryValue).NotEmpty().WithMessage("Group name is required");
             });
         }
     }

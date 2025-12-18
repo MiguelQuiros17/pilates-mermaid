@@ -19,7 +19,7 @@
 
 <p>@l["page-description"]</p>
 
-@if (!isLoading && !hasShareProductsEligibleForCardOrdering)
+@if (!hasShareProductsEligibleForCardOrdering)
 {
     <div class="card">
         <div class="card-body">
@@ -295,7 +295,6 @@
     private ValidationMessageStore messageStore = null!;
     private bool canAddCard;
     private bool hasShareProductsEligibleForCardOrdering;
-    private bool isLoading = true;
     private IList<Branch> branches = [];
     private readonly Input input = new();
     private Modal modal = default!;
@@ -356,8 +355,6 @@
             }
 
             await LoadData(db);
-            isLoading = false;
-            StateHasChanged();
         }
     }
 

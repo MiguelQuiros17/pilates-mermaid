@@ -1,0 +1,264 @@
+@page "/ApplicationConfiguration/products/cardproducts/add"
+@using Aloha.Domain.Products
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Core.Services
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin")]
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject AuthenticationStateProvider authStateProvider
+@rendermode InteractiveServer
+
+<h3>Add Card Product</h3>
+
+<EditForm class="pb-3"
+          Context="editContext"
+          EditContext="editContext"
+          FormName="AddCardProduct"
+          OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label" for="categoryType">Category Type</label>
+        <InputSelect @bind-Value="input.CardProductCategoryId" class="form-select" id="categoryType">
+            <option value="">Select...</option>
+            @foreach (var option in categories)
+            {
+                <option value="@option.Id">@option.CategoryDisplayName</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => input.CardProductCategoryId" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="displayName">Display Name</label>
+        <InputText @bind-Value="input.ProductDisplayName" class="form-control" id="displayName" type="text" />
+        <ValidationMessage For="() => input.ProductDisplayName" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="description">Description</label>
+        <InputTextArea @bind-Value="input.ProductDescription" class="form-control" id="description" type="text" />
+        <ValidationMessage For="() => input.ProductDescription" />
+    </div>
+
+    @if (!isCoreOfflineMode)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="coreIdentifier">Core Identifier</label>
+            <InputText @bind-Value="input.CoreTypeIdentifier" class="form-control" id="coreIdentifier" type="text" />
+            <ValidationMessage For="() => input.CoreTypeIdentifier" />
+        </div>
+    }
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsEnabled" class="form-check-input" id="productEnabled" />
+        <label class="form-check-label" for="productEnabled">Is Enabled</label>
+        <ValidationMessage For="() => input.IsEnabled" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.SupportsChecking" class="form-check-input" id="supportsChecking" />
+        <label class="form-check-label" for="supportsChecking">Supports Checking</label>
+        <ValidationMessage For="() => input.SupportsChecking" />
+    </div>
+
+    @if (input.SupportsChecking)
+    {
+        <div class="form-check mb-3" style="margin-left: 20px;">
+            <InputCheckbox @bind-Value="input.RequiresChecking" class="form-check-input" id="requiresChecking" />
+            <label class="form-check-label" for="requiresChecking">Requires Checking</label>
+            <ValidationMessage For="() => input.RequiresChecking" />
+        </div>
+    }
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.SupportsSavings" class="form-check-input" id="supportsSavings" />
+        <label class="form-check-label" for="supportsSavings">Supports Savings</label>
+        <ValidationMessage For="() => input.SupportsSavings" />
+    </div>
+
+    @if (input.SupportsSavings)
+    {
+        <div class="form-check mb-3" style="margin-left: 20px;">
+            <InputCheckbox @bind-Value="input.RequiresSavings" class="form-check-input" id="requiresSavings" />
+            <label class="form-check-label" for="requiresSavings">Requires Savings</label>
+            <ValidationMessage For="() => input.RequiresSavings" />
+        </div>
+    }
+
+    @if (input.IsEnabled)
+    {
+        <div class="form-check mb-3">
+            <InputCheckbox @bind-Value="input.IsRestrictedCardProduct" class="form-check-input" id="isRestricted" />
+            <label class="form-check-label" for="isRestricted">Is Restricted to Products</label>
+            <ValidationMessage For="() => input.IsRestrictedCardProduct" />
+        </div>
+
+        if (input.IsRestrictedCardProduct)
+        {
+            <h5>Restrictions</h5>
+            <div class="list-group my-3">
+                @foreach (var option in input.ShareProductOptions)
+                {
+                    <div class="list-group-item">
+                        <label>
+                            <InputCheckbox @bind-Value="option.Checked" class="form-check-input me-1" type="checkbox" />
+                            @option.DisplayName
+                        </label>
+                        <ValidationMessage For="() => option.Checked" />
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    <div class="mb-3">
+        <SaveConfirmationMessage @ref="messageRef" Title="Card Product" RouteAfterSaved="/ApplicationConfiguration/products" />
+    </div>
+</EditForm>
+
+@code {
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private IList<CardProductCategory> categories = [];
+    bool isCoreOfflineMode = false;
+    private AdminUser? AdminUser = default!;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+            AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+            var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+            isCoreOfflineMode = feature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+            categories = await db.CardProductCategories.GetActiveCategories().ToListAsync();
+
+            input.ShareProductOptions = await db.ShareProducts
+                .Where(x => x.IsEnabled && x.CardOrderEnabled)
+                .Select(x => new CheckBoxOption
+                {
+                    DisplayName = x.ProductDisplayName,
+                    ProductId = x.Id,
+                    Checked = false,
+                })
+                .ToListAsync();
+
+            StateHasChanged();
+        }
+    }
+
+    private async Task SubmitForm()
+    {
+        if (!isCoreOfflineMode && string.IsNullOrEmpty(input.CoreTypeIdentifier))
+        {
+            messageStore.Add(() => input.CoreTypeIdentifier!, "The CoreTypeIdentifier field is required.");
+            return;
+        }
+
+        if (input.IsEnabled && input.IsRestrictedCardProduct && !input.ShareProductOptions.Any(x => x.Checked))
+        {
+            messageStore.Add(() => input.ProductDisplayName!, $"Restricted products must have at least one linked product.");
+            return;
+        }
+
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+
+            if (!isCoreOfflineMode && await db.CardProducts.AnyAsync(card => card.CoreTypeIdentifier == input.CoreTypeIdentifier))
+            {
+                messageStore.Add(() => input.CoreTypeIdentifier!, "Core identifier already exists");
+                messageRef?.SetSaving(false);
+                return;
+            }
+
+            var product = CardProduct.Create(input.ProductDisplayName!, input.CoreTypeIdentifier, input.CardProductCategoryId!.Value);
+
+            product.UpdateText(input.ProductDisplayName!, input.ProductDescription);
+            product.UpdateFlags(input.IsEnabled, input.SupportsChecking, input.SupportsSavings, input.RequiresChecking, input.RequiresSavings, input.CoreTypeIdentifier!, input.IsRestrictedCardProduct);
+
+            if (input.IsEnabled && input.IsRestrictedCardProduct)
+            {
+                foreach (var option in input.ShareProductOptions.Where(x => x.Checked))
+                {
+                    var link = CardShareTypeLink.Create(product, option.ProductId);
+                    db.Add(link);
+                }
+            }
+
+            db.Add(product);
+            await db.SaveChangesAsync();
+
+            var excludedProperties = new List<string> { nameof(product.DeleteDateUtc), nameof(product.CardProductCategoryId), nameof(product.CardShareTypeLinks), nameof(product.CardProductImageId) };
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Card product was added: ", product, excludedProperties);
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private class CheckBoxOption
+    {
+        public bool Checked { get; set; }
+        public string DisplayName { get; set; } = default!;
+        public int ProductId { get; set; }
+    }
+
+    private class Input
+    {
+        [Required]
+        public string? ProductDisplayName { get; set; }
+
+        [Required]
+        public int? CardProductCategoryId { get; set; }
+
+        [Required]
+        public bool IsEnabled { get; set; } = true;
+
+        [Required]
+        public bool SupportsChecking { get; set; }
+
+        [Required]
+        public bool SupportsSavings { get; set; }
+
+        [Required]
+        public bool RequiresChecking { get; set; }
+
+        [Required]
+        public bool RequiresSavings { get; set; }
+
+        [Required]
+        public bool IsRestrictedCardProduct { get; set; }
+
+        [MaxLength(800)]
+        public string? ProductDescription { get; set; }
+
+        [MaxLength(30)]
+        public string? CoreTypeIdentifier { get; set; }
+
+        public IList<CheckBoxOption> ShareProductOptions { get; set; } = [];
+    }
+
+}

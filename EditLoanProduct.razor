@@ -1,0 +1,690 @@
+@page "/ApplicationConfiguration/products/loans/edit/{Id:int}"
+@using Aloha.Domain.Products
+@using Aloha.Domain.Vendors.Core
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
+@inject AuthenticationStateProvider authStateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<h3>Edit Loan Product</h3>
+<EditForm class="pb-3"
+          Context="editContext"
+          disabled="@isReadOnly"
+          EditContext="editContext"
+          FormName="EditLoanProduct"
+          OnValidSubmit="SubmitFormAsync">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    @* Language selector and bulk translate button - all handled by BulkTranslateButton *@
+    <BulkTranslateButton @ref="bulkTranslateButton"
+                        FieldIdPrefix="loanproduct"
+                        Fields="@GetFieldsMap()"
+                        FieldsChanged="@((Dictionary<string, MultilingualField> fields) => { input.DisplayName = fields["Display Name"]; input.Description = fields["Description"]; StateHasChanged(); })"
+                        SelectedCultureChanged="@((string culture) => StateHasChanged())" />
+
+    <div class="mb-3">
+        <label class="form-label" for="categoryType">Category Type</label>
+        <InputSelect @bind-Value="input.LoanProductCategoryId"
+                     class="form-select"
+                     disabled="@isReadOnly"
+                     id="categoryType">
+            <option value="">Select...</option>
+            @foreach (var option in categories)
+            {
+                <option value="@option.Id">@option.CategoryDisplayName</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => input.LoanProductCategoryId" />
+    </div>
+
+    @* Multi-language input for Display Name *@
+    <MultiLanguageInput Label="Display Name"
+                       FieldId="displayName"
+                       Placeholder="Enter display name"
+                       Rows="1"
+                       IsDisabled="@isReadOnly"
+                       Field="@input.DisplayName"
+                       FieldChanged="@((MultilingualField f) => input.DisplayName = f)"
+                       SelectedCultureOverride="@(bulkTranslateButton?.CurrentCulture)"
+                       SelectedCultureOverrideChanged="@((string culture) => StateHasChanged())" />
+
+    @* Multi-language input for Description *@
+    <MultiLanguageInput Label="Description"
+                       FieldId="description"
+                       Placeholder="Enter description"
+                       Rows="3"
+                       IsDisabled="@isReadOnly"
+                       Field="@input.Description"
+                       FieldChanged="@((MultilingualField f) => input.Description = f)"
+                       SelectedCultureOverride="@(bulkTranslateButton?.CurrentCulture)"
+                       SelectedCultureOverrideChanged="@((string culture) => StateHasChanged())" />
+
+    @if (!isCoreOfflineMode)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="coreIdentifier">Core Identifier</label>
+            <InputText @bind-Value="input.CoreTypeIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreIdentifier"
+                       type="text" />
+            <ValidationMessage For="() => input.CoreTypeIdentifier" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="CoreCollateralTypeIdentifier">Core Collateral Identifier</label>
+            <InputText @bind-Value="input.CoreCollateralTypeIdentifier"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreCollateralTypeIdentifier"
+                       type="text" />
+            <ValidationMessage For="() => input.CoreCollateralTypeIdentifier" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="CoreCollateralTypeIdentifier">Core Collateral Category</label>
+            <InputText @bind-Value="input.CoreCollateralCategory"
+                       class="form-control"
+                       disabled="@isReadOnly"
+                       id="coreCollateralCategory"
+                       type="text" />
+            <ValidationMessage For="() => input.CoreCollateralCategory" />
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" for="defaultSuffix">Default Suffix</label>
+        <InputText @bind-Value="input.DefaultSuffix"
+                   class="form-control"
+                   disabled="@isReadOnly"
+                   id="defaultSuffix"
+                   type="text" />
+        <ValidationMessage For="() => input.DefaultSuffix" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsEnabled"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="productEnabled" />
+        <label class="form-check-label" for="productEnabled">Is Enabled</label>
+        <ValidationMessage For="() => input.IsEnabled" />
+    </div>
+
+    <div class="mb-3">
+        Loan Application
+        <Button Class="mx-1 btn-sm" Color="ButtonColor.Success" @onclick="ClearLoanSelection" Outline="true" Type="ButtonType.Button">
+            <Icon Name="IconName.Backspace"></Icon> Clear Selection
+        </Button>
+        <div class="ms-4">
+            <RadioInput Name="EnableSpecificLoan" Label="Is Mortgage Loan" @bind-Value="input.IsMortgageLoan" disabled="@isReadOnly" />
+            @if (input.IsMortgageLoan)
+            {
+                <div class="form-check mb-3">
+                    <div class="ms-4 mb-3">
+                        <InputCheckbox @bind-Value="input.RequireCollateral"
+                                       class="form-check-input"
+                                       disabled="@isReadOnly"
+                                       id="requireCollateral" />
+                        <label class="form-check-label" for="requireCollateral">Require Collateral</label>
+                        <ValidationMessage For="() => input.RequireCollateral" />
+                    </div>
+
+                    @if (currentCoreSystemType == CoreSystemType.Symitar)
+                    {
+                        <div class="mb-3 ms-4">
+                            <InputCheckbox @bind-Value="input.IsLoanAppTrackingRecordEnabled"
+                                           class="form-check-input"
+                                           disabled="@isReadOnly"
+                                           id="isLoanAppTrackingRecordEnabled" />
+                            <label class="form-check-label" for="isLoanAppTrackingRecordEnabled">Core Loan App Tracking Record For Collateral Enabled</label>
+                            <ValidationMessage For="() => input.IsLoanAppTrackingRecordEnabled" />
+                        </div>
+                        @if (input.IsLoanAppTrackingRecordEnabled)
+                        {
+                            <div class="ms-4 mb-3">
+                                <div class="mb-3">
+                                    <label class="form-label" for="coreLoanAppTrackingRecordTypeIdentifier">Tracking Record Type Identifier</label>
+                                    <InputText @bind-Value="input.CoreLoanAppTrackingRecordTypeIdentifier"
+                                               class="form-control"
+                                               id="coreLoanAppTrackingRecordTypeIdentifier"
+                                               type="text"
+                                               required="@input.RequireCollateral" />
+                                    <ValidationMessage For="() => input.CoreLoanAppTrackingRecordTypeIdentifier" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="collateralAddressMapTo">Core Collateral Address Maps To Tracking Record Field</label>
+                                    <InputSelect class="form-select"
+                                                 @bind-Value="input.AddressMapToTrackingRecord"
+                                                 id="collateralAddressMapTo"
+                                                 required="@input.RequireCollateral">
+                                        <option value="">Select...</option>
+                                        @foreach (var option in fieldOptions)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="() => input.AddressMapToTrackingRecord" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="collateralExtraAddressMapTo">Core Collateral Extra Address Maps To Tracking Record Field</label>
+                                    <InputSelect class="form-select"
+                                                 @bind-Value="input.ExtraAddressMapToTrackingRecord"
+                                                 id="collateralExtraAddressMapTo"
+                                                 required="@input.RequireCollateral">
+                                        <option value="">Select...</option>
+                                        @foreach (var option in fieldOptions)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="() => input.ExtraAddressMapToTrackingRecord" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="collateralCityMapTo">Core Collateral City Maps To Tracking Record Field</label>
+                                    <InputSelect class="form-select"
+                                                 @bind-Value="input.CityMapToTrackingRecord"
+                                                 id="collateralCityMapTo"
+                                                 required="@input.RequireCollateral">
+                                        <option value="">Select...</option>
+                                        @foreach (var option in fieldOptions)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="() => input.CityMapToTrackingRecord" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="collateralStateCodeMapTo">Core Collateral State Code Maps To Tracking Record Field</label>
+                                    <InputSelect class="form-select"
+                                                 @bind-Value="input.StateCodeMapToTrackingRecord"
+                                                 id="collateralStateCodeMapTo"
+                                                 required="@input.RequireCollateral">
+                                        <option value="">Select...</option>
+                                        @foreach (var option in fieldOptions)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="() => input.StateCodeMapToTrackingRecord" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="collateralZipCodeMapTo">Core Collateral Zip Code Maps To Tracking Record Field</label>
+                                    <InputSelect class="form-select"
+                                                 @bind-Value="input.ZipCodeMapToTrackingRecord"
+                                                 id="collateralZipCodeMapTo"
+                                                 required="@input.RequireCollateral">
+                                        <option value="">Select...</option>
+                                        @foreach (var option in fieldOptions)
+                                        {
+                                            <option value="@option">@option</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="() => input.ZipCodeMapToTrackingRecord" />
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+            <RadioInput Name="EnableSpecificLoan" Label="Is Vehicle Loan" @bind-Value="input.IsVehicleLoan" disabled="@isReadOnly" />
+        </div>
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.RequireLoanPurpose"
+                       class="form-check-input"
+                       disabled="@isReadOnly"
+                       id="requirePurpose" />
+        <label class="form-check-label" for="requirePurpose">Require Loan Purpose</label>
+        <ValidationMessage For="() => input.RequireLoanPurpose" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="minLoan">Minimum Loan Amount</label>
+        <InputNumber @bind-Value="input.MinimumLoanAmount"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="minLoan"
+                     type="text" />
+        <ValidationMessage For="() => input.MinimumLoanAmount" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="maxLoan">Maximum Loan Amount</label>
+        <InputNumber @bind-Value="input.MaximumLoanAmount"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="maxLoan"
+                     type="text" />
+        <ValidationMessage For="() => input.MaximumLoanAmount" />
+    </div>
+
+    <hr class="border border-1 opacity-50">
+
+    <h4>Allowed Loan Terms</h4>
+
+    @for (var i = 0; i < input.AllowedTerms.Count; i++)
+    {
+        var value = input.AllowedTerms[i];
+
+        <div class="mb-3">
+            <label class="form-label" for="@($"term-{i}")">Term @($"{i + 1}") Months</label>
+            <Button Color="ButtonColor.Danger" @onclick="() => RemoveTerm(value)" Outline="true"><Icon Name="IconName.Trash" /> Remove </Button>
+            <InputNumber @bind-Value="value.Value"
+                         class="form-control"
+                         disabled="@isReadOnly"
+                         id="@($"term-{i}")"
+                         type="text" />
+            <ValidationMessage For="() => value.Value" />
+        </div>
+    }
+
+    @if (input.AllowedTerms.Count <= 0)
+    {
+        <p>*No terms entered. Add terms if applicable to product</p>
+    }
+
+    @if (!isReadOnly)
+    {
+        <div class="mb-3">
+            <Button Class="me-1" Color="ButtonColor.Success" @onclick="AddTerm" Outline="true" Type="@ButtonType.Button">
+                <Icon Name="IconName.Plus"></Icon>
+                Add
+            </Button>
+        </div>
+
+        <hr class="border border-1 opacity-50">
+
+        <div class="flex-row gap-2 mb-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Loan Product" RouteAfterSaved="/ApplicationConfiguration/products" />
+        </div>
+    }
+</EditForm>
+
+@code {
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private IList<LoanProductCategory> categories = [];
+    private CoreSystemType? currentCoreSystemType;
+    private bool isReadOnly = true;
+    bool isCoreOfflineMode = false;
+    List<string> fieldOptions = new List<string>();
+    private AdminUser? AdminUser = default!;
+    private LoanProduct testOgSave = default!;
+    private BulkTranslateButton? bulkTranslateButton;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+            await LoadData();
+        }
+    }
+
+    private Dictionary<string, MultilingualField> GetFieldsMap()
+    {
+        return new Dictionary<string, MultilingualField>
+        {
+            { "Display Name", input.DisplayName },
+            { "Description", input.Description }
+        };
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        categories = await db.LoanProductCategories.ToListAsync();
+        var loanProduct = await db.LoanProducts.FirstOrDefaultAsync(product => product.Id == Id);
+        var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+        isCoreOfflineMode = feature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+        var coreSettings = await db.CoreSettings.OrderByDescending(x => x.Id).FirstOrDefaultAsync();
+        currentCoreSystemType = coreSettings?.CoreSystemType;
+
+        if (currentCoreSystemType == CoreSystemType.Symitar && fieldOptions.Count == 0)
+        {
+            for (int i = 1; i <= 20; i++)
+            {
+                fieldOptions.Add("UserChar" + i);
+            }
+        }
+
+        if (loanProduct is null)
+        {
+            nav.NavigateTo("/ApplicationConfiguration/products");
+            return;
+        }
+
+        // Load translations using MultilingualFieldHelper
+        var resourceKey = $"LoanProduct.{Id}";
+        var enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+        var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+        
+        await MultilingualFieldHelper.LoadTranslationsAsync(
+            input.DisplayName, db, resourceKey, "ProductDisplayName", 
+            primaryLanguage, loanProduct.ProductDisplayName, enabledLanguages);
+        
+        await MultilingualFieldHelper.LoadTranslationsAsync(
+            input.Description, db, resourceKey, "ProductDescription", 
+            primaryLanguage, loanProduct.ProductDescription, enabledLanguages);
+
+        // Load all other property values
+        input.LoanProductCategoryId = loanProduct.LoanProductCategoryId;
+        input.IsEnabled = loanProduct.IsEnabled;
+        input.RequireLoanPurpose = loanProduct.RequireLoanPurpose;
+        input.IsMortgageLoan = loanProduct.IsMortgageLoan;
+        input.RequireCollateral = loanProduct.RequireCollateral;
+        input.IsLoanAppTrackingRecordEnabled = loanProduct.IsLoanAppTrackingRecordEnabled;
+        input.CoreLoanAppTrackingRecordTypeIdentifier = loanProduct.Collateral.CoreLoanAppTrackingRecordTypeIdentifier;
+        input.AddressMapToTrackingRecord = loanProduct.Collateral.AddressMapToTrackingRecord;
+        input.ExtraAddressMapToTrackingRecord = loanProduct.Collateral.ExtraAddressMapToTrackingRecord;
+        input.CityMapToTrackingRecord = loanProduct.Collateral.CityMapToTrackingRecord;
+        input.StateCodeMapToTrackingRecord = loanProduct.Collateral.StateCodeMapToTrackingRecord;
+        input.ZipCodeMapToTrackingRecord = loanProduct.Collateral.ZipCodeMapToTrackingRecord;
+        input.IsVehicleLoan = loanProduct.IsVehicleLoan;
+        input.CoreTypeIdentifier = loanProduct.CoreTypeIdentifier;
+        input.CoreCollateralTypeIdentifier = loanProduct.CoreCollateralTypeIdentifier;
+        input.CoreCollateralCategory = loanProduct.CoreCollateralCategory;
+        input.DefaultSuffix = loanProduct.DefaultSuffix;
+        input.MinimumLoanAmount = loanProduct.MinimumLoanAmount;
+        input.MaximumLoanAmount = loanProduct.MaximumLoanAmount;
+        input.AllowedTerms = loanProduct.AllowedTerms.Select(x => new Input.Term { Value = x }).ToList();
+
+        /*
+        * We do this because the database stores money as 4 decimal places
+         * and we only want to display 2. There are better ways to handle
+         * this but this is quick and easy.
+         *
+         */
+        if (input.MinimumLoanAmount.HasValue)
+        {
+            input.MinimumLoanAmount = Math.Round(input.MinimumLoanAmount.Value, 2);
+        }
+
+        if (input.MaximumLoanAmount.HasValue)
+        {
+            input.MaximumLoanAmount = Math.Round(input.MaximumLoanAmount.Value, 2);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") || authUser.IsInRole("MasterAdmin"));
+    }
+
+    private async Task SubmitFormAsync()
+    {
+        if (!isCoreOfflineMode && string.IsNullOrEmpty(input.CoreTypeIdentifier))
+        {
+            messageStore.Add(() => input.CoreTypeIdentifier!, "The CoreTypeIdentifier field is required.");
+            return;
+        }
+
+        if (input.MinimumLoanAmount > input.MaximumLoanAmount)
+        {
+            messageStore.Add(() => input.MinimumLoanAmount!, $"Minimum Loan Amount must be less or equal to the Maximum Loan Amount");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.DefaultSuffix) && input.DefaultSuffix.Length != 4)
+        {
+            messageStore.Add(() => input.DefaultSuffix!, "Suffix should be 4 characters");
+            return;
+        }
+
+        // Return if any of the tracking record fields are duplicated
+        if (input.IsMortgageLoan && currentCoreSystemType == CoreSystemType.Symitar)
+        {
+            if (input.RequireCollateral)
+            {
+                if (!input.IsLoanAppTrackingRecordEnabled)
+                {
+                    messageStore.Add(() => input.IsLoanAppTrackingRecordEnabled!, "The Core Loan App Tracking Record For Collateral Enabled field is required.");
+                    return;
+                }
+            }
+            if (input.IsLoanAppTrackingRecordEnabled)
+            {
+                if (string.IsNullOrWhiteSpace(input.CoreLoanAppTrackingRecordTypeIdentifier))
+                {
+                    messageStore.Add(() => input.CoreLoanAppTrackingRecordTypeIdentifier!, "The Core Loan App Tracking Record Type Identifier field is required.");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(input.AddressMapToTrackingRecord))
+                {
+                    messageStore.Add(() => input.AddressMapToTrackingRecord!, "The Address Map To Tracking Record field is required.");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(input.ExtraAddressMapToTrackingRecord))
+                {
+                    messageStore.Add(() => input.ExtraAddressMapToTrackingRecord!, "The Extra Address Map To Tracking Record field is required.");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(input.CityMapToTrackingRecord))
+                {
+                    messageStore.Add(() => input.CityMapToTrackingRecord!, "The City Map To Tracking Record field is required.");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(input.StateCodeMapToTrackingRecord))
+                {
+                    messageStore.Add(() => input.StateCodeMapToTrackingRecord!, "The State Code Map To Tracking Record field is required.");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(input.ZipCodeMapToTrackingRecord))
+                {
+                    messageStore.Add(() => input.ZipCodeMapToTrackingRecord!, "The Zip Code Map To Tracking Record field is required.");
+                    return;
+                }
+                var uniqueValues = new System.Collections.Generic.HashSet<string?> { input.AddressMapToTrackingRecord, input.ExtraAddressMapToTrackingRecord, input.CityMapToTrackingRecord, input.StateCodeMapToTrackingRecord, input.ZipCodeMapToTrackingRecord };
+                if (uniqueValues.Count != 5)
+                {
+                    messageStore.Add(() => input.AddressMapToTrackingRecord!, "Tracking field must be unique");
+                    messageStore.Add(() => input.ExtraAddressMapToTrackingRecord!, "Tracking field must be unique");
+                    messageStore.Add(() => input.CityMapToTrackingRecord!, "Tracking field must be unique");
+                    messageStore.Add(() => input.StateCodeMapToTrackingRecord!, "Tracking field must be unique");
+                    messageStore.Add(() => input.ZipCodeMapToTrackingRecord!, "Tracking field must be unique");
+                    return;
+                }
+            }
+        }
+
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var product = await db.LoanProducts.FirstAsync(product => product.Id == Id);
+            var originalEntity = db.Entry(product).CurrentValues.Clone().ToObject();
+
+            if (!isCoreOfflineMode && input.CoreTypeIdentifier != product.CoreTypeIdentifier &&
+                await db.LoanProducts.Where(p => !p.IsDeleted).AnyAsync(p => p.CoreTypeIdentifier == input.CoreTypeIdentifier))
+            {
+                messageStore.Add(() => input.CoreTypeIdentifier!, "Core identifier already exists");
+                messageRef?.SetSaving(false);
+                return;
+            }
+
+            foreach (var term in input.AllowedTerms)
+            {
+                if (term.Value <= 0 || term.Value >= 720)
+                {
+                    messageStore.Add(() => term.Value!, "Please enter a valid term length between 1 and 720 months.");
+                    messageRef?.SetSaving(false);
+                    return;
+                }
+            }
+
+            // Get primary language to determine save strategy
+            var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            
+            // Save translations using MultilingualFieldHelper
+            var resourceKey = $"LoanProduct.{Id}";
+            
+            var englishDisplayName = await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.DisplayName, db, resourceKey, "ProductDisplayName", primaryLanguage);
+            
+            var englishDescription = await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.Description, db, resourceKey, "ProductDescription", primaryLanguage);
+            
+            product.UpdateText(englishDisplayName, englishDescription, input.DefaultSuffix);
+
+            product.UpdateFlags(
+                input.LoanProductCategoryId!.Value,
+                input.IsEnabled,
+                input.RequireLoanPurpose,
+                input.IsMortgageLoan,
+                input.RequireCollateral,
+                input.IsLoanAppTrackingRecordEnabled,
+                input.CoreLoanAppTrackingRecordTypeIdentifier,
+                input.AddressMapToTrackingRecord,
+                input.ExtraAddressMapToTrackingRecord,
+                input.CityMapToTrackingRecord,
+                input.StateCodeMapToTrackingRecord,
+                input.ZipCodeMapToTrackingRecord,
+                input.IsVehicleLoan,
+                input.CoreTypeIdentifier!,
+                input.CoreCollateralTypeIdentifier,
+                input.CoreCollateralCategory,
+                input.DefaultSuffix,
+                input.MinimumLoanAmount,
+                input.MaximumLoanAmount);
+
+            product.UpdateTerms(input.AllowedTerms.Select(x => x.Value).ToList());
+            await db.SaveChangesAsync();
+
+            // Update cache
+            MultilingualFieldHelper.UpdateCache(input.DisplayName, resourceKey, "ProductDisplayName", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(input.Description, resourceKey, "ProductDescription", primaryLanguage);
+
+            var excludedProperties = new System.Collections.Generic.List<string> { nameof(product.DeleteDateUtc), nameof(product.Collateral), nameof(product.AllowedTerms), nameof(product.LoanProductCategoryId), nameof(product.ApplicationLoanLinks), nameof(product.QuestionnaireLoanProductLinks) };
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Loan product Id: {product.Id} was edited: ", originalEntity, product, excludedProperties);
+
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private void ClearLoanSelection()
+    {
+        input.IsMortgageLoan = false;
+        input.RequireCollateral = false;
+        input.IsVehicleLoan = false;
+        input.IsLoanAppTrackingRecordEnabled = false;
+        input.CoreLoanAppTrackingRecordTypeIdentifier = null;
+        input.AddressMapToTrackingRecord = null;
+        input.ExtraAddressMapToTrackingRecord = null;
+        input.CityMapToTrackingRecord = null;
+        input.StateCodeMapToTrackingRecord = null;
+        input.ZipCodeMapToTrackingRecord = null;
+
+    }
+
+    private void AddTerm()
+    {
+        var lastItem = input.AllowedTerms.LastOrDefault();
+        var increment = lastItem?.Value + 12 ?? 12;
+        input.AllowedTerms.Add(new Input.Term { Value = increment });
+    }
+
+    private void RemoveTerm(Input.Term term)
+    {
+        if (input.AllowedTerms.Count > 0)
+        {
+            input.AllowedTerms.Remove(term);
+        }
+    }
+
+    private class Input
+    {
+        public MultilingualField DisplayName { get; set; } = new();
+
+        [Required]
+        public int? LoanProductCategoryId { get; set; }
+
+        [Required]
+        public bool IsEnabled { get; set; } = true;
+
+        [Required]
+        public bool RequireLoanPurpose { get; set; }
+
+        [Required]
+        public bool IsMortgageLoan { get; set; }
+
+        [Required]
+        public bool RequireCollateral { get; set; }
+        public bool IsLoanAppTrackingRecordEnabled { get; set; } = false;
+
+        [MaxLength(20)]
+        public string? CoreLoanAppTrackingRecordTypeIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? AddressMapToTrackingRecord { get; set; }
+        [MaxLength(20)]
+        public string? ExtraAddressMapToTrackingRecord { get; set; }
+        [MaxLength(20)]
+        public string? CityMapToTrackingRecord { get; set; }
+        [MaxLength(20)]
+        public string? StateCodeMapToTrackingRecord { get; set; }
+        [MaxLength(20)]
+        public string? ZipCodeMapToTrackingRecord { get; set; }
+
+        [Required]
+        public bool IsVehicleLoan { get; set; }
+
+        public MultilingualField Description { get; set; } = new();
+
+        [MaxLength(20)]
+        public string? CoreTypeIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? CoreCollateralTypeIdentifier { get; set; }
+
+        [MaxLength(20)]
+        public string? CoreCollateralCategory { get; set; }
+
+        public string? DefaultSuffix { get; set; }
+        public decimal? MinimumLoanAmount { get; set; }
+        public decimal? MaximumLoanAmount { get; set; }
+
+        public IList<Term> AllowedTerms { get; set; } = new List<Term>();
+
+        //Note: This is done because a primitive value
+        //cannot be bound properly to the form in a list.
+        public class Term
+        {
+            public int Value { get; set; }
+        }
+    }
+}

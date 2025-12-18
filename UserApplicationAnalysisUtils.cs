@@ -1,4 +1,5 @@
 using Aloha.Infrastructure;
+using Aloha.Domain.Products;
 using Microsoft.EntityFrameworkCore;
 
 namespace Aloha.Customer.Web.Utilities;
@@ -10,31 +11,52 @@ public static class UserApplicationAnalysisUtils
 {
     /// <summary>
     /// Finds UserApplication by provided appKey and returns true if there are any CardProducts available
-    /// that can be used with the selected share products (computed the same way as AddCard.razor)
+    /// that can be used with the selected share products
     /// </summary>
     public static async Task<bool> HasSelectedAnyShareProductsEligibleForCardOrderingAsync(AlohaDb db, Guid appKey)
     {
-        // Get selected share product IDs (same logic as AddCard.razor)
         var selectedTypes = await db.ApplicationShareProducts
             .Where(x => x.UserApplication!.ApplicationKey == appKey)
             .Select(x => x.ShareProductId)
             .ToListAsync();
 
-        // Check if there are any CardProducts available that can be used with these share products
-        // (same logic as AddCard.razor)
-        var hasCardProducts = await db.CardProducts
-            .Include(x => x.CardShareTypeLinks!)
-            .ThenInclude(link => link.ShareProduct)
-            .Where(x =>
-                !x.RestrictedCardProduct
-                ||
-                x.CardShareTypeLinks!.Any(link =>
-                    link.ShareProduct != null &&
-                    link.ShareProduct.CardOrderEnabled &&
-                    selectedTypes.Contains(link.ShareProductId)))
-            .AnyAsync();
-
-        return hasCardProducts;
+        if (!selectedTypes.Any())
+        {
+            return false;
+        }
+        
+        // Get all enabled cards (manually filter since GetEnabledProducts may not be accessible)
+        var allEnabledCards = await db.CardProducts
+            .Where(card => card.IsEnabled && card.DeleteDateUtc == null)
+            .ToListAsync();
+        
+        var nonRestrictedCount = allEnabledCards.Count(c => !c.RestrictedCardProduct);
+        
+        var restrictedCardIds = allEnabledCards.Where(c => c.RestrictedCardProduct).Select(c => c.Id).ToList();
+        
+        var hasMatchingRestrictedCards = false;
+        if (restrictedCardIds.Any())
+        {
+            // Use explicit IQueryable to avoid ambiguity and type inference issues
+            IQueryable<CardShareTypeLink> linksQuery = db.CardShareTypeLinks
+                .Where(link => restrictedCardIds.Contains(link.CardProductId));
+            
+            IQueryable<ShareProduct> shareProductsQuery = db.ShareProducts
+                .Where(sp => sp.CardOrderEnabled && selectedTypes.Contains(sp.Id));
+            
+            var matchingLinks = await linksQuery
+                .Join(
+                    shareProductsQuery,
+                    link => link.ShareProductId,
+                    sp => sp.Id,
+                    (link, sp) => link.CardProductId)
+                .Distinct()
+                .AnyAsync();
+            
+            hasMatchingRestrictedCards = matchingLinks;
+        }
+        
+        return nonRestrictedCount > 0 || hasMatchingRestrictedCards;
     }
 
     public static async Task<bool> HasSelectedAnyProductsWithQuestionnaires(AlohaDb db, Guid appKey)

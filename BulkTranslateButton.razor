@@ -1,37 +1,58 @@
 @using Aloha.Domain.Services.Translations
-@using System.Globalization
+@using System.Linq
 @inject ITranslationHelper TranslationHelper
 @inject ILanguageConfigurationService LanguageConfigService
 
 @if (isMultiLanguageEnabled)
 {
-    <div class="mb-0">
-        @if (SelectedCulture == primaryLanguage)
-        {
-            <button type="button" 
-                    class="btn btn-primary"
-                    @onclick="OnBulkTranslateAllLanguagesClick"
-                    disabled="@(isTranslating || !HasEnglishText)">
-                @if (isTranslating)
-                {
-                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                }
-                Bulk Translate All Languages
-            </button>
-        }
-        else
-        {
-            <button type="button" 
-                    class="btn btn-primary"
-                    @onclick="OnBulkTranslateClick"
-                    disabled="@(isTranslating || !HasEnglishText)">
-                @if (isTranslating)
-                {
-                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                }
-                Auto-Translate to fill all @(languageDisplayNames.TryGetValue(SelectedCulture, out var selectedDisplayName) ? selectedDisplayName : SelectedCulture) fields
-            </button>
-        }
+    <div class="sticky-top bg-white border-bottom p-3 mb-3 shadow-sm" style="z-index: 1020; margin-left: -15px; margin-right: -15px; padding-left: 15px !important; padding-right: 15px !important;">
+        <div class="d-flex align-items-end gap-3">
+            <div class="flex-grow-1">
+                <label class="form-label fw-bold mb-2">Editing Language:</label>
+                <InputSelect @bind-Value="CurrentSelectedCulture" 
+                            @bind-Value:after="OnCultureChanged"
+                            class="form-select" 
+                            style="width: 100%;"
+                            id="@($"{FieldIdPrefix}-language-select")">
+                    <option value="@primaryLanguage">@(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryDisplayName) ? primaryDisplayName : primaryLanguage) (Primary)</option>
+                    @foreach (var lang in AvailableLanguages)
+                    {
+                        <option value="@lang">@(languageDisplayNames.TryGetValue(lang, out var displayName) ? displayName : lang)</option>
+                    }
+                </InputSelect>
+            </div>
+            @if (TranslationConfig.AUTOTRANSLATIONAVAILABLE)
+            {
+                <div class="mb-0">
+                    @if (CurrentSelectedCulture == primaryLanguage)
+                    {
+                        <button type="button" 
+                                class="btn btn-primary"
+                                @onclick="OnBulkTranslateAllLanguagesClick"
+                                disabled="@(isTranslating || !HasEnglishText)">
+                            @if (isTranslating)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                            }
+                            Bulk Translate All Languages
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" 
+                                class="btn btn-primary"
+                                @onclick="OnBulkTranslateClick"
+                                disabled="@(isTranslating || !HasEnglishText)">
+                            @if (isTranslating)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                            }
+                            Auto-Translate to fill all @(languageDisplayNames.TryGetValue(CurrentSelectedCulture, out var selectedDisplayName) ? selectedDisplayName : CurrentSelectedCulture) fields
+                        </button>
+                    }
+                </div>
+            }
+        </div>
     
         @if (!string.IsNullOrWhiteSpace(TranslationError))
         {
@@ -43,7 +64,7 @@
 }
 
 <!-- Modal for bulk translate warning (single language) -->
-@if (showBulkModal && SelectedCulture != primaryLanguage)
+@if (showBulkModal && CurrentSelectedCulture != primaryLanguage)
 {
     <div class="modal fade show" style="display: block;" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -53,11 +74,11 @@
                     <button type="button" class="btn-close" @onclick="CancelBulkTranslate"></button>
                 </div>
                 <div class="modal-body">
-                    <p>This will translate all @(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryName) ? primaryName : primaryLanguage) text fields to <strong>@(languageDisplayNames.TryGetValue(SelectedCulture, out var targetDisplayName) ? targetDisplayName : SelectedCulture)</strong>.</p>
+                    <p>This will translate all @(languageDisplayNames.TryGetValue(primaryLanguage, out var primaryName) ? primaryName : primaryLanguage) text fields to <strong>@(languageDisplayNames.TryGetValue(CurrentSelectedCulture, out var targetDisplayName) ? targetDisplayName : CurrentSelectedCulture)</strong>.</p>
                     @if (FieldsWithExistingText.Any())
                     {
                         <div class="alert alert-warning mt-2">
-                            <strong>Warning:</strong> The following fields already have @(languageDisplayNames.TryGetValue(SelectedCulture, out var existingDisplayName) ? existingDisplayName : SelectedCulture) text that will be overwritten:
+                            <strong>Warning:</strong> The following fields already have @(languageDisplayNames.TryGetValue(CurrentSelectedCulture, out var existingDisplayName) ? existingDisplayName : CurrentSelectedCulture) text that will be overwritten:
                             <ul class="mb-0 mt-2">
                                 @foreach (var field in FieldsWithExistingText)
                                 {
@@ -85,7 +106,7 @@
 }
 
 <!-- Modal for bulk translate all languages warning -->
-@if (showBulkModal && SelectedCulture == primaryLanguage)
+@if (showBulkModal && CurrentSelectedCulture == primaryLanguage)
 {
     <div class="modal fade show" style="display: block;" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -121,8 +142,18 @@
 }
 
 @code {
-    [Parameter] public string SelectedCulture { get; set; } = "en-US";
+    // Accept MultilingualField dictionaries - this is the primary API
+    [Parameter] public Dictionary<string, MultilingualField>? Fields { get; set; }
+    [Parameter] public EventCallback<Dictionary<string, MultilingualField>> FieldsChanged { get; set; }
+    
+    // Expose SelectedCulture so MultiLanguageInput components can use it
+    [Parameter] public string? SelectedCulture { get; set; }
     [Parameter] public EventCallback<string> SelectedCultureChanged { get; set; }
+    
+    // Optional: Field ID prefix for unique IDs
+    [Parameter] public string FieldIdPrefix { get; set; } = "multilang";
+    
+    // Legacy: Support old API for backward compatibility
     [Parameter] public EventCallback OnBulkTranslate { get; set; }
     [Parameter] public EventCallback OnBulkTranslateAllLanguages { get; set; }
     [Parameter] public Func<List<string>>? GetFieldsWithExistingText { get; set; }
@@ -136,18 +167,55 @@
     private bool isMultiLanguageEnabled = false;
     private string primaryLanguage = "en-US";
     private Dictionary<string, string> languageDisplayNames = new();
+    
+    // Expose SelectedCulture as a public property so MultiLanguageInput can access it
+    public string CurrentCulture => SelectedCulture ?? primaryLanguage;
+    
+    // Property for binding to InputSelect (always non-null)
+    private string CurrentSelectedCulture
+    {
+        get => SelectedCulture ?? primaryLanguage;
+        set
+        {
+            SelectedCulture = value;
+            OnCultureChanged();
+        }
+    }
 
-    private bool HasEnglishText => HasEnglishTextFunc?.Invoke() ?? true;
+    private bool HasEnglishText
+    {
+        get
+        {
+            if (Fields != null)
+            {
+                var enabledLanguages = AvailableLanguages.Concat(new[] { primaryLanguage }).ToList();
+                return MultilingualFormHelper.HasEnglishText(enabledLanguages, Fields.Values.ToArray());
+            }
+            return HasEnglishTextFunc?.Invoke() ?? true;
+        }
+    }
     
     private async Task OnCultureChanged()
     {
         TranslationError = null;
-        await SelectedCultureChanged.InvokeAsync(SelectedCulture);
+        if (SelectedCultureChanged.HasDelegate)
+        {
+            await SelectedCultureChanged.InvokeAsync(SelectedCulture);
+        }
+        StateHasChanged();
     }
     
     private void OnBulkTranslateAllLanguagesClick()
     {
-        FieldsWithExistingText = GetFieldsWithExistingText?.Invoke() ?? new List<string>();
+        if (Fields != null)
+        {
+            FieldsWithExistingText = MultilingualFormHelper.GetFieldsWithExistingText(
+                CurrentSelectedCulture, primaryLanguage, Fields);
+        }
+        else
+        {
+            FieldsWithExistingText = GetFieldsWithExistingText?.Invoke() ?? new List<string>();
+        }
         showBulkModal = true;
     }
     
@@ -160,7 +228,22 @@
 
         try
         {
-            await OnBulkTranslateAllLanguages.InvokeAsync();
+            if (Fields != null)
+            {
+                var enabledLanguages = AvailableLanguages.Concat(new[] { primaryLanguage }).ToList();
+                var errors = await MultilingualFormHelper.BulkTranslateToAllLanguagesAsync(
+                    TranslationHelper, LanguageConfigService, primaryLanguage, enabledLanguages, Fields);
+                MultilingualFormHelper.HandleTranslationErrors(errors, TranslationHelper, this);
+                
+                if (FieldsChanged.HasDelegate)
+                {
+                    await FieldsChanged.InvokeAsync(Fields);
+                }
+            }
+            else
+            {
+                await OnBulkTranslateAllLanguages.InvokeAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -190,10 +273,14 @@
         // Remove primary language from available languages list (it's shown separately)
         AvailableLanguages = AvailableLanguages.Where(l => l != primaryLanguage).ToList();
         
-        // Set default selected culture to primary language if not set
+        // Always default to primary language (unless explicitly set via parameter)
         if (string.IsNullOrWhiteSpace(SelectedCulture))
         {
             SelectedCulture = primaryLanguage;
+            if (SelectedCultureChanged.HasDelegate)
+            {
+                await SelectedCultureChanged.InvokeAsync(SelectedCulture);
+            }
         }
         
         StateHasChanged();
@@ -202,7 +289,15 @@
     private void OnBulkTranslateClick()
     {
         TranslationError = null;
-        FieldsWithExistingText = GetFieldsWithExistingText?.Invoke() ?? new List<string>();
+        if (Fields != null)
+        {
+            FieldsWithExistingText = MultilingualFormHelper.GetFieldsWithExistingText(
+                CurrentSelectedCulture, primaryLanguage, Fields);
+        }
+        else
+        {
+            FieldsWithExistingText = GetFieldsWithExistingText?.Invoke() ?? new List<string>();
+        }
         showBulkModal = true;
     }
 
@@ -215,7 +310,22 @@
 
         try
         {
-            await OnBulkTranslate.InvokeAsync();
+            if (Fields != null)
+            {
+                var enabledLanguages = AvailableLanguages.Concat(new[] { primaryLanguage }).ToList();
+                var errors = await MultilingualFormHelper.BulkTranslateToCultureAsync(
+                    TranslationHelper, CurrentSelectedCulture, primaryLanguage, enabledLanguages, Fields);
+                MultilingualFormHelper.HandleTranslationErrors(errors, TranslationHelper, this);
+                
+                if (FieldsChanged.HasDelegate)
+                {
+                    await FieldsChanged.InvokeAsync(Fields);
+                }
+            }
+            else
+            {
+                await OnBulkTranslate.InvokeAsync();
+            }
         }
         catch (Exception ex)
         {

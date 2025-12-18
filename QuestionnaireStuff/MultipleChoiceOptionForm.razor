@@ -19,10 +19,8 @@
                        Placeholder="Enter option name"
                        Rows="1"
                        IsDisabled="false"
-                       EnglishValue="@input.Name"
-                       EnglishValueChanged="@((string value) => input.Name = value)"
-                       Translations="@input.NameTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
+                       Field="@input.NameField"
+                       FieldChanged="@((MultilingualField f) => input.NameField = f)"
                        SelectedCultureOverride="@SelectedCulture"
                        SelectedCultureOverrideChanged="@((string culture) => { })" />
 
@@ -41,10 +39,8 @@
                            Placeholder="Please specify..."
                            Rows="1"
                            IsDisabled="false"
-                           EnglishValue="@input.DependentQuestionName"
-                           EnglishValueChanged="@((string value) => input.DependentQuestionName = value)"
-                           Translations="@input.DependentQuestionNameTranslations"
-                           TranslationsChanged="@((Dictionary<string, string> trans) => input.DependentQuestionNameTranslations = trans)"
+                           Field="@input.DependentQuestionNameField"
+                           FieldChanged="@((MultilingualField f) => input.DependentQuestionNameField = f)"
                            SelectedCultureOverride="@SelectedCulture"
                            SelectedCultureOverrideChanged="@((string culture) => { })" />
         <div class="mb-2">
@@ -92,13 +88,17 @@
                                         </div>
                                         <div class="flex-fill">
                                             <div>
-                                                @depOption.Name
+                                                @{
+                                                    var depOptionName = depOption.NameField.Get(SelectedCulture, PrimaryLanguage);
+                                                }
+                                                @depOptionName
                                                 @if (depOption.HasFreeFormField)
                                                 {
-                                                    @if (!string.IsNullOrWhiteSpace(depOption.FreeFormFieldDescription))
+                                                    var freeFormDesc = depOption.FreeFormFieldDescriptionField.Get(SelectedCulture, PrimaryLanguage);
+                                                    @if (!string.IsNullOrWhiteSpace(freeFormDesc))
                                                     {
                                                         <span class="fst-italic">
-                                                            - @depOption.FreeFormFieldDescription
+                                                            - @freeFormDesc
                                                         </span>
                                                     }
 
@@ -141,6 +141,7 @@
                         InitialValues="dependentOptionBeingEdited"
                         IsEditing="isEditingDependentOption"
                         SelectedCulture="@SelectedCulture"
+                        PrimaryLanguage="@PrimaryLanguage"
                     />
                 </div>
             </div>
@@ -193,6 +194,9 @@
 
     [Parameter]
     public string SelectedCulture { get; set; } = "en-US";
+
+    [Parameter]
+    public string PrimaryLanguage { get; set; } = "en-US";
 
     protected override void OnInitialized()
     {
@@ -251,19 +255,24 @@
         var depOption = input.DependentMultipleChoiceOptions
             .First(o => o.DraftId == dependentOptionBeingEdited!.DraftId);
 
-        depOption.Name = values.Name!;
-        depOption.NameTranslations = new Dictionary<string, string>(values.NameTranslations);
+        depOption.NameField = new MultilingualField { PrimaryValue = values.NameField.PrimaryValue };
+        foreach (var kvp in values.NameField.Translations)
+        {
+            depOption.NameField.Translations[kvp.Key] = kvp.Value;
+        }
         depOption.HasFreeFormField = values.HasFreeFormField;
 
-        if (values.HasFreeFormField && !string.IsNullOrWhiteSpace(values.FreeFormFieldDescription))
+        if (values.HasFreeFormField && !string.IsNullOrWhiteSpace(values.FreeFormFieldDescriptionField.PrimaryValue))
         {
-            depOption.FreeFormFieldDescription = values.FreeFormFieldDescription;
-            depOption.FreeFormFieldDescriptionTranslations = new Dictionary<string, string>(values.FreeFormFieldDescriptionTranslations);
+            depOption.FreeFormFieldDescriptionField = new MultilingualField { PrimaryValue = values.FreeFormFieldDescriptionField.PrimaryValue };
+            foreach (var kvp in values.FreeFormFieldDescriptionField.Translations)
+            {
+                depOption.FreeFormFieldDescriptionField.Translations[kvp.Key] = kvp.Value;
+            }
         }
         else
         {
-            depOption.FreeFormFieldDescription = null;
-            depOption.FreeFormFieldDescriptionTranslations.Clear();
+            depOption.FreeFormFieldDescriptionField.Clear();
         }
 
         CloseEditDependentMultipleChoiceOptionForm();
@@ -274,16 +283,23 @@
         var draft = new DependentMultipleChoiceOptionForm.DraftInput
         {
             DraftId = Guid.NewGuid(),
-            Name = values.Name!,
-            NameTranslations = new Dictionary<string, string>(values.NameTranslations),
-            HasFreeFormField = values.HasFreeFormField,
-            FreeFormFieldDescription = values.HasFreeFormField
-                ? values.FreeFormFieldDescription
-                : null,
-            FreeFormFieldDescriptionTranslations = values.HasFreeFormField
-                ? new Dictionary<string, string>(values.FreeFormFieldDescriptionTranslations)
-                : new Dictionary<string, string>()
+            HasFreeFormField = values.HasFreeFormField
         };
+
+        draft.NameField = new MultilingualField { PrimaryValue = values.NameField.PrimaryValue };
+        foreach (var kvp in values.NameField.Translations)
+        {
+            draft.NameField.Translations[kvp.Key] = kvp.Value;
+        }
+
+        if (values.HasFreeFormField)
+        {
+            draft.FreeFormFieldDescriptionField = new MultilingualField { PrimaryValue = values.FreeFormFieldDescriptionField.PrimaryValue };
+            foreach (var kvp in values.FreeFormFieldDescriptionField.Translations)
+            {
+                draft.FreeFormFieldDescriptionField.Translations[kvp.Key] = kvp.Value;
+            }
+        }
 
         input.DependentMultipleChoiceOptions.Add(draft);
     }
@@ -316,33 +332,55 @@
     public class DraftInput
     {
         public required Guid DraftId { get; set; }
-        public required string Name { get; set; }
+        public MultilingualField NameField { get; set; } = new();
         public bool HasDependentQuestion { get; set; }
         public DependentQuestionType DependentQuestionType { get; set; }
-        public string? DependentQuestionName { get; set; }
+        public MultilingualField DependentQuestionNameField { get; set; } = new();
         public IList<DependentMultipleChoiceOptionForm.DraftInput>? DependentMultipleChoiceOptions { get; set; }
         public int SortOrder { get; set; }
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> DependentQuestionNameTranslations { get; set; } = new();
 
-        public static DraftInput CreateFromOption(MultipleChoiceOption option, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? dependentQuestionNameTranslations = null, Func<DependentMultipleChoiceOption, Dictionary<string, string>?, Dictionary<string, string>?, DependentMultipleChoiceOptionForm.DraftInput>? createDependentOption = null)
+        public static DraftInput CreateFromOption(MultipleChoiceOption option, MultilingualField? nameField = null, MultilingualField? dependentQuestionNameField = null, Func<DependentMultipleChoiceOption, MultilingualField?, MultilingualField?, DependentMultipleChoiceOptionForm.DraftInput>? createDependentOption = null)
         {
-            return new DraftInput
+            var result = new DraftInput
             {
                 DraftId = Guid.NewGuid(),
-                Name = option.Name,
                 HasDependentQuestion = option.DependentQuestionType != DependentQuestionType.None,
-                DependentQuestionName = option.DependentQuestionName,
                 SortOrder = option.SortOrder,
                 DependentQuestionType = option.DependentQuestionType,
                 DependentMultipleChoiceOptions = option.DependentMultipleChoiceOptions?
                     .Select(dep => createDependentOption != null 
                         ? createDependentOption(dep, null, null)
                         : DependentMultipleChoiceOptionForm.DraftInput.CreateFromDependentOption(dep))
-                    .ToList(),
-                NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
-                DependentQuestionNameTranslations = dependentQuestionNameTranslations ?? new Dictionary<string, string>()
+                    .ToList()
             };
+
+            if (nameField != null)
+            {
+                result.NameField = new MultilingualField { PrimaryValue = nameField.PrimaryValue };
+                foreach (var kvp in nameField.Translations)
+                {
+                    result.NameField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.NameField.PrimaryValue = option.Name;
+            }
+
+            if (dependentQuestionNameField != null)
+            {
+                result.DependentQuestionNameField = new MultilingualField { PrimaryValue = dependentQuestionNameField.PrimaryValue };
+                foreach (var kvp in dependentQuestionNameField.Translations)
+                {
+                    result.DependentQuestionNameField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.DependentQuestionNameField.PrimaryValue = option.DependentQuestionName ?? string.Empty;
+            }
+
+            return result;
         }
     }
 
@@ -350,13 +388,11 @@
     {
         public bool HasSubmitted { get; set; }
 
-        public string? Name { get; set; }
+        public MultilingualField NameField { get; set; } = new();
         public bool HasDependentQuestion { get; set; }
-        public string? DependentQuestionName { get; set; }
+        public MultilingualField DependentQuestionNameField { get; set; } = new();
         public DependentQuestionType DependentQuestionType { get; set; } = DependentQuestionType.None;
         public IList<DependentMultipleChoiceOptionForm.DraftInput> DependentMultipleChoiceOptions { get; set; } = [];
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> DependentQuestionNameTranslations { get; set; } = new();
 
         public static Input CreateFromDraft(DraftInput? draft)
         {
@@ -372,37 +408,40 @@
 
         public void UpdateFromDraft(DraftInput draft)
         {
-            Name = draft.Name;
+            NameField = new MultilingualField { PrimaryValue = draft.NameField.PrimaryValue };
+            foreach (var kvp in draft.NameField.Translations)
+            {
+                NameField.Translations[kvp.Key] = kvp.Value;
+            }
+
             HasDependentQuestion = draft.HasDependentQuestion;
-            DependentQuestionName = draft.DependentQuestionName;
+
+            DependentQuestionNameField = new MultilingualField { PrimaryValue = draft.DependentQuestionNameField.PrimaryValue };
+            foreach (var kvp in draft.DependentQuestionNameField.Translations)
+            {
+                DependentQuestionNameField.Translations[kvp.Key] = kvp.Value;
+            }
+
             DependentQuestionType = draft.DependentQuestionType;
 
             DependentMultipleChoiceOptions = draft.DependentMultipleChoiceOptions == null
                 ? []
                 : [..draft.DependentMultipleChoiceOptions];
-            NameTranslations = new Dictionary<string, string>(draft.NameTranslations);
-            DependentQuestionNameTranslations = new Dictionary<string, string>(draft.DependentQuestionNameTranslations);
         }
 
         public void Trim()
         {
-            Name = Name?.Trim();
-
-            DependentQuestionName =
-                HasDependentQuestion && !string.IsNullOrWhiteSpace(DependentQuestionName)
-                    ? DependentQuestionName.Trim()
-                    : null;
+            NameField.PrimaryValue = NameField.PrimaryValue?.Trim() ?? string.Empty;
+            DependentQuestionNameField.PrimaryValue = DependentQuestionNameField.PrimaryValue?.Trim() ?? string.Empty;
         }
 
         public void Clear()
         {
-            Name = null;
+            NameField.Clear();
             HasDependentQuestion = false;
-            DependentQuestionName = null;
+            DependentQuestionNameField.Clear();
             DependentQuestionType = DependentQuestionType.None;
             DependentMultipleChoiceOptions = [];
-            NameTranslations.Clear();
-            DependentQuestionNameTranslations.Clear();
         }
     }
 
@@ -412,11 +451,11 @@
         {
             When(input => input.HasSubmitted, () =>
             {
-                RuleFor(p => p.Name).NotEmpty().WithMessage("Option name is required");
+                RuleFor(p => p.NameField.PrimaryValue).NotEmpty().WithMessage("Option name is required");
 
                 When(p => p.HasDependentQuestion, () =>
                 {
-                    RuleFor(p => p.DependentQuestionName).NotEmpty().WithMessage("Dependent question name is required");
+                    RuleFor(p => p.DependentQuestionNameField.PrimaryValue).NotEmpty().WithMessage("Dependent question name is required");
 
                     When(p => p.DependentQuestionType is DependentQuestionType.SingleSelect or DependentQuestionType.MultipleSelect, () =>
                     {

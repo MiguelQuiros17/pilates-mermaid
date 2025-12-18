@@ -12,6 +12,7 @@
 @using Microsoft.AspNetCore.Identity
 @using Aloha.Domain.Services.Translations
 @using Aloha.Domain.Services
+@using Aloha.Customer.Web.Components.Common
 @attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Reporting, Audit")]
 
 @inject IDbContextFactory<AlohaDb> dbFactory
@@ -20,50 +21,52 @@
 @inject AuthenticationStateProvider authStateProvider
 @inject IHttpContextAccessor HttpContextAccessor
 @inject Aloha.Domain.Services.Translations.ITranslationHelper TranslationHelper
+@inject NavigationManager nav
+@inject IStringLocalizer<SharedResources> sl
 @rendermode InteractiveServer
 
 @if (Questionnaire != null)
 {
     @* Component mode - render questionnaire card *@
-    <div class="card mb-3">
+    <div class="card">
         <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start mb-3">
-                <div class="flex-grow-1 me-3">
-                    <h5 class="card-title mb-2">@displayedQuestionnaireName</h5>
-                    @if (!string.IsNullOrWhiteSpace(displayedQuestionnaireDescription))
-                    {
-                        <p class="card-text text-muted mb-2">@displayedQuestionnaireDescription</p>
-                    }
-                    @if (ApplicationProductNames != null && ApplicationProductNames.Any())
-                    {
-                        <p class="text-muted small mb-0">
-                            @string.Join(", ", ApplicationProductNames)
-                        </p>
-                    }
+            <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                <div class="d-flex justify-content-center flex-column flex-fill">
+                    <div class="d-flex gap-2">
+                        <div>@displayedQuestionnaireName</div>
+                        <div>
+                            @if (Questionnaire.IsRequired)
+                            {
+                                <Badge Color="BadgeColor.Primary">@sl["label-required-badge"]</Badge>
+                            }
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                        @if (IsComplete)
+                        {
+                            <Icon Color="IconColor.Primary" Name="IconName.CheckCircle" Size="IconSize.x6"></Icon>
+                        }
+                        @(IsComplete ? "Complete" : "Not Complete")
+                    </div>
                 </div>
-                <div class="flex-shrink-0">
-                    @if (IsComplete)
-                    {
-                        <span class="badge bg-success">Complete</span>
-                    }
-                    else
-                    {
-                        <span class="badge bg-warning">Incomplete</span>
-                    }
+                <div class="d-flex justify-content-center flex-column">
+                    <button class="btn btn-outline-primary" @onclick="HandleViewPress">@sl["button-view"]</button>
                 </div>
-            </div>
-            <div class="d-flex justify-content-end gap-2">
-                @if (QuestionnaireResponseId.HasValue)
-                {
-                    <a href="@GetViewResponseUrl()" class="btn btn-outline-primary btn-sm rounded">View Response</a>
-                    <a href="@GetEditResponseUrl()" class="btn btn-primary btn-sm rounded">Edit Response</a>
-                }
-                else
-                {
-                    <a href="@GetFillOutUrl()" class="btn btn-primary btn-sm rounded">@(IsComplete ? "Fill Out Again" : "Fill Out")</a>
-                }
             </div>
         </div>
+        @if (ApplicationProductNames is not null || ApplicationProductNames?.Count() > 0)
+        {
+            <div class="card-footer">
+                <ul>
+                    @foreach (var appProductName in ApplicationProductNames ?? [])
+                    {
+                        <li>
+                            @appProductName
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
     </div>
 }
 else
@@ -325,64 +328,31 @@ Responsive="true"
         return null;
     }
 
-    private string GetFillOutUrl()
+    private const string FallbackViewUrl = "/applications/summary";
+
+    private void HandleViewPress()
     {
-        if (ApplicationPersonId.HasValue)
+        if (IsComplete)
         {
-            return $"/applications/people/{ApplicationPersonId.Value}/questionnaires/{Questionnaire!.Id}/respond";
-        }
-        else if (ApplicationLoanProductId.HasValue)
-        {
-            return $"/applications/products/Loan/{ApplicationLoanProductId.Value}/questionnaires/{Questionnaire!.Id}/respond";
-        }
-        else if (ApplicationShareProductId.HasValue)
-        {
-            return $"/applications/products/Share/{ApplicationShareProductId.Value}/questionnaires/{Questionnaire!.Id}/respond";
+            nav.NavigateTo($"/applications/questionnaires/responses/{QuestionnaireResponseId}");
         }
         else
         {
-            return $"/applications/questionnaires/{Questionnaire!.Id}/respond";
-        }
-    }
+            var productType = ApplicationShareProductId is not null ? "share" : ApplicationLoanProductId is not null ? "loan" : null;
 
-    private string GetViewResponseUrl()
-    {
-        if (QuestionnaireResponseId.HasValue)
-        {
-            if (ApplicationPersonId.HasValue)
+            nav.NavigateTo(Questionnaire.Level switch
             {
-                return $"/applications/people/questionnaires/responses/{QuestionnaireResponseId.Value}";
-            }
-            else if (ApplicationLoanProductId.HasValue || ApplicationShareProductId.HasValue)
-            {
-                return $"/applications/products/questionnaires/responses/{QuestionnaireResponseId.Value}";
-            }
-            else
-            {
-                return $"/applications/questionnaires/responses/{QuestionnaireResponseId.Value}";
-            }
+                QuestionnaireLevel.Application => $"/applications/questionnaires/{Questionnaire.Id}/respond",
+                QuestionnaireLevel.Applicant => $"/applications/people/{ApplicationPersonId}/questionnaires/{Questionnaire.Id}/respond",
+                QuestionnaireLevel.Product => productType switch
+                {
+                    "share" => $"/applications/products/share/{ApplicationShareProductId}/questionnaires/{Questionnaire.Id}/respond",
+                    "loan" => $"/applications/products/loan/{ApplicationLoanProductId}/questionnaires/{Questionnaire.Id}/respond",
+                    _ => FallbackViewUrl
+                },
+                _ => FallbackViewUrl
+            });
         }
-        return "#";
-    }
-
-    private string GetEditResponseUrl()
-    {
-        if (QuestionnaireResponseId.HasValue)
-        {
-            if (ApplicationPersonId.HasValue)
-            {
-                return $"/applications/people/questionnaires/responses/{QuestionnaireResponseId.Value}/edit";
-            }
-            else if (ApplicationLoanProductId.HasValue || ApplicationShareProductId.HasValue)
-            {
-                return $"/applications/products/questionnaires/responses/{QuestionnaireResponseId.Value}/edit";
-            }
-            else
-            {
-                return $"/applications/questionnaires/responses/{QuestionnaireResponseId.Value}/edit";
-            }
-        }
-        return "#";
     }
 
     private async Task SearchQuestionnairesAsync()

@@ -6,8 +6,7 @@ import { motion } from 'framer-motion'
 import { Eye, EyeOff, AlertCircle, CheckCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+import { getApiUrl } from '@/lib/utils/api'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -100,14 +99,9 @@ export default function RegisterPage() {
       // Preparar datos para enviar al backend (excluir apellidos y confirmPassword)
       const { apellidos, confirmPassword, ...dataToSend } = formData
       
-      // In development, use relative URL so Next.js rewrites work
-      // In production, use API_BASE_URL if set, otherwise use relative URL
-      const isDevelopment = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost'
-      const registerUrl = isDevelopment || !API_BASE_URL
-        ? '/api/auth/register'  // Relative URL - Next.js will rewrite in dev, Express handles in prod
-        : `${API_BASE_URL.replace(/\/$/, '')}/api/auth/register`
-
-      console.log('[Register] Making request to:', registerUrl, 'Development:', isDevelopment, 'API_BASE_URL:', API_BASE_URL)
+      // Use getApiUrl utility for consistent URL construction
+      const registerUrl = getApiUrl('/api/auth/register')
+      console.log('[Register] Making request to:', registerUrl)
 
       const response = await fetch(registerUrl, {
         method: 'POST',
@@ -123,48 +117,55 @@ export default function RegisterPage() {
 
       console.log('[Register] Response status:', response.status, response.statusText)
       
-      // Handle 500 errors that might be from proxy failures
-      if (response.status === 500) {
-        let text = 'Internal Server Error'
-        try {
-          text = await response.text()
-        } catch {
-          // If we can't read the text, it's likely a connection error
-        }
-        console.error('[Register] Server error response:', text)
-        
-        // Check if it's a connection refused error (Express server not running)
-        // Next.js proxy errors show "Internal Server Error" when connection is refused
-        if (text === 'Internal Server Error' || text.includes('ECONNREFUSED') || text.includes('Failed to proxy')) {
-          setError('❌ El servidor Express no está corriendo en el puerto 3001.\n\nPor favor, abre otra terminal y ejecuta:\n\n  npm run server\n\nO ejecuta ambos servidores juntos:\n\n  npm run dev:full')
-        } else {
-          setError(`Error del servidor: ${text.substring(0, 200)}. Verifica la consola del servidor Express para más detalles.`)
-        }
-        setIsLoading(false)
-        return
-      }
-      
+      // Parse response as JSON directly (more reliable than text then parse)
       let data
       try {
-        const text = await response.text()
-        console.log('[Register] Response text (first 200 chars):', text.substring(0, 200))
-        data = text ? JSON.parse(text) : {}
+        // Check if response has content
+        const contentType = response.headers.get('content-type')
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json()
+        } else {
+          // If not JSON, try to read as text first
+          const text = await response.text()
+          console.log('[Register] Non-JSON response:', text.substring(0, 200))
+          if (text) {
+            try {
+              data = JSON.parse(text)
+            } catch {
+              // If parsing fails, create error object
+              data = { success: false, message: text || 'Error desconocido del servidor' }
+            }
+          } else {
+            data = { success: false, message: 'Respuesta vacía del servidor' }
+          }
+        }
+        console.log('[Register] Parsed response data:', { success: data.success, hasToken: !!data.token, hasUser: !!data.user })
       } catch (parseError) {
         console.error('[Register] Failed to parse response:', parseError)
-        setError('Error al procesar la respuesta del servidor. Por favor, verifica que el servidor Express esté corriendo en el puerto 3001.')
+        setError('Error al procesar la respuesta del servidor. Por favor, intenta de nuevo.')
         setIsLoading(false)
         return
       }
 
-      if (response.ok && data.success && data.token) {
-        // Store token and user data immediately - ensure synchronous write
+      // Check for successful registration
+      if (response.ok && data.success) {
+        // Check if we have a token (required for login)
+        if (!data.token) {
+          console.error('[Register] Success but no token received')
+          setError('Registro exitoso pero no se recibió el token. Por favor, inicia sesión manualmente.')
+          setIsLoading(false)
+          return
+        }
+
+        // Store token and user data immediately
         try {
-        localStorage.setItem('token', data.token)
+          localStorage.setItem('token', data.token)
           if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user))
+            localStorage.setItem('user', JSON.stringify(data.user))
           }
+          console.log('[Register] Auth data stored successfully')
         } catch (storageError) {
-          console.error('Error storing auth data:', storageError)
+          console.error('[Register] Error storing auth data:', storageError)
           setError('Error al guardar los datos de sesión. Intenta iniciar sesión manualmente.')
           setIsLoading(false)
           return
@@ -173,16 +174,20 @@ export default function RegisterPage() {
         setSuccess('¡Cuenta creada exitosamente!')
         setIsLoading(false)
         
-        // Redirect to dashboard - use router.push for Next.js navigation
-        // Small delay ensures localStorage write completes and UI updates
+        // Redirect to dashboard - use window.location for more reliable redirect in production
+        // Small delay ensures localStorage write completes
         setTimeout(() => {
-          router.push('/dashboard')
-        }, 200)
+          console.log('[Register] Redirecting to dashboard...')
+          window.location.href = '/dashboard'
+        }, 300)
+        return
       } else {
+        // Registration failed
         setIsLoading(false)
+        console.error('[Register] Registration failed:', data)
+        
         // Show specific error messages
         if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
-          // Show first error or format multiple errors
           const errorMessages = data.errors.map((err: any) => {
             if (typeof err === 'string') return err
             return err.message || err.msg || err
@@ -191,20 +196,23 @@ export default function RegisterPage() {
         } else if (data.message) {
           setError(data.message)
         } else if (data.error && process.env.NODE_ENV === 'development') {
-          // Show detailed error in development
           setError(`Error: ${data.error}`)
         } else if (!response.ok) {
-          setError(`Error del servidor (${response.status}). ${response.status === 500 ? 'Verifica que el servidor Express esté corriendo en el puerto 3001.' : 'Intenta de nuevo.'}`)
+          setError(`Error del servidor (${response.status}). Intenta de nuevo.`)
         } else {
           setError('Error al crear la cuenta. Por favor, verifica los datos ingresados.')
         }
       }
     } catch (error: any) {
       console.error('[Register] Network/request error:', error)
-      setError(`Error de conexión: ${error instanceof Error ? error.message : 'Error desconocido'}. Asegúrate de que el servidor Express esté corriendo en el puerto 3001.`)
-      console.error('Registration error:', error)
       setIsLoading(false)
-      setError('Error de conexión. Intenta de nuevo.')
+      
+      // Provide helpful error message
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        setError('Error de conexión. Verifica tu conexión a internet e intenta de nuevo.')
+      } else {
+        setError(`Error de conexión: ${error instanceof Error ? error.message : 'Error desconocido'}. Intenta de nuevo.`)
+      }
     }
   }
 

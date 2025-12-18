@@ -5,12 +5,16 @@
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
 @using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Localization
 @using System.Text.Json
 @attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, FormManager, Audit")]
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IDbContextFactory<AlohaDb> DbFactory
 @inject IAdminActivityService adminActivityService
 @inject UserManager<AdminUser> UserManager
+@inject ITranslationHelper TranslationHelper
+@inject ILanguageConfigurationService LanguageConfigService
 @rendermode InteractiveServer
 
 <h3>Questionnaires</h3>
@@ -46,7 +50,7 @@ else
                     PropertyName="Name"
                     SortKeySelector="item => item.Name"
                     TItem="Questionnaire">
-            @context.Name
+            @GetLocalizedQuestionnaireName(context)
         </GridColumn>
         <GridColumn HeaderText="Enabled"
                     PropertyName="IsEnabled"
@@ -95,13 +99,17 @@ else
     private bool isReadOnly = true;
     private static JsonSerializerOptions options = new() { WriteIndented = true };
     private AdminUser? AdminUser = default!;
+    private Dictionary<int, string> questionnaireNameCache = new();
+    private string primaryLanguage = "en-US";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
             await CheckRoleAndUpdateReadOnlyFlagAsync();
             await LoadData();
+            await LoadTranslationsAsync();
             isLoading = false;
             StateHasChanged();
         }
@@ -142,6 +150,26 @@ else
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         questionnaires = await db.Questionnaires.Where(q => !q.IsDeleted).ToArrayAsync();
+    }
+
+    private async Task LoadTranslationsAsync()
+    {
+        questionnaireNameCache.Clear();
+
+        // Load translations for all questionnaires
+        foreach (var questionnaire in questionnaires)
+        {
+            if (!questionnaireNameCache.ContainsKey(questionnaire.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(questionnaire, "Name", primaryLanguage);
+                questionnaireNameCache[questionnaire.Id] = translatedName;
+            }
+        }
+    }
+
+    private string GetLocalizedQuestionnaireName(Questionnaire questionnaire)
+    {
+        return questionnaireNameCache.TryGetValue(questionnaire.Id, out var name) ? name : questionnaire.Name;
     }
 
     private async Task DeleteQuestionnaire(int questionnaireId)

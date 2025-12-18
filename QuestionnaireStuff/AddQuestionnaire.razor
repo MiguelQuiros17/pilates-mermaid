@@ -5,6 +5,8 @@
 @using Aloha.Domain.Identity.AdminUsers.Activities
 @using Aloha.Domain.Identity.AdminUsers
 @using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Localization
+@using Aloha.Domain.Services.Translations
 @attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, FormManager")]
 @rendermode InteractiveServer
 @inject IDbContextFactory<AlohaDb> DbFactory
@@ -12,6 +14,7 @@
 @inject IAdminActivityService adminActivityService
 @inject UserManager<AdminUser> UserManager
 @inject AuthenticationStateProvider authStateProvider
+@inject ILanguageConfigurationService LanguageConfigService
 
 <h3>Add Questionnaire</h3>
 <p>Create questionnaires within New Membership and Loan app.</p>
@@ -34,14 +37,17 @@
             await using var db = await DbFactory.CreateDbContextAsync();
             var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
             var adminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+            
+            // Get primary language
+            var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
 
             // Create Questionnaire
             var questionnaire = Questionnaire.Create(
-                values.Name!,
+                values.NameField.Get("en-US", primaryLanguage),
                 values.IsEnabled,
                 values.IsRequired,
                 values.Level,
-                values.Description);
+                values.DescriptionField.Get("en-US", primaryLanguage));
 
             db.Add(questionnaire);
             await db.SaveChangesAsync();
@@ -55,11 +61,11 @@
             {
                 var question = Question.Create(
                     questionnaire.Id,
-                    draftQuestion.Name,
+                    draftQuestion.NameField.Get("en-US", primaryLanguage),
                     draftQuestion.IsRequired,
                     draftQuestion.SortOrder,
                     draftQuestion.Type,
-                    draftQuestion.Description,
+                    draftQuestion.DescriptionField.Get("en-US", primaryLanguage),
                     questionGroupId: null);
 
                 db.Add(question);
@@ -76,11 +82,11 @@
                     foreach (var draftOption in draftQuestion.MultipleChoiceOptions!)
                     {
                         var option = MultipleChoiceOption.Create(
-                            draftOption.Name,
+                            draftOption.NameField.Get("en-US", primaryLanguage),
                             draftOption.SortOrder,
                             draftOption.DependentQuestionType,
                             question.Id,
-                            draftOption.DependentQuestionName);
+                            draftOption.DependentQuestionNameField.Get("en-US", primaryLanguage));
 
                         db.Add(option);
                         await db.SaveChangesAsync();
@@ -96,11 +102,11 @@
                             foreach (var draftDependentOption in draftOption.DependentMultipleChoiceOptions)
                             {
                                 var dependentOption = DependentMultipleChoiceOption.Create(
-                                    draftDependentOption.Name,
+                                    draftDependentOption.NameField.Get("en-US", primaryLanguage),
                                     draftDependentOption.SortOrder,
                                     draftDependentOption.HasFreeFormField,
                                     option.Id,
-                                    draftDependentOption.FreeFormFieldDescription);
+                                    draftDependentOption.FreeFormFieldDescriptionField.Get("en-US", primaryLanguage));
 
                                 db.Add(dependentOption);
                                 var excludedDependentOptionProperties = new List<string> { nameof(dependentOption.MultipleChoiceOptionId), nameof(dependentOption.MultipleChoiceOption) };
@@ -121,10 +127,10 @@
             foreach (var draftQuestionGroup in values.QuestionGroups)
             {
                 var questionGroup = QuestionGroup.Create(
-                    draftQuestionGroup.Name!,
+                    draftQuestionGroup.NameField.Get("en-US", primaryLanguage),
                     draftQuestionGroup.SortOrder,
                     questionnaire.Id,
-                    draftQuestionGroup.Description);
+                    draftQuestionGroup.DescriptionField.Get("en-US", primaryLanguage));
 
                 db.Add(questionGroup);
                 await db.SaveChangesAsync();
@@ -137,11 +143,11 @@
                 {
                     var question = Question.Create(
                         questionnaire.Id,
-                        draftQuestion.Name,
+                        draftQuestion.NameField.Get("en-US", primaryLanguage),
                         draftQuestion.IsRequired,
                         draftQuestion.SortOrder,
                         draftQuestion.Type,
-                        draftQuestion.Description,
+                        draftQuestion.DescriptionField.Get("en-US", primaryLanguage),
                         questionGroup.Id);
 
                     db.Add(question);
@@ -158,11 +164,11 @@
                         foreach (var draftOption in draftQuestion.MultipleChoiceOptions!)
                         {
                             var option = MultipleChoiceOption.Create(
-                                draftOption.Name,
+                                draftOption.NameField.Get("en-US", primaryLanguage),
                                 draftOption.SortOrder,
                                 draftOption.DependentQuestionType,
                                 question.Id,
-                                draftOption.DependentQuestionName);
+                                draftOption.DependentQuestionNameField.Get("en-US", primaryLanguage));
 
                             db.Add(option);
                             await db.SaveChangesAsync();
@@ -178,11 +184,11 @@
                                 foreach (var draftDependentOption in draftOption.DependentMultipleChoiceOptions!)
                                 {
                                     var dependentOption = DependentMultipleChoiceOption.Create(
-                                        draftDependentOption.Name,
+                                        draftDependentOption.NameField.Get("en-US", primaryLanguage),
                                         draftDependentOption.SortOrder,
                                         draftDependentOption.HasFreeFormField,
                                         option.Id,
-                                        draftDependentOption.FreeFormFieldDescription);
+                                        draftDependentOption.FreeFormFieldDescriptionField.Get("en-US", primaryLanguage));
 
                                     db.Add(dependentOption);
                                     var excludedDependentOptionProperties = new List<string> { nameof(dependentOption.MultipleChoiceOptionId), nameof(dependentOption.MultipleChoiceOption) };

@@ -1,6 +1,7 @@
 @using System.Linq.Expressions
 @using Aloha.Domain.Questionnaires
 @using Aloha.Admin.Web.Components.Features.Customization.Questionnaires
+@using Aloha.Domain.Localization
 @rendermode InteractiveServer
 
 <li style=@(IsEditing ? "border-width: 2px; border-radius: 4px; border-color: var(--bs-primary); border-style: solid; padding: 8px" : string.Empty)>
@@ -30,7 +31,7 @@
         <div class="flex-fill">
             <div class="fw-bold">
                 @{
-                    var questionName = GetLocalizedText(Question.Name, Question.NameTranslations, SelectedCulture, PrimaryLanguage);
+                    var questionName = GetLocalizedText(Question.NameField, SelectedCulture, PrimaryLanguage);
                 }
                 @if (string.IsNullOrWhiteSpace(questionName))
                 {
@@ -45,7 +46,7 @@
                     <span class="text-danger">*</span>
                 }
                 @{
-                    var questionDescription = GetLocalizedText(Question.Description, Question.DescriptionTranslations, SelectedCulture, PrimaryLanguage);
+                    var questionDescription = GetLocalizedText(Question.DescriptionField, SelectedCulture, PrimaryLanguage);
                 }
                 @if (string.IsNullOrWhiteSpace(questionDescription))
                 {
@@ -67,34 +68,34 @@
                 <ul>
                     @foreach (var option in Question.MultipleChoiceOptions.OrderBy(o => o.SortOrder))
                     {
-                        <li>
-                            <div>
-                                @{
-                                    var optionName = GetLocalizedText(option.Name, option.NameTranslations, SelectedCulture, PrimaryLanguage);
-                                }
-                                @if (string.IsNullOrWhiteSpace(optionName))
-                                {
-                                    <span class="text-danger">(empty)</span>
-                                }
-                                else
-                                {
-                                    @optionName
-                                }
-                                @if (option.HasDependentQuestion)
-                                {
-                                    var dependentQuestionName = GetLocalizedText(option.DependentQuestionName, option.DependentQuestionNameTranslations, SelectedCulture, PrimaryLanguage);
-                                    @if (string.IsNullOrWhiteSpace(dependentQuestionName))
+                            <li>
+                                <div>
+                                    @{
+                                        var optionName = GetLocalizedText(option.NameField, SelectedCulture, PrimaryLanguage);
+                                    }
+                                    @if (string.IsNullOrWhiteSpace(optionName))
                                     {
-                                        <span class="fst-italic text-danger">- (empty)</span>
+                                        <span class="text-danger">(empty)</span>
                                     }
                                     else
                                     {
-                                        <span class="fst-italic">- @dependentQuestionName</span>
+                                        @optionName
                                     }
+                                    @if (option.HasDependentQuestion)
+                                    {
+                                        var dependentQuestionName = GetLocalizedText(option.DependentQuestionNameField, SelectedCulture, PrimaryLanguage);
+                                        @if (string.IsNullOrWhiteSpace(dependentQuestionName))
+                                        {
+                                            <span class="fst-italic text-danger">- (empty)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="fst-italic">- @dependentQuestionName</span>
+                                        }
 
-                                    <span> (@option.DependentQuestionType.ToDisplayName())</span>
-                                }
-                            </div>
+                                        <span> (@option.DependentQuestionType.ToDisplayName())</span>
+                                    }
+                                </div>
                             @if (
                                 option.HasDependentQuestion &&
                                 option.DependentQuestionType is DependentQuestionType.SingleSelect or DependentQuestionType.MultipleSelect &&
@@ -107,7 +108,7 @@
                                         <li>
                                             <div>
                                                 @{
-                                                    var depOptionName = GetLocalizedText(depOption.Name, depOption.NameTranslations, SelectedCulture, PrimaryLanguage);
+                                                    var depOptionName = GetLocalizedText(depOption.NameField, SelectedCulture, PrimaryLanguage);
                                                 }
                                                 @if (string.IsNullOrWhiteSpace(depOptionName))
                                                 {
@@ -119,7 +120,7 @@
                                                 }
                                                 @if (depOption.HasFreeFormField)
                                                 {
-                                                    var freeFormDescription = GetLocalizedText(depOption.FreeFormFieldDescription, depOption.FreeFormFieldDescriptionTranslations, SelectedCulture, PrimaryLanguage);
+                                                    var freeFormDescription = GetLocalizedText(depOption.FreeFormFieldDescriptionField, SelectedCulture, PrimaryLanguage);
                                                     @if (string.IsNullOrWhiteSpace(freeFormDescription))
                                                     {
                                                         <span class="fst-italic text-danger">
@@ -127,10 +128,10 @@
                                                         </span>
                                                     }
                                                     else
-                                                    {
-                                                        <span class="fst-italic">
+                                                {
+                                                    <span class="fst-italic">
                                                             - @freeFormDescription
-                                                        </span>
+                                                    </span>
                                                     }
                                                     <span> (Free Form)</span>
                                                 }
@@ -194,19 +195,9 @@
     [Parameter]
     public string PrimaryLanguage { get; set; } = "en-US";
 
-    private string GetLocalizedText(string? primaryValue, Dictionary<string, string> translations, string selectedCulture, string primaryLang)
+    private string GetLocalizedText(MultilingualField field, string selectedCulture, string primaryLang)
     {
-        if (selectedCulture == primaryLang)
-        {
-            return primaryValue ?? "";
-        }
-        
-        if (translations.TryGetValue(selectedCulture, out var translatedValue))
-        {
-            return translatedValue ?? "";
-        }
-        
-        return primaryValue ?? "";
+        return field.Get(selectedCulture, primaryLang);
     }
 
 }

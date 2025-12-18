@@ -1,5 +1,6 @@
 @using Aloha.Domain.Services.Translations
 @using System.Globalization
+@using System.Linq
 @inject ITranslationHelper TranslationHelper
 @inject ILanguageConfigurationService LanguageConfigService
 
@@ -7,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-center mb-2">
         <label class="form-label mb-0" for="@($"{FieldId}-{SelectedCulture}")">@Label</label>
         <div class="d-flex gap-2 align-items-center">
-            @if (isMultiLanguageEnabled && SelectedCulture != primaryLanguage)
+            @if (TranslationConfig.AUTOTRANSLATIONAVAILABLE && isMultiLanguageEnabled && SelectedCulture != primaryLanguage)
             {
                 <button type="button" 
                         class="btn btn-sm btn-outline-primary"
@@ -20,7 +21,7 @@
                     Auto Translate
                 </button>
             }
-            else if (isMultiLanguageEnabled && SelectedCulture == primaryLanguage)
+            else if (TranslationConfig.AUTOTRANSLATIONAVAILABLE && isMultiLanguageEnabled && SelectedCulture == primaryLanguage)
             {
                 <button type="button" 
                         class="btn btn-sm btn-outline-primary"
@@ -131,10 +132,38 @@
     [Parameter] public string? Placeholder { get; set; }
     [Parameter] public int Rows { get; set; } = 1;
     [Parameter] public bool IsDisabled { get; set; }
-    [Parameter] public string EnglishValue { get; set; } = string.Empty;
+    
+    // New: Accept MultilingualField directly
+    [Parameter] public MultilingualField? Field { get; set; }
+    [Parameter] public EventCallback<MultilingualField> FieldChanged { get; set; }
+    
+    // Legacy: Support old API for backward compatibility
+    [Parameter] public string EnglishValue 
+    { 
+        get => Field?.PrimaryValue ?? string.Empty;
+        set 
+        { 
+            if (Field != null) Field.PrimaryValue = value ?? string.Empty;
+        }
+    }
     [Parameter] public EventCallback<string> EnglishValueChanged { get; set; }
-    [Parameter] public Dictionary<string, string> Translations { get; set; } = new();
+    [Parameter] public Dictionary<string, string> Translations 
+    { 
+        get => Field?.Translations ?? new Dictionary<string, string>();
+        set 
+        { 
+            if (Field != null && value != null)
+            {
+                Field.Translations.Clear();
+                foreach (var kvp in value)
+                {
+                    Field.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+        }
+    }
     [Parameter] public EventCallback<Dictionary<string, string>> TranslationsChanged { get; set; }
+    
     [Parameter] public EventCallback OnValueChanged { get; set; }
     [Parameter] public string? SelectedCultureOverride { get; set; }
     [Parameter] public EventCallback<string> SelectedCultureOverrideChanged { get; set; }
@@ -150,40 +179,48 @@
     private string? TranslationError { get; set; }
     private bool isMultiLanguageEnabled = false;
     private string primaryLanguage = "en-US";
+    private bool isInitialized = false;
 
     private string DisplayValue
     {
         get
         {
-            // If selected culture is primary language, return the primary language value
+            // If using MultilingualField, use it directly
+            if (Field != null)
+            {
+                return Field.Get(SelectedCulture, primaryLanguage);
+            }
+            
+            // Legacy: If selected culture is primary language, return the primary language value
             if (SelectedCulture == primaryLanguage)
             {
-                var result = EnglishValue ?? string.Empty;
-                Console.WriteLine($"[MultiLanguageInput.DisplayValue GET] SelectedCulture={SelectedCulture}, primaryLanguage={primaryLanguage}, returning EnglishValue: '{result}'");
-                return result;
+                return EnglishValue ?? string.Empty;
             }
             // Otherwise, return the translation from the dictionary
-            var translation = Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
-            Console.WriteLine($"[MultiLanguageInput.DisplayValue GET] SelectedCulture={SelectedCulture}, primaryLanguage={primaryLanguage}, returning translation: '{translation}'");
-            return translation;
+            return Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
         }
         set
         {
-            Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] SelectedCulture={SelectedCulture}, primaryLanguage={primaryLanguage}, value: '{value}'");
-            // If selected culture is primary language, update the primary language value
-            if (SelectedCulture == primaryLanguage)
+            // If using MultilingualField, update it directly
+            if (Field != null)
             {
-                Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] Updating EnglishValue (primary language) from '{EnglishValue}' to '{value}'");
-                EnglishValue = value;
-                EnglishValueChanged.InvokeAsync(value);
+                Field.Set(SelectedCulture, value, primaryLanguage);
+                FieldChanged.InvokeAsync(Field);
             }
             else
             {
-                // Update the translation in the dictionary
-                Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] Updating Translations[{SelectedCulture}] from '{Translations.GetValueOrDefault(SelectedCulture)}' to '{value}'");
-                Translations[SelectedCulture] = value;
-                Console.WriteLine($"[MultiLanguageInput.DisplayValue SET] Translations dictionary now: {string.Join(", ", Translations.Select(kvp => $"{kvp.Key}='{kvp.Value}'"))}");
-                TranslationsChanged.InvokeAsync(Translations);
+                // Legacy: If selected culture is primary language, update the primary language value
+                if (SelectedCulture == primaryLanguage)
+                {
+                    EnglishValue = value;
+                    EnglishValueChanged.InvokeAsync(value);
+                }
+                else
+                {
+                    // Update the translation in the dictionary
+                    Translations[SelectedCulture] = value;
+                    TranslationsChanged.InvokeAsync(Translations);
+                }
             }
             OnValueChanged.InvokeAsync();
         }
@@ -191,19 +228,45 @@
     
     private string CurrentValue
     {
-        get => Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
+        get 
+        {
+            if (Field != null)
+            {
+                return Field.Get(SelectedCulture, primaryLanguage);
+            }
+            return Translations.TryGetValue(SelectedCulture, out var value) ? value : string.Empty;
+        }
         set
         {
-            if (Translations.ContainsKey(SelectedCulture))
+            if (Field != null)
             {
-                Translations[SelectedCulture] = value;
+                Field.Set(SelectedCulture, value, primaryLanguage);
+                FieldChanged.InvokeAsync(Field);
             }
             else
             {
                 Translations[SelectedCulture] = value;
+                TranslationsChanged.InvokeAsync(Translations);
             }
-            TranslationsChanged.InvokeAsync(Translations);
             OnValueChanged.InvokeAsync();
+        }
+    }
+    
+    private string EnglishValueForTranslation
+    {
+        get
+        {
+            if (Field != null)
+            {
+                // Get English value from field
+                var englishCulture = AvailableLanguages.FirstOrDefault(l => l.StartsWith("en")) ?? "en-US";
+                if (primaryLanguage.StartsWith("en"))
+                {
+                    return Field.PrimaryValue;
+                }
+                return Field.Get(englishCulture, primaryLanguage);
+            }
+            return EnglishValue;
         }
     }
 
@@ -214,7 +277,24 @@
         AvailableLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
         // Remove primary language from available languages list
         AvailableLanguages = AvailableLanguages.Where(l => l != primaryLanguage).ToList();
+        isInitialized = true;
+        
+        // If no override is provided and we just loaded the primary language, notify parent
+        if (SelectedCultureOverride == null && SelectedCultureOverrideChanged.HasDelegate)
+        {
+            await SelectedCultureOverrideChanged.InvokeAsync(primaryLanguage);
+        }
+        
         StateHasChanged();
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isInitialized)
+        {
+            // If initialization hasn't completed yet, wait for it
+            await OnInitializedAsync();
+        }
     }
 
     private async Task OnCultureChanged()
@@ -231,7 +311,8 @@
     private void OnTranslateClick()
     {
         TranslationError = null;
-        if (string.IsNullOrWhiteSpace(EnglishValue))
+        var englishText = EnglishValueForTranslation;
+        if (string.IsNullOrWhiteSpace(englishText))
         {
             ShowTranslationError = true;
             StateHasChanged();
@@ -254,7 +335,8 @@
     private void OnGenerateTranslationsClick()
     {
         TranslationError = null;
-        if (string.IsNullOrWhiteSpace(EnglishValue))
+        var englishText = EnglishValueForTranslation;
+        if (string.IsNullOrWhiteSpace(englishText))
         {
             ShowTranslationError = true;
             StateHasChanged();
@@ -264,9 +346,18 @@
         ShowTranslationError = false;
 
         // Check which languages already have text
-        LanguagesWithExistingText = AvailableLanguages
-            .Where(lang => Translations.TryGetValue(lang, out var value) && !string.IsNullOrWhiteSpace(value))
-            .ToList();
+        if (Field != null)
+        {
+            LanguagesWithExistingText = AvailableLanguages
+                .Where(lang => Field.HasValueForCulture(lang, primaryLanguage))
+                .ToList();
+        }
+        else
+        {
+            LanguagesWithExistingText = AvailableLanguages
+                .Where(lang => Translations.TryGetValue(lang, out var value) && !string.IsNullOrWhiteSpace(value))
+                .ToList();
+        }
 
         showGenerateModal = true;
     }
@@ -280,7 +371,8 @@
             var targetLang = pendingTargetLanguage;
             pendingTargetLanguage = null;
             
-            if (string.IsNullOrWhiteSpace(EnglishValue))
+            var englishText = EnglishValueForTranslation;
+            if (string.IsNullOrWhiteSpace(englishText))
             {
                 ShowTranslationError = true;
                 TranslationError = "English text is required to generate translations.";
@@ -294,11 +386,19 @@
 
             try
             {
-                var translated = await TranslationHelper.TranslateAsync(EnglishValue, targetLang);
+                var translated = await TranslationHelper.TranslateAsync(englishText, targetLang);
                 if (translated != null)
                 {
-                    Translations[targetLang] = translated;
-                    await TranslationsChanged.InvokeAsync(Translations);
+                    if (Field != null)
+                    {
+                        Field.Set(targetLang, translated, primaryLanguage);
+                        await FieldChanged.InvokeAsync(Field);
+                    }
+                    else
+                    {
+                        Translations[targetLang] = translated;
+                        await TranslationsChanged.InvokeAsync(Translations);
+                    }
                     TranslationError = null;
                 }
                 else
@@ -349,7 +449,8 @@
 
     private async Task TranslateCurrentLanguage()
     {
-        if (string.IsNullOrWhiteSpace(EnglishValue))
+        var englishText = EnglishValueForTranslation;
+        if (string.IsNullOrWhiteSpace(englishText))
         {
             ShowTranslationError = true;
             TranslationError = "English text is required to generate translations.";
@@ -363,7 +464,7 @@
 
         try
         {
-            var translated = await TranslationHelper.TranslateAsync(EnglishValue, SelectedCulture);
+            var translated = await TranslationHelper.TranslateAsync(englishText, SelectedCulture);
             if (translated != null)
             {
                 CurrentValue = translated;
@@ -399,7 +500,8 @@
 
     private async Task GenerateAllTranslations()
     {
-        if (string.IsNullOrWhiteSpace(EnglishValue))
+        var englishText = EnglishValueForTranslation;
+        if (string.IsNullOrWhiteSpace(englishText))
         {
             ShowTranslationError = true;
             TranslationError = "English text is required to generate translations.";
@@ -418,10 +520,17 @@
             {
                 try
                 {
-                    var translated = await TranslationHelper.TranslateAsync(EnglishValue, lang);
+                    var translated = await TranslationHelper.TranslateAsync(englishText, lang);
                     if (translated != null)
                     {
-                        Translations[lang] = translated;
+                        if (Field != null)
+                        {
+                            Field.Set(lang, translated, primaryLanguage);
+                        }
+                        else
+                        {
+                            Translations[lang] = translated;
+                        }
                     }
                     else
                     {
@@ -434,7 +543,14 @@
                 }
             }
             
-            await TranslationsChanged.InvokeAsync(Translations);
+            if (Field != null)
+            {
+                await FieldChanged.InvokeAsync(Field);
+            }
+            else
+            {
+                await TranslationsChanged.InvokeAsync(Translations);
+            }
             
             if (failedLanguages.Any())
             {

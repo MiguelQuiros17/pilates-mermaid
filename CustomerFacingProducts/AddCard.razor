@@ -151,7 +151,7 @@
                 return;
             }
 
-            // Check if cards are available using the utility function - if not, redirect back to Cards page
+            // In case the user had an old tab open or something, boot back to Cards Screen if no cards are available
             var hasShareProductsEligibleForCardOrdering = await UserApplicationAnalysisUtils
                 .HasSelectedAnyShareProductsEligibleForCardOrderingAsync(db, appKey);
 
@@ -171,7 +171,6 @@
                 )
                 .ToListAsync();
 
-            // Check if there are any eligible people to add cards to
             if (!applicationPeople.Any())
             {
                 nav.NavigateTo("/applications/products/cards", replace: true);
@@ -196,13 +195,6 @@
                         link.ShareProduct.CardOrderEnabled &&
                         selectedTypes.Contains(link.ShareProductId)))
                 .ToListAsync();
-
-            // Safety check: if no cards found, redirect back (fallback in case utility function was wrong)
-            if (!cardProducts.Any())
-            {
-                nav.NavigateTo("/applications/products/cards", replace: true);
-                return;
-            }
 
             // Preselect card type if there's only one product available
             if (cardProducts.Count == 1)

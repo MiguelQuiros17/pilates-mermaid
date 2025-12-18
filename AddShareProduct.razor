@@ -1,0 +1,401 @@
+@page "/ApplicationConfiguration/products/shareproducts/add"
+@using Aloha.Domain.Products
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin")]
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject AuthenticationStateProvider authStateProvider
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<h3>Add Share Product</h3>
+<EditForm class="pb-3" Context="editContext" EditContext="editContext" FormName="AddShareProduct" OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    @* Language selector and bulk translate button - all handled by BulkTranslateButton *@
+    <BulkTranslateButton @ref="bulkTranslateButton"
+                        FieldIdPrefix="shareproduct"
+                        Fields="@GetFieldsMap()"
+                        FieldsChanged="@((Dictionary<string, MultilingualField> fields) => { input.DisplayName = fields["Display Name"]; input.Description = fields["Description"]; StateHasChanged(); })"
+                        SelectedCultureChanged="@((string culture) => StateHasChanged())" />
+
+    <div class="mb-3">
+        <label class="form-label" for="categoryType">Category Type</label>
+        <InputSelect @bind-Value="input.ShareProductCategoryId" class="form-select" id="categoryType">
+            <option value="">Select...</option>
+            @foreach (var option in categories)
+            {
+                <option value="@option.Id">@option.CategoryDisplayName</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => input.ShareProductCategoryId" />
+    </div>
+
+    @* Multi-language input for Display Name *@
+    <MultiLanguageInput Label="Display Name"
+                       FieldId="displayName"
+                       Placeholder="Enter display name"
+                       Rows="1"
+                       IsDisabled="false"
+                       Field="@input.DisplayName"
+                       FieldChanged="@((MultilingualField f) => input.DisplayName = f)"
+                       SelectedCultureOverride="@(bulkTranslateButton?.CurrentCulture)"
+                       SelectedCultureOverrideChanged="@((string culture) => StateHasChanged())" />
+
+    @* Multi-language input for Description *@
+    <MultiLanguageInput Label="Description"
+                       FieldId="description"
+                       Placeholder="Enter description"
+                       Rows="3"
+                       IsDisabled="false"
+                       Field="@input.Description"
+                       FieldChanged="@((MultilingualField f) => input.Description = f)"
+                       SelectedCultureOverride="@(bulkTranslateButton?.CurrentCulture)"
+                       SelectedCultureOverrideChanged="@((string culture) => StateHasChanged())" />
+
+    @if (!isCoreOfflineMode)
+    {
+        <div class="mb-3">
+            <label class="form-label" for="coreIdentifier">Core Identifier</label>
+            <InputText @bind-Value="input.CoreTypeIdentifier" class="form-control" id="coreIdentifier" type="text" />
+            <ValidationMessage For="() => input.CoreTypeIdentifier" />
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" for="ratesUrl">Rates Url</label>
+        <InputText @bind-Value="input.RatesUrl" class="form-control" id="ratesUrl" type="text" />
+        <ValidationMessage For="() => input.RatesUrl" />
+    </div>
+
+    @if (!isCoreOfflineMode)
+    {
+        <div class="form-check mb-3">
+            <InputCheckbox @bind-Value="input.UseLiveCoreRates" class="disabled form-check-input" id="liveRates" />
+            <label class="form-check-label" for="liveRates">
+                Use Live Core Rates
+            </label>
+            <ValidationMessage For="() => input.UseLiveCoreRates" />
+        </div>
+    }
+
+    <div class="mb-3">
+        <label class="form-label" for="defaultSuffix">Default Suffix</label>
+        <InputText @bind-Value="input.DefaultSuffix" class="form-control" id="defaultSuffix" type="text" />
+        <ValidationMessage For="() => input.DefaultSuffix" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsEnabled" class="form-check-input" id="productEnabled" />
+        <label class="form-check-label" for="productEnabled">
+            Is Enabled
+        </label>
+        <ValidationMessage For="() => input.IsEnabled" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsRequiredProduct" class="form-check-input" id="requiredProduct" />
+        <label class="form-check-label" for="requiredProduct">
+            Required Product
+        </label>
+        <ValidationMessage For="() => input.IsRequiredProduct" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsCardCheckingSource" class="form-check-input" id="checkingSource" />
+        <label class="form-check-label" for="checkingSource">
+            Is Card Checking Source
+        </label>
+        <ValidationMessage For="() => input.IsCardCheckingSource" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.IsCardSavingsSource" class="form-check-input" id="savingsSource" />
+        <label class="form-check-label" for="savingsSource">
+            Is Card Savings Source
+        </label>
+        <ValidationMessage For="() => input.IsCardSavingsSource" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.OverdraftEnrollEnabled" class="form-check-input" id="overdraftEnabled" />
+        <label class="form-check-label" for="overdraftEnabled">
+            Overdraft Enroll
+        </label>
+        <ValidationMessage For="() => input.OverdraftEnrollEnabled" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.OverdraftSourceEnabled" class="form-check-input" id="overdraftSourceEnabled" />
+        <label class="form-check-label" for="overdraftSourceEnabled">
+            Overdraft Source
+        </label>
+        <ValidationMessage For="() => input.OverdraftSourceEnabled" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CourtesyPayEnrollEnabled" class="form-check-input" id="courtesyEnabled" />
+        <label class="form-check-label" for="courtesyEnabled">
+            Courtesy Pay
+        </label>
+        <ValidationMessage For="() => input.CourtesyPayEnrollEnabled" />
+    </div>
+    @if (input.CourtesyPayEnrollEnabled)
+    {
+        <div class="ms-4">
+            <div class="mb-3">
+                <label class="form-label" for="toleranceAmount">Tolerance Amount</label>
+                <InputNumber @bind-Value="input.ToleranceAmount" class="form-control" id="toleranceAmount" type="text" />
+                <ValidationMessage For="() => input.ToleranceAmount" />
+            </div>
+        </div>
+    }
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CheckOrderingEnabled" class="form-check-input" id="checkOrderingEnabled" />
+        <label class="form-check-label" for="checkOrderingEnabled">
+            Check Ordering
+        </label>
+        <ValidationMessage For="() => input.CheckOrderingEnabled" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CardOrderEnabled" class="form-check-input" id="cardOrderEnabled" />
+        <label class="form-check-label" for="cardOrderEnabled">
+            Card Ordering
+        </label>
+        <ValidationMessage For="() => input.CardOrderEnabled" />
+    </div>
+
+    <div class="form-check mb-3">
+        <InputCheckbox @bind-Value="input.CardOrderRequired" class="form-check-input" id="cardOrderRequired" />
+        <label class="form-check-label" for="cardOrderRequired">
+            Card Order Required
+        </label>
+        <ValidationMessage For="() => input.CardOrderRequired" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="minFunding">Minimum Funding Amount</label>
+        <InputNumber @bind-Value="input.MinimumFundingAmount" class="form-control" id="minFunding" type="text" />
+        <ValidationMessage For="() => input.MinimumFundingAmount" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="maxFunding">Maximum Funding Amount</label>
+        <InputNumber @bind-Value="input.MaximumFundingAmount" class="form-control" id="maxFunding" type="text" />
+        <ValidationMessage For="() => input.MaximumFundingAmount" />
+    </div>
+  
+    <div class="mb-3">
+        <label class="form-label" for="maximumCountToBeOpened">Maximum Count To Be Opened</label>
+        <InputNumber @bind-Value="input.MaximumCountToBeOpened" class="form-control" id="maximumCountToBeOpened" type="text" min="1" />
+        <ValidationMessage For="() => input.MaximumCountToBeOpened" />
+    </div>
+
+    <div class="mb-3">
+        <SaveConfirmationMessage @ref="messageRef" Title="Share Product" RouteAfterSaved="/ApplicationConfiguration/products" />
+    </div>
+</EditForm>
+
+@code {
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    bool isCoreOfflineMode = false;
+    private AdminUser? AdminUser = default!;
+
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+
+    private IList<ShareProductCategory> categories = [];
+    private BulkTranslateButton? bulkTranslateButton;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+            AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+            categories = await db.ShareProductCategories.ToListAsync();
+            var feature = await db.SystemFeatures.GetActiveFeatureAsync();
+            isCoreOfflineMode = feature?.WebApplicationFeature?.CoreOfflineModeEnabled ?? false;
+            StateHasChanged();
+        }
+    }
+
+    private Dictionary<string, MultilingualField> GetFieldsMap()
+    {
+        return new Dictionary<string, MultilingualField>
+        {
+            { "Display Name", input.DisplayName },
+            { "Description", input.Description }
+        };
+    }
+
+    private async Task SubmitForm()
+    {
+        if (!isCoreOfflineMode && string.IsNullOrEmpty(input.CoreTypeIdentifier))
+        {
+            messageStore.Add(() => input.CoreTypeIdentifier!, "The CoreTypeIdentifier field is required.");
+            return;
+        }
+
+        if (input.MinimumFundingAmount > input.MaximumFundingAmount)
+        {
+            messageStore.Add(() => input.MinimumFundingAmount!, $"Minimum Funding Amount must be less or equal to the Maximum Funding Amount");
+            return;
+        }
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            if (!isCoreOfflineMode && await db.ShareProducts.Where(p => !p.IsDeleted).AnyAsync(share => share.CoreTypeIdentifier == input.CoreTypeIdentifier))
+            {
+                messageStore.Add(() => input.CoreTypeIdentifier!, "Core identifier already exists");
+                messageRef?.SetSaving(false);
+                return;
+            }
+
+            if (input.ToleranceAmount < 0)
+            {
+                messageStore.Add(() => input.ToleranceAmount!, $"Overdraft Tolerance Default Amount must not be less than zero.");
+                messageRef?.SetSaving(false);
+                return;
+            }
+
+            if (input.MaximumCountToBeOpened < 1)
+            {
+                messageStore.Add(() => input.MaximumCountToBeOpened!, $"Maximum Share account count to be opened must not be greater than zero.");
+                return;
+            }
+
+            // Get primary language to determine save strategy
+            var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            
+            // Get English values for entity creation
+            var englishDisplayName = input.DisplayName.Get("en-US", primaryLanguage);
+            var englishDescription = input.Description.Get("en-US", primaryLanguage);
+            
+            var product = ShareProduct.Create(englishDisplayName, input.CoreTypeIdentifier, input.ShareProductCategoryId!.Value);
+
+            product.UpdateText(englishDisplayName, englishDescription, input.DefaultSuffix);
+
+            product.UpdateFlags(
+                input.ShareProductCategoryId.Value,
+                input.IsEnabled,
+                input.IsRequiredProduct,
+                input.IsCardCheckingSource,
+                input.IsCardSavingsSource,
+                input.OverdraftEnrollEnabled,
+                input.CourtesyPayEnrollEnabled,
+                input.CheckOrderingEnabled,
+                input.OverdraftSourceEnabled,
+                input.CardOrderEnabled,
+                input.CardOrderRequired,
+                input.UseLiveCoreRates,
+                input.CoreTypeIdentifier!,
+                input.RatesUrl,
+                input.DefaultSuffix,
+                input.MinimumFundingAmount,
+                input.MaximumFundingAmount,
+                input.ToleranceAmount,
+                input.MaximumCountToBeOpened);
+
+            db.Add(product);
+            await db.SaveChangesAsync();
+
+            // Now save translations with the actual resource key
+            var resourceKey = $"ShareProduct.{product.Id}";
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.DisplayName, db, resourceKey, "ProductDisplayName", primaryLanguage);
+            await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.Description, db, resourceKey, "ProductDescription", primaryLanguage);
+            await db.SaveChangesAsync();
+
+            // Update cache
+            MultilingualFieldHelper.UpdateCache(input.DisplayName, resourceKey, "ProductDisplayName", primaryLanguage);
+            MultilingualFieldHelper.UpdateCache(input.Description, resourceKey, "ProductDescription", primaryLanguage);
+
+            var excludedProperties = new List<string> { nameof(product.DeleteDateUtc), nameof(product.ShareProductCategoryId), nameof(product.ApplicationShareLinks), nameof(product.QuestionnaireShareProductLinks) };
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Share product was added: ", product, excludedProperties);
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private class Input
+    {
+        public MultilingualField DisplayName { get; set; } = new();
+
+        [Required]
+        public int? ShareProductCategoryId { get; set; }
+
+        [Required]
+        public bool IsEnabled { get; set; } = true;
+
+        [Required]
+        public bool IsRequiredProduct { get; set; }
+
+        [Required]
+        public bool IsCardCheckingSource { get; set; }
+
+        [Required]
+        public bool IsCardSavingsSource { get; set; }
+
+        [Required]
+        public bool OverdraftEnrollEnabled { get; set; }
+
+        [Required]
+        public bool CourtesyPayEnrollEnabled { get; set; }
+
+        [Required]
+        public bool CheckOrderingEnabled { get; set; }
+
+        [Required]
+        public bool OverdraftSourceEnabled { get; set; }
+
+        [Required]
+        public bool CardOrderEnabled { get; set; }
+
+        [Required]
+        public bool CardOrderRequired { get; set; }
+
+        [Required]
+        public bool UseLiveCoreRates { get; set; }
+
+        public MultilingualField Description { get; set; } = new();
+
+        [MaxLength(30)]
+        public string? CoreTypeIdentifier { get; set; }
+
+        [MaxLength(4)]
+        [MinLength(2)]
+        public string? DefaultSuffix { get; set; }
+
+        public string? RatesUrl { get; set; }
+        public decimal? MinimumFundingAmount { get; set; }
+        public decimal? MaximumFundingAmount { get; set; }
+
+        public decimal? ToleranceAmount { get; set; }
+        public int MaximumCountToBeOpened { get; set; } = 1;
+    }
+}

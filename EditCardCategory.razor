@@ -1,0 +1,180 @@
+@page "/ApplicationConfiguration/products/cardcategories/edit/{id:int}"
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using Aloha.Domain.Services.Translations
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
+@inject AuthenticationStateProvider authStateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<h3>Edit Card Category</h3>
+
+<EditForm class="pb-3"
+          disabled="@isReadOnly"
+          EditContext="editContext"
+          FormName="EditCardProductCategory"
+          OnValidSubmit="SubmitFormAsync">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    @* Language selector and bulk translate button - all handled by BulkTranslateButton *@
+    <BulkTranslateButton @ref="bulkTranslateButton"
+                        FieldIdPrefix="cardcategory"
+                        Fields="@GetFieldsMap()"
+                        FieldsChanged="@((Dictionary<string, MultilingualField> fields) => { input.DisplayName = fields["Display Name"]; StateHasChanged(); })"
+                        SelectedCultureChanged="@((string culture) => StateHasChanged())" />
+
+    @* Multi-language input for Display Name *@
+    <MultiLanguageInput Label="Display Name"
+                       FieldId="displayName"
+                       Placeholder="Enter display name"
+                       Rows="1"
+                       IsDisabled="@isReadOnly"
+                       Field="@input.DisplayName"
+                       FieldChanged="@((MultilingualField f) => input.DisplayName = f)"
+                       SelectedCultureOverride="@(bulkTranslateButton?.CurrentCulture)"
+                       SelectedCultureOverrideChanged="@((string culture) => StateHasChanged())" />
+
+    <div class="mb-3">
+        <label class="form-label" for="minRequired">Minimum Required Selections</label>
+        <InputNumber @bind-Value="input.MinRequireSelections"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="minRequired"
+                     type="text" />
+        <ValidationMessage For="() => input.MinRequireSelections" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="maxSelections">Maximum Selections</label>
+        <InputNumber @bind-Value="input.MaximumSelections"
+                     class="form-control"
+                     disabled="@isReadOnly"
+                     id="maxSelections"
+                     type="text" />
+        <ValidationMessage For="() => input.MaximumSelections" />
+    </div>
+
+    @if (!isReadOnly)
+    {
+        <div class="flex-row gap-2 mb-3">
+            <SaveConfirmationMessage @ref="messageRef" Title="Card Category" RouteAfterSaved="/ApplicationConfiguration/products" />
+        </div>
+    }
+</EditForm>
+
+@code {
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    private SaveConfirmationMessage? messageRef;
+    private Input input { get; set; } = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore messageStore = default!;
+    private bool isReadOnly = true;
+    private AdminUser? AdminUser = default!;
+    private BulkTranslateButton? bulkTranslateButton;
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckRoleAndUpdateReadOnlyFlagAsync();
+        await LoadData();
+    }
+
+    private Dictionary<string, MultilingualField> GetFieldsMap()
+    {
+        return new Dictionary<string, MultilingualField>
+        {
+            { "Display Name", input.DisplayName }
+        };
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var category = await db.CardProductCategories.FirstOrDefaultAsync(x => x.Id == Id);
+
+        if (category is null)
+        {
+            nav.NavigateTo("/ApplicationConfiguration/products");
+            return;
+        }
+
+        // Load translations using MultilingualFieldHelper
+        var resourceKey = $"CardProductCategory.{Id}";
+        var enabledLanguages = await LanguageConfigService.GetEnabledLanguagesAsync();
+        var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+        
+        await MultilingualFieldHelper.LoadTranslationsAsync(
+            input.DisplayName, db, resourceKey, "CategoryDisplayName", 
+            primaryLanguage, category.CategoryDisplayName, enabledLanguages);
+
+        // Load all other property values
+        input.MinRequireSelections = category.MinRequireSelections;
+        input.MaximumSelections = category.MaximumSelections;
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") || authUser.IsInRole("MasterAdmin"));
+    }
+
+    private async Task SubmitFormAsync()
+    {
+        try
+        {
+            messageRef?.SetSaving(true);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var category = await db.CardProductCategories.FirstAsync(x => x.Id == Id);
+            var originalConfig = db.Entry(category).CurrentValues.Clone().ToObject();
+
+            // Get primary language to determine save strategy
+            var primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            
+            // Save translations using MultilingualFieldHelper
+            var resourceKey = $"CardProductCategory.{Id}";
+            
+            var englishDisplayName = await MultilingualFieldHelper.SaveTranslationsAsync(
+                input.DisplayName, db, resourceKey, "CategoryDisplayName", primaryLanguage);
+            
+            category.Update(englishDisplayName, input.MinRequireSelections, input.MaximumSelections);
+            await db.SaveChangesAsync();
+
+            // Update cache
+            MultilingualFieldHelper.UpdateCache(input.DisplayName, resourceKey, "CategoryDisplayName", primaryLanguage);
+
+            await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Card product category Id: {category.Id} was edited: ", originalConfig, category, new List<string> { nameof(category.DeleteDateUtc), nameof(category.CardProducts) });
+            messageRef?.Notify(new(ToastType.Success, string.Empty));
+        }
+        catch
+        {
+            messageRef?.Notify(new(ToastType.Warning, string.Empty));
+        }
+    }
+
+    private class Input
+    {
+        public MultilingualField DisplayName { get; set; } = new();
+
+        public int? MinRequireSelections { get; set; }
+        public int? MaximumSelections { get; set; }
+    }
+}

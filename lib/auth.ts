@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import { User } from '@/types'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pilates-mermaid-secret-key-2024'
-const JWT_EXPIRES_IN = '7d'
+// Tokens do not expire - users stay logged in indefinitely until they log out
 
 export class AuthService {
   // Password hashing
@@ -16,7 +16,7 @@ export class AuthService {
     return await bcrypt.compare(password, hash)
   }
 
-  // JWT token management
+  // JWT token management - tokens do not expire
   static generateToken(user: User): string {
     return jwt.sign(
       { 
@@ -24,8 +24,8 @@ export class AuthService {
         email: user.correo, 
         role: user.role
       },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      JWT_SECRET
+      // No expiresIn - tokens never expire
     )
   }
 
@@ -128,7 +128,7 @@ export class AuthService {
     }
   }
 
-  // Token refresh
+  // Token refresh (not needed since tokens don't expire, but kept for compatibility)
   static refreshToken(oldToken: string): string | null {
     const decoded = this.verifyToken(oldToken)
     if (!decoded) return null
@@ -140,8 +140,8 @@ export class AuthService {
         email: decoded.email, 
         role: decoded.role
       },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      JWT_SECRET
+      // No expiresIn - tokens never expire
     )
   }
 }

@@ -1,0 +1,32 @@
+@page "/applications/products/options"
+@using Aloha.Domain.ProductApplications
+@rendermode InteractiveServer
+@inject IApplicationStateProvider appState
+@inject IDbContextFactory<AlohaDb> dbFactory
+
+@if (appType == ApplicationType.Member)
+{
+    <ShareOptionsContent />
+}
+@if (appType == ApplicationType.Loan)
+{
+    <LoanOptionsContent />
+}
+
+@code {
+
+    private ApplicationType? appType;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var appKey = await appState.GetCurrentApplicationKeyAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var app = await db.UserApplications
+            .Include(userApplication => userApplication.ProductApplicationType)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+
+        appType = app.ProductApplicationType?.ApplicationType;
+    }
+
+}

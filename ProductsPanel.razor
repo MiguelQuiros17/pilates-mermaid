@@ -1,0 +1,621 @@
+@page "/ApplicationConfiguration/products"
+@using Aloha.Domain.Products
+@using Microsoft.AspNetCore.Authorization
+@using Aloha.Domain.Services.Core.Services
+@using Aloha.Domain.Services.AdminAudit
+@using Aloha.Domain.Identity.AdminUsers.Activities
+@using Aloha.Domain.Identity.AdminUsers
+@using Microsoft.AspNetCore.Identity
+@using System.Text.Json
+@using Aloha.Domain.Services.Translations
+@using Aloha.Domain.Localization
+@attribute [Authorize(Roles = "MahaloAdmin, MasterAdmin, Audit")]
+@inject AuthenticationStateProvider authStateProvider
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IAdminActivityService adminActivityService
+@inject UserManager<AdminUser> UserManager
+@inject ITranslationHelper TranslationHelper
+@inject ILanguageConfigurationService LanguageConfigService
+@rendermode InteractiveServer
+
+<h3>Products</h3>
+
+<hr class="border border-1 opacity-50">
+
+<h4>Share Product Categories</h4>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/products/sharecategories/add">
+            <Icon Name="IconName.Plus" /> Share Category
+        </a>
+    </p>
+</AuthorizeView>
+
+<Grid Class="table table-bordered table-hover table-striped"
+      Data="shareProductCategories"
+      Responsive="true"
+      TItem="ShareProductCategory">
+    <GridColumn HeaderText="Id" PropertyName="Id" SortKeySelector="item => item.Id" TItem="ShareProductCategory">
+        @context.Id
+    </GridColumn>
+    <GridColumn HeaderText="Display Name"
+                PropertyName="CategoryDisplayName"
+                SortKeySelector="item => item.CategoryDisplayName"
+                TItem="ShareProductCategory">
+        @GetLocalizedCategoryName(context)
+    </GridColumn>
+    <GridColumn HeaderText="Min Selections Required"
+                PropertyName="MinRequireSelections"
+                SortKeySelector="item => item.MinRequireSelections"
+                TItem="ShareProductCategory">
+        @context.MinRequireSelections
+    </GridColumn>
+    <GridColumn Filterable="false"
+                HeaderText="@(isReadOnly ? "View" : "Edit")"
+                TextAlignment="Alignment.Center"
+                TItem="ShareProductCategory">
+        <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/products/shareCategories/edit/@context.Id">
+            <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)" />
+        </a>
+        <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+            <Button Color="ButtonColor.Danger"
+                    @onclick="() => DeleteShareCategory(context)"
+                    Outline="true"
+                    Type="@ButtonType.Button">
+                <Icon Name="IconName.Trash"></Icon>
+            </Button>
+        </AuthorizeView>
+    </GridColumn>
+</Grid>
+
+<h4>Share Products</h4>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/products/shareproducts/add">
+            <Icon Name="IconName.Plus"></Icon> Share Product
+        </a>
+    </p>
+</AuthorizeView>
+
+<Grid Class="table table-bordered table-hover table-striped"
+      Data="shareProducts"
+      Responsive="true"
+      TItem="ShareProduct">
+    <GridColumn HeaderText="Id" PropertyName="Id" SortKeySelector="item => item.Id" TItem="ShareProduct">
+        @context.Id
+    </GridColumn>
+    <GridColumn HeaderText="Display Name"
+                PropertyName="ProductDisplayName"
+                SortKeySelector="item => item.ProductDisplayName"
+                TItem="ShareProduct">
+        @GetLocalizedProductName(context)
+    </GridColumn>
+    <GridColumn HeaderText="Is Enabled"
+                PropertyName="IsEnabled"
+                SortKeySelector="item => item.IsEnabled"
+                TItem="ShareProduct">
+        @context.IsEnabled
+    </GridColumn>
+    <GridColumn HeaderText="Category"
+                PropertyName="CategoryDisplayName"
+                SortKeySelector="item => item.ShareProductCategory!.CategoryDisplayName"
+                TItem="ShareProduct">
+        @(context.ShareProductCategory != null ? GetLocalizedCategoryName(context.ShareProductCategory) : "")
+    </GridColumn>
+    <GridColumn Filterable="false"
+                HeaderText="@(isReadOnly ? "View" : "Edit")"
+                TextAlignment="Alignment.Center"
+                TItem="ShareProduct">
+        <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/products/shares/edit/@context.Id">
+            <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)" />
+        </a>
+        <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+            <Button Color="ButtonColor.Danger"
+                    @onclick="() => DeleteShareProduct(context)"
+                    Outline="true"
+                    Type="@ButtonType.Button">
+                <Icon Name="IconName.Trash"></Icon>
+            </Button>
+        </AuthorizeView>
+    </GridColumn>
+</Grid>
+
+<hr class="border border-1 opacity-50">
+
+<h4>Loan Product Categories</h4>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/products/loancategories/add">
+            <Icon Name="IconName.Plus"></Icon> Loan Category
+        </a>
+    </p>
+</AuthorizeView>
+
+<Grid Class="table table-bordered table-hover table-striped"
+      Data="loanProductCategories"
+      Responsive="true"
+      TItem="LoanProductCategory">
+    <GridColumn HeaderText="Id" PropertyName="Id" SortKeySelector="item => item.Id" TItem="LoanProductCategory">
+        @context.Id
+    </GridColumn>
+    <GridColumn HeaderText="Display Name"
+                PropertyName="CategoryDisplayName"
+                SortKeySelector="item => item.CategoryDisplayName"
+                TItem="LoanProductCategory">
+        @GetLocalizedLoanCategoryName(context)
+    </GridColumn>
+    <GridColumn HeaderText="Min Selections Required"
+                PropertyName="MinRequireSelections"
+                SortKeySelector="item => item.MinRequireSelections"
+                TItem="LoanProductCategory">
+        @context.MinRequireSelections
+    </GridColumn>
+    <GridColumn Filterable="false"
+                HeaderText="@(isReadOnly ? "View" : "Edit")"
+                TextAlignment="Alignment.Center"
+                TItem="LoanProductCategory">
+        <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/products/loanCategories/edit/@context.Id">
+            <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)" />
+        </a>
+        <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+            <Button Color="ButtonColor.Danger"
+                    @onclick="() => DeleteLoanCategory(context)"
+                    Outline="true"
+                    Type="@ButtonType.Button">
+                <Icon Name="IconName.Trash"></Icon>
+            </Button>
+        </AuthorizeView>
+    </GridColumn>
+</Grid>
+
+<h4>Loan Products</h4>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/products/loanproducts/add">
+            <Icon Name="IconName.Plus"></Icon> Loan Product
+        </a>
+    </p>
+</AuthorizeView>
+
+<Grid Class="table table-bordered table-hover table-striped"
+      Data="loanProducts"
+      Responsive="true"
+      TItem="LoanProduct">
+    <GridColumn HeaderText="Id" PropertyName="Id" SortKeySelector="item => item.Id" TItem="LoanProduct">
+        @context.Id
+    </GridColumn>
+    <GridColumn HeaderText="Display Name"
+                PropertyName="ProductDisplayName"
+                SortKeySelector="item => item.ProductDisplayName"
+                TItem="LoanProduct">
+        @GetLocalizedLoanProductName(context)
+    </GridColumn>
+    <GridColumn HeaderText="Is Enabled"
+                PropertyName="IsEnabled"
+                SortKeySelector="item => item.IsEnabled"
+                TItem="LoanProduct">
+        @context.IsEnabled
+    </GridColumn>
+    <GridColumn HeaderText="Category"
+                PropertyName="CategoryDisplayName"
+                SortKeySelector="item => item.LoanProductCategory!.CategoryDisplayName"
+                TItem="LoanProduct">
+        @(context.LoanProductCategory != null ? GetLocalizedLoanCategoryName(context.LoanProductCategory) : "")
+    </GridColumn>
+    <GridColumn Filterable="false"
+                HeaderText="@(isReadOnly ? "View" : "Edit")"
+                TextAlignment="Alignment.Center"
+                TItem="LoanProduct">
+        <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/products/loans/edit/@context.Id">
+            <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)" />
+        </a>
+        <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+            <Button Color="ButtonColor.Danger"
+                    @onclick="() => DeleteLoanProduct(context)"
+                    Outline="true"
+                    Type="@ButtonType.Button">
+                <Icon Name="IconName.Trash"></Icon>
+            </Button>
+        </AuthorizeView>
+    </GridColumn>
+</Grid>
+
+
+<hr class="border border-1 opacity-50">
+
+<h4>Card Product Categories</h4>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/products/cardcategories/add">
+            <Icon Name="IconName.Plus"></Icon> Card Category
+        </a>
+    </p>
+</AuthorizeView>
+
+<Grid Class="table table-bordered table-hover table-striped"
+      Data="cardProductCategories"
+      Responsive="true"
+      TItem="CardProductCategory">
+    <GridColumn HeaderText="Id" PropertyName="Id" SortKeySelector="item => item.Id" TItem="CardProductCategory">
+        @context.Id
+    </GridColumn>
+    <GridColumn HeaderText="Display Name"
+                PropertyName="CategoryDisplayName"
+                SortKeySelector="item => item.CategoryDisplayName"
+                TItem="CardProductCategory">
+        @GetLocalizedCardCategoryName(context)
+    </GridColumn>
+    <GridColumn HeaderText="Min Selections Required"
+                PropertyName="MinRequireSelections"
+                SortKeySelector="item => item.MinRequireSelections"
+                TItem="CardProductCategory">
+        @context.MinRequireSelections
+    </GridColumn>
+    <GridColumn Filterable="false"
+                HeaderText="@(isReadOnly ? "View" : "Edit")"
+                TextAlignment="Alignment.Center"
+                TItem="CardProductCategory">
+        <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/products/cardcategories/edit/@context.Id">
+            <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)" />
+        </a>
+        <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+            <Button Color="ButtonColor.Danger"
+                    @onclick="() => DeleteCardCategory(context)"
+                    Outline="true"
+                    Type="@ButtonType.Button">
+                <Icon Name="IconName.Trash"></Icon>
+            </Button>
+        </AuthorizeView>
+    </GridColumn>
+</Grid>
+
+<h4>Card Products</h4>
+
+<AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+    <p>
+        <a class="btn btn-outline-primary" href="/ApplicationConfiguration/products/cardproducts/add">
+            <Icon Name="IconName.Plus"></Icon> Card Product
+        </a>
+    </p>
+</AuthorizeView>
+
+<Grid Class="table table-bordered table-hover table-striped"
+      Data="cardProducts"
+      Responsive="true"
+      TItem="CardProduct">
+    <GridColumn HeaderText="Id" PropertyName="Id" SortKeySelector="item => item.Id" TItem="CardProduct">
+        @context.Id
+    </GridColumn>
+    <GridColumn HeaderText="Display Name"
+                PropertyName="ProductDisplayName"
+                SortKeySelector="item => item.ProductDisplayName"
+                TItem="CardProduct">
+        @GetLocalizedCardProductName(context)
+    </GridColumn>
+    <GridColumn HeaderText="Is Enabled"
+                PropertyName="IsEnabled"
+                SortKeySelector="item => item.IsEnabled"
+                TItem="CardProduct">
+        @context.IsEnabled
+    </GridColumn>
+    <GridColumn HeaderText="Category"
+                PropertyName="CategoryDisplayName"
+                SortKeySelector="item => item.CardProductCategory!.CategoryDisplayName"
+                TItem="CardProduct">
+        @(context.CardProductCategory != null ? GetLocalizedCardCategoryName(context.CardProductCategory) : "")
+    </GridColumn>
+    <GridColumn Filterable="false"
+                HeaderText="@(isReadOnly ? "View" : "Edit")"
+                TextAlignment="Alignment.Center"
+                TItem="CardProduct">
+        <a class="btn btn-outline-secondary" href="/ApplicationConfiguration/products/cardproducts/edit/@context.Id">
+            <Icon Name="@(isReadOnly ? IconName.Eye : IconName.PencilSquare)" />
+        </a>
+        <AuthorizeView Context="_" Roles="MahaloAdmin, MasterAdmin">
+            <Button Color="ButtonColor.Danger"
+                    @onclick="() => DeleteCardProduct(context)"
+                    Outline="true"
+                    Type="@ButtonType.Button">
+                <Icon Name="IconName.Trash"></Icon>
+            </Button>
+        </AuthorizeView>
+    </GridColumn>
+</Grid>
+
+<Modal @ref="warningModal" Size="ModalSize.Regular" title="Delete Failed">
+    <BodyTemplate>
+        Cannot delete category when products are linked. Change product category before deleting.
+    </BodyTemplate>
+</Modal>
+
+@code {
+    private Modal warningModal = default!;
+    private IList<ShareProduct> shareProducts = [];
+    private IList<ShareProductCategory> shareProductCategories = [];
+    private IList<LoanProduct> loanProducts = [];
+    private IList<LoanProductCategory> loanProductCategories = [];
+    private IList<CardProduct> cardProducts = [];
+    private IList<CardProductCategory> cardProductCategories = [];
+    private bool isReadOnly = true;
+    private static JsonSerializerOptions options = new() { WriteIndented = true };
+    private AdminUser? AdminUser = default!;
+    private string primaryLanguage = "en-US";
+    
+    // Caches for translated names
+    private Dictionary<int, string> shareCategoryNameCache = new();
+    private Dictionary<int, string> shareProductNameCache = new();
+    private Dictionary<int, string> loanCategoryNameCache = new();
+    private Dictionary<int, string> loanProductNameCache = new();
+    private Dictionary<int, string> cardCategoryNameCache = new();
+    private Dictionary<int, string> cardProductNameCache = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            primaryLanguage = await LanguageConfigService.GetPrimaryLanguageAsync();
+            await CheckRoleAndUpdateReadOnlyFlagAsync();
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        shareProducts = await db.ShareProducts.GetActiveProducts().ToListAsync();
+        loanProducts = await db.LoanProducts.GetActiveProducts().ToListAsync();
+        cardProducts = await db.CardProducts.GetActiveProducts().ToListAsync();
+        shareProductCategories = await db.ShareProductCategories.GetActiveCategories().ToListAsync();
+        loanProductCategories = await db.LoanProductCategories.GetActiveCategories().ToListAsync();
+        cardProductCategories = await db.CardProductCategories.GetActiveCategories().ToListAsync();
+
+        // Load translations for all items
+        await LoadTranslationsAsync();
+
+        StateHasChanged();
+    }
+
+    private async Task LoadTranslationsAsync()
+    {
+        // Clear caches
+        shareCategoryNameCache.Clear();
+        shareProductNameCache.Clear();
+        loanCategoryNameCache.Clear();
+        loanProductNameCache.Clear();
+        cardCategoryNameCache.Clear();
+        cardProductNameCache.Clear();
+
+        // Load translations for Share Product Categories
+        foreach (var category in shareProductCategories)
+        {
+            if (!shareCategoryNameCache.ContainsKey(category.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(category, "CategoryDisplayName", primaryLanguage);
+                shareCategoryNameCache[category.Id] = translatedName;
+            }
+        }
+
+        // Load translations for Share Products
+        foreach (var product in shareProducts)
+        {
+            if (!shareProductNameCache.ContainsKey(product.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(product, "ProductDisplayName", primaryLanguage);
+                shareProductNameCache[product.Id] = translatedName;
+            }
+        }
+
+        // Load translations for Loan Product Categories
+        foreach (var category in loanProductCategories)
+        {
+            if (!loanCategoryNameCache.ContainsKey(category.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(category, "CategoryDisplayName", primaryLanguage);
+                loanCategoryNameCache[category.Id] = translatedName;
+            }
+        }
+
+        // Load translations for Loan Products
+        foreach (var product in loanProducts)
+        {
+            if (!loanProductNameCache.ContainsKey(product.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(product, "ProductDisplayName", primaryLanguage);
+                loanProductNameCache[product.Id] = translatedName;
+            }
+        }
+
+        // Load translations for Card Product Categories
+        foreach (var category in cardProductCategories)
+        {
+            if (!cardCategoryNameCache.ContainsKey(category.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(category, "CategoryDisplayName", primaryLanguage);
+                cardCategoryNameCache[category.Id] = translatedName;
+            }
+        }
+
+        // Load translations for Card Products
+        foreach (var product in cardProducts)
+        {
+            if (!cardProductNameCache.ContainsKey(product.Id))
+            {
+                var translatedName = await TranslationHelper.GetLocalTextAsync(product, "ProductDisplayName", primaryLanguage);
+                cardProductNameCache[product.Id] = translatedName;
+            }
+        }
+    }
+
+    private string GetLocalizedCategoryName(ShareProductCategory category)
+    {
+        return shareCategoryNameCache.TryGetValue(category.Id, out var name) ? name : category.CategoryDisplayName;
+    }
+
+    private string GetLocalizedProductName(ShareProduct product)
+    {
+        return shareProductNameCache.TryGetValue(product.Id, out var name) ? name : product.ProductDisplayName;
+    }
+
+    private string GetLocalizedLoanCategoryName(LoanProductCategory category)
+    {
+        return loanCategoryNameCache.TryGetValue(category.Id, out var name) ? name : category.CategoryDisplayName;
+    }
+
+    private string GetLocalizedLoanProductName(LoanProduct product)
+    {
+        return loanProductNameCache.TryGetValue(product.Id, out var name) ? name : product.ProductDisplayName;
+    }
+
+    private string GetLocalizedCardCategoryName(CardProductCategory category)
+    {
+        return cardCategoryNameCache.TryGetValue(category.Id, out var name) ? name : category.CategoryDisplayName;
+    }
+
+    private string GetLocalizedCardProductName(CardProduct product)
+    {
+        return cardProductNameCache.TryGetValue(product.Id, out var name) ? name : product.ProductDisplayName;
+    }
+
+    private async Task CheckRoleAndUpdateReadOnlyFlagAsync()
+    {
+        var authUser = (await authStateProvider.GetAuthenticationStateAsync()).User;
+        AdminUser = await UserManager.FindByEmailAsync(authUser.Identity!.Name!);
+        isReadOnly = !(authUser.IsInRole("MahaloAdmin") || authUser.IsInRole("MasterAdmin"));
+    }
+
+    private async Task DeleteShareCategory(ShareProductCategory category)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (await db.ShareProducts.GetActiveProducts().AnyAsync(x => x.ShareProductCategoryId == category.Id))
+        {
+            await warningModal.ShowAsync();
+            return;
+        }
+
+        if (await db.ShareProducts.AnyAsync(x => x.ShareProductCategoryId == category.Id))
+        {
+            db.Attach(category);
+            category.Delete();
+        }
+        else
+        {
+            db.Remove(category);
+        }
+
+        await db.SaveChangesAsync();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Share product category {category.CategoryDisplayName} was removed.");
+        await LoadData();
+    }
+
+    private async Task DeleteShareProduct(ShareProduct product)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (await db.ApplicationShareProducts.AnyAsync(x => x.ShareProductId == product.Id))
+        {
+            db.Attach(product);
+            product.Delete();
+        }
+        else
+        {
+            db.Remove(product);
+        }
+
+        await db.SaveChangesAsync();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Share product {product.ProductDisplayName} was removed.");
+        await LoadData();
+    }
+
+    private async Task DeleteLoanCategory(LoanProductCategory category)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (await db.LoanProducts.GetActiveProducts().AnyAsync(x => x.LoanProductCategoryId == category.Id))
+        {
+            await warningModal.ShowAsync();
+            return;
+        }
+
+        if (await db.LoanProducts.AnyAsync(x => x.LoanProductCategoryId == category.Id))
+        {
+            db.Attach(category);
+            category.Delete();
+        }
+        else
+        {
+            db.Remove(category);
+        }
+
+        await db.SaveChangesAsync();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Loan product category {category.CategoryDisplayName} was removed.");
+        await LoadData();
+    }
+
+    private async Task DeleteLoanProduct(LoanProduct product)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (await db.ApplicationLoanProducts.AnyAsync(x => x.LoanProductId == product.Id))
+        {
+            db.Attach(product);
+            product.Delete();
+        }
+        else
+        {
+            db.Remove(product);
+        }
+
+        await db.SaveChangesAsync();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Loan product {product.ProductDisplayName} was removed.");
+        await LoadData();
+    }
+
+    private async Task DeleteCardCategory(CardProductCategory category)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (await db.CardProducts.GetActiveProducts().AnyAsync(x => x.CardProductCategoryId == category.Id))
+        {
+            await warningModal.ShowAsync();
+            return;
+        }
+        else if (await db.CardProducts.AnyAsync(x => x.CardProductCategoryId == category.Id))
+        {
+            db.Attach(category);
+            category.Delete();
+        }
+        else
+        {
+            db.Remove(category);
+        }
+
+        await db.SaveChangesAsync();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Card product category {category.CategoryDisplayName} was removed.");
+        await LoadData();
+    }
+
+    private async Task DeleteCardProduct(CardProduct product)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        if (await db.ApplicationCardProducts.AnyAsync(x => x.CardProductId == product.Id))
+        {
+            db.Attach(product);
+            product.Delete();
+        }
+        else
+        {
+            db.Remove(product);
+        }
+
+        await db.SaveChangesAsync();
+        await adminActivityService.TrackAdminUserActivityAsync(AdminUser!, AdminActivityType.Products, $"Card product {product.ProductDisplayName} was removed.");
+        await LoadData();
+    }
+}

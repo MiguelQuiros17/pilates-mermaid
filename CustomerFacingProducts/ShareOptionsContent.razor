@@ -1,0 +1,657 @@
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Customer.Web.Components.Common.Forms
+@using Aloha.Customer.Web.Utilities
+@using Aloha.Domain.ApplicationProducts
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Disclosures
+@using Aloha.Domain.Features
+@using Aloha.Domain.Products
+@rendermode InteractiveServer
+@inject IApplicationStateProvider stateProvider
+@inject IApplicationStepCompletionManager applicationStepCompletionManager
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject IStringLocalizer<ShareOptionsContent> l
+@inject IStringLocalizer<SharedResources> sl
+@inject NavigationManager nav
+
+<h1>@l["page-heading"]</h1>
+<RequiredFieldHelper/>
+
+<EditForm EditContext="editContext" FormName="Options" novalidate OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator/>
+
+    @if (productFeature.ShareNicknamesEnabled && input.ShareNicknameOptions.Count > 0)
+    {
+        <div class="card my-3">
+            <p class="card-header fw-bold">@l["section-heading-nicknames"]</p>
+            <div class="card-body">
+                <p>@l["description-nicknames"]</p>
+                @foreach (var option in input.ShareNicknameOptions)
+                {
+                    <div class="my-3">
+                        <label class="form-label align-items-start mb-1"
+                            for="@($"shareNicknameOption-{option.Id}")">
+                            @option.DisplayName
+                            @if (option.IsRequiredProductInMultiple)
+                            {
+                                <Badge Color="BadgeColor.Primary"
+                                       class="ms-2"
+                                       IndicatorType="BadgeIndicatorType.RoundedPill">
+                                    @sl["label-required-badge"]
+                                </Badge>
+                            }
+                        </label>
+                        <InputText @bind-Value="option.Nickname"
+                                   @bind-Value:after="OnValueChangedNickname"
+                        class="form-control"
+                        id="@($"shareNicknameOption-{option.Id}")"
+                        type="text" />
+                        <ValidationMessage For="() => option.Nickname" />
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (configuration.EstatementEnabled)
+    {
+        <div class="card my-3">
+            <p class="card-header fw-bold">@l["section-heading-estatements"]</p>
+            <div class="card-body">
+                <p>@l["description-estatements"]</p>
+                <div class="my-2">
+                    <label>
+                        <InputCheckbox @bind-Value="input.EstatementOptIn"
+                        class="form-check-input me-1"
+                        type="checkbox"/>
+                        @l["label-estatement-enrollment"]
+                    </label>
+                    <ValidationMessage For="() => input.EstatementOptIn"/>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (configuration.EstatementEnabled && input.EstatementOptIn && disclosures.Any())
+    {
+        <Accordion Class="my-3" @ref="accordion">
+            @foreach (var item in input.Disclosures)
+            {
+                <AccordionItem
+                Active="item is { IsChecked: false, Disclosure.RequireAcknowledgment: true }"
+                Name=@($"disclosure-{item.Disclosure.Id}")
+                >
+                    <TitleTemplate>
+                        <div class="d-flex w-100">
+                            <div class="flex-fill">
+                                @if (item.IsChecked || !item.Disclosure.RequireAcknowledgment)
+                                {
+                                    <Icon Class="me-2" Name="IconName.Check2Circle"/>
+                                }
+                                @(item.Disclosure.DisplayName)
+                            </div>
+                            @if (item.Disclosure.ShowExportButton)
+                            {
+                                <div class="d-flex align-items-center">
+                                    <a
+                                    @onclick:stopPropagation="true"
+                                    class="mx-3"
+                                    href=@($"/disclosures/{item.Disclosure.Id}/print")
+                                    target="_blank">
+                                        @sl["button-export"]
+                                    </a>
+                                </div>
+                            }
+                        </div>
+                    </TitleTemplate>
+                    <Content>
+                        <div style="overflow: auto; max-height: 400px">
+                            @if (item.Disclosure.Content is not null)
+                            {
+                                <div>@((MarkupString)ConvertLineBreaks(item.Disclosure.Content))</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(item.Disclosure.DocumentUrl))
+                            {
+                                <a class="btn btn-link" href="@item.Disclosure.DocumentUrl" role="button"
+                                target="_blank">
+                                    @item.Disclosure.DisplayName
+                                </a>
+                            }
+                            @if (item.Disclosure.RequireAcknowledgment)
+                            {
+                                <div class="form-check m-3">
+                                    <InputCheckbox @bind-Value="item.IsChecked"
+                                    @bind-Value:after="() => AfterDisclosureCheckBoxChanged(item)"
+                                    class="form-check-input"
+                                    id=@($"disclosure-{item.Disclosure.Id}-agree")
+                                    required/>
+                                    <label class="form-check-label" for=@($"disclosure-{item.Disclosure.Id}-agree")>
+                                        @l["label-checkbox-disclosure", item.Disclosure.DisplayName]
+                                    </label>
+                                    <ValidationMessage For="() => item.IsChecked"/>
+                                </div>
+                            }
+                        </div>
+                    </Content>
+                </AccordionItem>
+            }
+        </Accordion>
+    }
+
+    @if (input.CourtesyPayOptions.Any())
+    {
+        <div class="card my-3">
+            <p class="card-header fw-bold">@l["section-heading-courtesy-pay"]</p>
+            <div class="card-body">
+                <p>@l["description-courtesy-pay"]</p>
+                @foreach (var option in input.CourtesyPayOptions)
+                {
+                    <div class="my-2">
+                        <label>
+                            <InputCheckbox @bind-Value="option.Checked"
+                            class="form-check-input me-1"
+                            type="checkbox"/>
+                            @option.DisplayName
+                            <i>@(!string.IsNullOrWhiteSpace(option.Nickname) ? $"({option.Nickname})" : string.Empty)</i>
+                        </label>
+                    </div>
+
+                    <ValidationMessage For="() => option.Checked"/>
+                }
+            </div>
+        </div>
+    }
+
+    @if (input.CheckOrderOptions.Any())
+    {
+        <div class="card my-3">
+            <p class="card-header fw-bold">@l["section-heading-check-order"]</p>
+            <div class="card-body">
+                <p>@l["description-check-order"]</p>
+                @foreach (var option in input.CheckOrderOptions)
+                {
+                    <div class="my-2">
+                        <label>
+                            <InputCheckbox @bind-Value="option.Checked"
+                            class="form-check-input me-1"
+                            type="checkbox"/>
+                            @option.DisplayName
+                            <i>@(!string.IsNullOrWhiteSpace(option.Nickname) ? $"({option.Nickname})" : string.Empty)</i>
+                        </label>
+                        <ValidationMessage For="() => option.Checked"/>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (input.OverdraftOptions.Any())
+    {
+        <div class="card my-3">
+            <p class="card-header fw-bold">@l["section-heading-overdraft-protection"]</p>
+            <div class="card-body">
+                <p>@l["description-overdraft-protection"]</p>
+                @foreach (var option in input.OverdraftOptions)
+                {
+                    <div class="my-2">
+                        <label>
+                            <InputCheckbox @bind-Value="option.Checked"
+                            class="form-check-input me-1"
+                            type="checkbox"/>
+                            @option.DisplayName
+                            <i>@(!string.IsNullOrWhiteSpace(option.Nickname) ? $"({option.Nickname})" : string.Empty)</i>
+                        </label>
+                        <ValidationMessage For="() => option.Checked"/>
+                        @if (option.Checked)
+                        {
+                            <div class="ms-4">
+                                <div class="mb-3 mt-2">
+                                    <label class="form-label mb-2" for="@($"selectedOption-{option.Id}")">
+                                        @l["label-overdraft-source"]
+                                    </label>
+                                    <InputSelect @bind-Value="option.SelectedOverdraftId"
+                                    class="form-select"
+                                    id="@($"selectedOption-{option.Id}")"
+                                    required>
+                                        <option value="">Select...</option>
+                                        @foreach (var appProd in existingShareSelections.Where(x => x.ShareProduct!.OverdraftSourceEnabled && x.ShareProductId != option.ProductId))
+                                        {
+                                            <option value="@appProd.Id">@appProd.ShareProduct!.ProductDisplayName @(!string.IsNullOrWhiteSpace(appProd.Nickname) ? $"- ({appProd.Nickname})" : string.Empty)</option>
+                                        }
+                                    </InputSelect>
+                                    <ValidationMessage For="() => option.SelectedOverdraftId"/>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <ValidationSummary/>
+    <div class="d-flex justify-content-end">
+        <Button Color="ButtonColor.Primary" Type="@ButtonType.Submit">@sl["button-continue"]</Button>
+    </div>
+    <FormNavigationWarning @ref="formNavigationWarning" ConfirmRequired="editContext.IsModified()"/>
+</EditForm>
+
+@code {
+
+    private Accordion accordion = null!;
+    private EditContext editContext = null!;
+    private FormNavigationWarning? formNavigationWarning;
+    private Guid appKey = Guid.Empty;
+    private IList<Disclosure> disclosures = [];
+    private IList<ApplicationShareProduct> existingShareSelections = [];
+    private IList<ShareProduct> selectedShareProducts = [];
+    private InputFeature inputFeature = InputFeature.Create();
+    private ProductFeature productFeature = ProductFeature.Create();
+    private ValidationMessageStore messageStore = null!;
+    private bool isCardOrderingEnabled;
+    private readonly Configuration configuration = new();
+    private readonly Input input = new();
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (_, _) => messageStore.Clear();
+        editContext.OnFieldChanged += (_, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ValidateAndSetAppKey();
+            await LoadDataAsync();
+        }
+    }
+
+    private void OnValueChangedNickname()
+    {
+        foreach (var option in input.ShareNicknameOptions)
+        {
+            var courtesyPayOption = input.CourtesyPayOptions.FirstOrDefault(x => x.Id == option.Id);
+            if (courtesyPayOption != null)
+            {
+                courtesyPayOption.Nickname = option.Nickname;
+            }
+            var checkOrderOption = input.CheckOrderOptions.FirstOrDefault(x => x.Id == option.Id);
+            if (checkOrderOption != null)
+            {
+                checkOrderOption.Nickname = option.Nickname;
+            }
+            var overdraftOption = input.OverdraftOptions.FirstOrDefault(x => x.Id == option.Id);
+            if (overdraftOption != null)
+            {
+                overdraftOption.Nickname = option.Nickname;
+            }
+            var appShare = existingShareSelections.FirstOrDefault(x => x.Id == option.Id);
+            if (appShare != null)
+            {
+                appShare.UpdateNickname(option.Nickname);
+            }
+        }
+    }
+
+    private static string ConvertLineBreaks(string value)
+    {
+        return value.Replace("\r\n", "<br />").Replace("\n", "<br />");
+    }
+
+    private async Task SubmitForm()
+    {
+        if (input.OverdraftOptions.Any(x => x is { Checked: true, SelectedOverdraftId: null }))
+        {
+            var options = input.OverdraftOptions.Where(x => x is { Checked: true, SelectedOverdraftId: null });
+
+            foreach (var option in options)
+            {
+                messageStore.Add(() => option.SelectedOverdraftId!, $"You must select a source for overdrafts.");
+            }
+
+            return;
+        }
+
+        var hasNicknameError = false;
+
+        foreach (var option in input.ShareNicknameOptions)
+        {
+            if (option.Nickname?.Length > 30)
+            {
+                messageStore.Add(() => option.Nickname!, $"Maximum length is 30 characters");
+                hasNicknameError = true;
+            }
+
+            if (inputFeature.HasInvalidNicknameCharacters(option.Nickname, out var nName))
+            {
+                messageStore.Add(() => option.Nickname!, $"Characters not allowed {nName}");
+                hasNicknameError = true;
+            }
+        }
+
+        if (hasNicknameError)
+        {
+            return;
+        }
+
+        if (configuration.EstatementEnabled && input.EstatementOptIn)
+        {
+            foreach (var item in input.Disclosures)
+            {
+                if (!item.Disclosure.RequireAcknowledgment || item.IsChecked)
+                {
+                    continue;
+                }
+
+                messageStore.Add(
+                    () => item.IsChecked,
+                    l["validation-must-agree-disclosure", item.Disclosure.DisplayName]);
+
+                editContext.NotifyValidationStateChanged();
+                await accordion.ShowAccordionItemByNameAsync($"disclosure-{item.Disclosure.Id}");
+                return;
+            }
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var application = await db.UserApplications
+            .Include(x => x.ApplicationAccountOption)
+            .Include(x => x.ProductApplicationType)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+
+        if (application.ApplicationAccountOption is null)
+        {
+            var options = ApplicationAccountOption.Create(application);
+            options.UpdateFlags(input.EstatementOptIn);
+            db.Add(options);
+        }
+        else
+        {
+            application.ApplicationAccountOption.UpdateFlags(input.EstatementOptIn);
+        }
+
+        var existingShareSelections = await db.ApplicationShareProducts
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .ToListAsync();
+
+        foreach (var option in input.CourtesyPayOptions)
+        {
+            var product = existingShareSelections.First(x => x.Id == option.Id);
+            product.UpdateCourtesyPayFlag(option.Checked);
+        }
+
+        foreach (var option in input.CheckOrderOptions)
+        {
+            var product = existingShareSelections.First(x => x.Id == option.Id);
+            product.UpdateCheckOrderFlag(option.Checked);
+        }
+
+        foreach (var option in input.OverdraftOptions)
+        {
+            var parent = existingShareSelections.First(x => x.Id == option.Id);
+
+            if (option.Checked)
+            {
+                var share = existingShareSelections.First(x => x.Id == option.SelectedOverdraftId);
+                parent.SetOverdraftOption(share);
+            }
+            else
+            {
+                parent.SetOverdraftOption(null);
+            }
+        }
+
+        foreach (var option in input.ShareNicknameOptions)
+        {
+            var product = existingShareSelections.First(x => x.Id == option.Id);
+            product.UpdateNickname(option.Nickname);
+        }
+
+        foreach (var item in input.Disclosures)
+        {
+            if (item.ApplicationDisclosure == null)
+            {
+                var disclosure = ApplicationDisclosure.Create(
+                    application.Id,
+                    item.Disclosure.Id,
+                    item.Disclosure.Version,
+                    item.IsChecked,
+                    item.Disclosure.RequireAcknowledgment);
+
+                db.Add(disclosure);
+            }
+            else
+            {
+                var appDisclosure = await db.ApplicationDisclosures
+                    .Where(x => x.UserApplication!.ApplicationKey == appKey)
+                    .FirstAsync(x => x.Id == item.ApplicationDisclosure.Id);
+
+                appDisclosure.Update(item.Disclosure.Version, item.IsChecked, item.Disclosure.RequireAcknowledgment);
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        await applicationStepCompletionManager.MarkStepAsCompletedAsync(UserApplicationStepType.ProductOptions);
+
+        formNavigationWarning?.SkipNavigationWarning();
+        nav.NavigateTo(isCardOrderingEnabled ? "/applications/products/cards" : "/applications/summary");
+    }
+
+    private async Task LoadDataAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var application = await db.UserApplications
+            .Include(x => x.ApplicationAccountOption)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+
+        isCardOrderingEnabled = await FeatureFlagUtils
+            .IsCardOrderingEnabledForAppTypeAsync(db, application.ProductApplicationTypeId);
+
+        existingShareSelections = await db.ApplicationShareProducts
+            .Include(x => x.ShareProduct)
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .OrderByDescending(x => x.ShareProduct!.IsRequiredProduct).ThenBy(x => x.ShareProductId)
+            .ToListAsync();
+
+        var systemFeature = await db.SystemFeatures.GetActiveFeatureAsync();
+
+        if (systemFeature is not null)
+        {
+            inputFeature = systemFeature.Input;
+            productFeature = systemFeature.Products;
+        }
+
+        configuration.EstatementEnabled = await db.SystemFeatures
+            .GetActiveFeature()
+            .Select(x => x.Estatements.EnrollmentEnabled)
+            .FirstOrDefaultAsync();
+
+        configuration.EstatementIsPreselectedByDefault = await db.SystemFeatures
+            .GetActiveFeature()
+            .Select(x => x.Estatements.IsPreselectedByDefault)
+            .FirstOrDefaultAsync();
+
+        input.EstatementOptIn = (await db.UserApplications
+                                    .Where(x => x.ApplicationKey == appKey)
+                                    .Select(x => x.ApplicationAccountOption)
+                                    .FirstOrDefaultAsync())?.EnrollEstatements ??
+                                configuration.EstatementIsPreselectedByDefault;
+
+        selectedShareProducts = existingShareSelections.Select(x => x.ShareProduct!).ToList();
+
+        var hasOverdraftEnrollAccount = selectedShareProducts.Any(x => x.OverdraftEnrollEnabled);
+        var hasOverdraftSourceAccount = selectedShareProducts.Any(x => x.OverdraftSourceEnabled);
+
+        input.CheckOrderOptions = existingShareSelections
+            .Where(x => x.ShareProduct!.CheckOrderingEnabled)
+            .Select(x => new CheckBoxOption
+                {
+                    Id = x.Id,
+                    ProductId = x.ShareProduct!.Id,
+                    DisplayName = x.ShareProduct!.ProductDisplayName,
+                    Checked = x.CheckOrderRequested ?? false,
+                    Nickname = x.Nickname
+                })
+            .ToList();
+
+        input.CourtesyPayOptions = existingShareSelections
+            .Where(x => x.ShareProduct!.CourtesyPayEnrollEnabled)
+            .Select(x => new CheckBoxOption
+                {
+                    Id = x.Id,
+                    ProductId = x.ShareProduct!.Id,
+                    DisplayName = x.ShareProduct!.ProductDisplayName,
+                    Checked = x.CourtesyPayEnroll ?? false,
+                    Nickname = x.Nickname
+                })
+            .ToList();
+
+        if (hasOverdraftEnrollAccount && hasOverdraftSourceAccount)
+        {
+            input.OverdraftOptions = existingShareSelections
+                .Where(x => x.ShareProduct!.CourtesyPayEnrollEnabled)
+                .Select(x => new OverdraftOption
+                    {
+                        Id = x.Id,
+                        ProductId = x.ShareProduct!.Id,
+                        DisplayName = x.ShareProduct!.ProductDisplayName,
+                        Checked = x.OverdraftEnroll ?? false,
+                        SelectedOverdraftId = x.OverdraftProductOptionId,
+                        Nickname = x.Nickname
+                    })
+                .ToList();
+        }
+
+        input.ShareNicknameOptions = existingShareSelections
+            .Select(x => new NicknameOption
+                {
+                    Id = x.Id,
+                    ProductId = x.ShareProductId,
+                    DisplayName = x.ShareProduct!.ProductDisplayName,
+                    Nickname = x.Nickname,
+                    IsRequiredProductInMultiple = x.IsRequiredProductInMultiple
+                })
+            .OrderByDescending(x => x.IsRequiredProductInMultiple).ThenBy(x => x.ProductId)
+            .ToList();
+
+        disclosures = await db.Disclosures
+            .GetEnabledDisclosures()
+            .Where(d => d.DisclosureApplicationTypeLinks!.Any(x => x.ProductApplicationTypeId == application.ProductApplicationTypeId))
+            .Where(d => d.DisclosureType == DisclosureType.Statement)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync();
+
+        if (disclosures.Any())
+        {
+            var appDisclosures = await db.ApplicationDisclosures
+                .Include(x => x.Disclosure)
+                .Where(x => x.UserApplication!.ApplicationKey == appKey)
+                .Where(x => x.Disclosure!.DisclosureType == DisclosureType.Statement)
+                .ToListAsync();
+
+            foreach (var disclosure in disclosures)
+            {
+                var appDisclosure = appDisclosures.FirstOrDefault(x => x.DisclosureId == disclosure.Id);
+
+                input.Disclosures.Add(new DisclosureCheckboxInput
+                {
+                    Disclosure = disclosure,
+                    ApplicationDisclosure = appDisclosure,
+                    IsChecked = appDisclosure?.Acknowledged ?? false
+                });
+            }
+        }
+
+        if (
+            !productFeature.ShareNicknamesEnabled &&
+            !configuration.EstatementEnabled &&
+            !input.CheckOrderOptions.Any() &&
+            !input.CourtesyPayOptions.Any() &&
+            !input.OverdraftOptions.Any())
+        {
+            nav.NavigateTo(
+                isCardOrderingEnabled ? "/applications/products/cards" : "/applications/summary",
+                replace: true);
+
+            return;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task AfterDisclosureCheckBoxChanged(DisclosureCheckboxInput item)
+    {
+        if (item.IsChecked)
+        {
+            await accordion.HideAccordionItemByNameAsync($"disclosure-{item.Disclosure.Id}");
+        }
+    }
+
+    private async Task ValidateAndSetAppKey()
+    {
+        var key = await stateProvider.GetCurrentApplicationKeyAsync();
+
+        if (key is null)
+        {
+            nav.NavigateTo("/");
+            return;
+        }
+
+        appKey = key.Value;
+    }
+
+    private record Input
+    {
+        public bool EstatementOptIn { get; set; }
+        public IList<DisclosureCheckboxInput> Disclosures { get; set; } = [];
+        public IList<CheckBoxOption> CourtesyPayOptions { get; set; } = [];
+        public IList<CheckBoxOption> CheckOrderOptions { get; set; } = [];
+        public IList<OverdraftOption> OverdraftOptions { get; set; } = [];
+        public IList<NicknameOption> ShareNicknameOptions { get; set; } = [];
+    }
+
+    private record NicknameOption
+    {
+        public int Id { get; init; }
+        public int ProductId { get; init; }
+        public string DisplayName { get; init; } = string.Empty;
+
+        [MaxLength(30, ErrorMessage = "Maximum 30 characters")]
+        public string? Nickname { get; set; }
+        public bool IsRequiredProductInMultiple { get; set; }
+    }
+    
+    private class DisclosureCheckboxInput
+    {
+        public required Disclosure Disclosure { get; init; }
+        public required ApplicationDisclosure? ApplicationDisclosure { get; init; }
+        public required bool IsChecked { get; set; }
+    }
+
+    private record CheckBoxOption
+    {
+        public int Id { get; init; }
+        public bool Checked { get; set; }
+        public string DisplayName { get; init; } = string.Empty;
+        public int ProductId { get; init; }
+        public string? Nickname { get; set; }
+    }
+
+    private record OverdraftOption : CheckBoxOption
+    {
+        public int? SelectedOverdraftId { get; set; }
+    }
+
+    private record Configuration
+    {
+        public bool EstatementEnabled { get; set; }
+        public bool EstatementIsPreselectedByDefault { get; set; }
+    }
+
+}

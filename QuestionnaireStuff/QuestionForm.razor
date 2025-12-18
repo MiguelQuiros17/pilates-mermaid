@@ -3,6 +3,7 @@
 @using FluentValidation
 @using Aloha.Domain.Services.Translations
 @using System.Globalization
+@using Aloha.Admin.Web.Components.Features.Customization.Questionnaires
 @inject ITranslationHelper TranslationHelper
 @inject ILanguageConfigurationService LanguageConfigService
 @rendermode InteractiveServer
@@ -19,10 +20,8 @@
                        Placeholder="Enter question name"
                        Rows="1"
                        IsDisabled="false"
-                       EnglishValue="@input.Name"
-                       EnglishValueChanged="@((string value) => input.Name = value)"
-                       Translations="@input.NameTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
+                       Field="@input.NameField"
+                       FieldChanged="@((MultilingualField f) => input.NameField = f)"
                        SelectedCultureOverride="@SelectedCulture"
                        SelectedCultureOverrideChanged="@((string culture) => { })" />
 
@@ -32,10 +31,8 @@
                        Placeholder="Enter question description"
                        Rows="3"
                        IsDisabled="false"
-                       EnglishValue="@input.Description"
-                       EnglishValueChanged="@((string value) => input.Description = value)"
-                       Translations="@input.DescriptionTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.DescriptionTranslations = trans)"
+                       Field="@input.DescriptionField"
+                       FieldChanged="@((MultilingualField f) => input.DescriptionField = f)"
                        SelectedCultureOverride="@SelectedCulture"
                        SelectedCultureOverrideChanged="@((string culture) => { })" />
     <div class="mb-2">
@@ -43,11 +40,11 @@
         <InputSelect class="form-select" @bind-Value="input.GroupId">
             <option value="">None</option>
             @{
-                var orderedQuestionGroups = QuestionGroups.OrderBy(g => g.SortOrder).ToList();
+                var orderedQuestionGroups = QuestionGroups.OrderBy<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionGroupForm.DraftInput, int>(g => g.SortOrder).ToList();
             }
             @foreach (var group in orderedQuestionGroups)
             {
-                <option value="@group.DraftId">@group.Name</option>
+                <option value="@group.DraftId">@group.NameField.Get(SelectedCulture, PrimaryLanguage)</option>
             }
         </InputSelect>
     </div>
@@ -101,7 +98,7 @@
                                     <div class="flex-fill">
                                         <div>
                                             @{
-                                                var optionName = GetLocalizedText(option.Name, option.NameTranslations, SelectedCulture, PrimaryLanguage);
+                                                var optionName = GetLocalizedText(option.NameField, SelectedCulture, PrimaryLanguage);
                                             }
                                             @if (string.IsNullOrWhiteSpace(optionName))
                                             {
@@ -113,7 +110,7 @@
                                             }
                                             @if (option.HasDependentQuestion)
                                             {
-                                                var depQuestionName = GetLocalizedText(option.DependentQuestionName, option.DependentQuestionNameTranslations, SelectedCulture, PrimaryLanguage);
+                                                var depQuestionName = GetLocalizedText(option.DependentQuestionNameField, SelectedCulture, PrimaryLanguage);
                                                 @if (string.IsNullOrWhiteSpace(depQuestionName))
                                                 {
                                                     <span class="fst-italic text-danger"> - (empty)</span>
@@ -132,11 +129,11 @@
                                                 @{
                                                     var orderedDepOptions = option.DependentMultipleChoiceOptions!.OrderBy(o => o.SortOrder).ToList();
                                                     foreach (var depOption in orderedDepOptions)
-                                                    {
-                                                        <li>
-                                                            <div class="flex-fill">
+                                                {
+                                                    <li>
+                                                        <div class="flex-fill">
                                                                 @{
-                                                                    var depOptionName = GetLocalizedText(depOption.Name, depOption.NameTranslations, SelectedCulture, PrimaryLanguage);
+                                                                    var depOptionName = GetLocalizedText(depOption.NameField, SelectedCulture, PrimaryLanguage);
                                                                 }
                                                                 @if (string.IsNullOrWhiteSpace(depOptionName))
                                                                 {
@@ -146,9 +143,9 @@
                                                                 {
                                                                     @depOptionName
                                                                 }
-                                                                @if (depOption.HasFreeFormField)
-                                                                {
-                                                                    var freeFormDesc = GetLocalizedText(depOption.FreeFormFieldDescription, depOption.FreeFormFieldDescriptionTranslations, SelectedCulture, PrimaryLanguage);
+                                                            @if (depOption.HasFreeFormField)
+                                                            {
+                                                                    var freeFormDesc = GetLocalizedText(depOption.FreeFormFieldDescriptionField, SelectedCulture, PrimaryLanguage);
                                                                     @if (string.IsNullOrWhiteSpace(freeFormDesc))
                                                                     {
                                                                         <span class="fst-italic text-danger"> - (empty)</span>
@@ -157,10 +154,10 @@
                                                                     {
                                                                         <span class="fst-italic"> - @freeFormDesc</span>
                                                                     }
-                                                                    <span> (Free Form)</span>
-                                                                }
-                                                            </div>
-                                                        </li>
+                                                                <span> (Free Form)</span>
+                                                            }
+                                                        </div>
+                                                    </li>
                                                     }
                                                 }
                                             </ul>
@@ -199,6 +196,7 @@
                     OnClose="CloseEditMultipleChoiceOptionForm"
                     OnSubmit="@(isEditingOption ? EditMultipleChoiceOption : AddMultipleChoiceOption)"
                     SelectedCulture="@SelectedCulture"
+                    PrimaryLanguage="@PrimaryLanguage"
                 />
             </div>
         </div>
@@ -233,7 +231,7 @@
     private ValidationMessageStore messageStore = default!;
     private EditContext editContext = default!;
 
-    private IList<QuestionGroupForm.DraftInput> questionGroups = [];
+    private IList<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionGroupForm.DraftInput> questionGroups = [];
     private QuestionForm.DraftInput? initialValues;
 
     [Parameter]
@@ -249,7 +247,7 @@
     public EventCallback<Input> OnClose { get; set; }
 
     [Parameter, EditorRequired]
-    public IList<QuestionGroupForm.DraftInput> QuestionGroups { get; set; } = default!;
+    public IList<Aloha.Admin.Web.Components.Features.Customization.Questionnaires.QuestionGroupForm.DraftInput> QuestionGroups { get; set; } = default!;
 
     [Parameter]
     public string SelectedCulture { get; set; } = "en-US";
@@ -257,19 +255,9 @@
     [Parameter]
     public string PrimaryLanguage { get; set; } = "en-US";
 
-    private string GetLocalizedText(string? primaryValue, Dictionary<string, string> translations, string selectedCulture, string primaryLang)
+    private string GetLocalizedText(MultilingualField field, string selectedCulture, string primaryLang)
     {
-        if (selectedCulture == primaryLang)
-        {
-            return primaryValue ?? "";
-        }
-        
-        if (translations.TryGetValue(selectedCulture, out var translatedValue))
-        {
-            return translatedValue ?? "";
-        }
-        
-        return primaryValue ?? "";
+        return field.Get(selectedCulture, primaryLang);
     }
 
     protected override void OnInitialized()
@@ -338,14 +326,20 @@
     private void EditMultipleChoiceOption(MultipleChoiceOptionForm.Input values)
     {
         var option = input.MultipleChoiceOptions.First(o => o.DraftId == optionBeingEdited!.DraftId);
-        option.Name = values.Name!;
-        option.NameTranslations = new Dictionary<string, string>(values.NameTranslations);
+        option.NameField = new MultilingualField { PrimaryValue = values.NameField.PrimaryValue };
+        foreach (var kvp in values.NameField.Translations)
+        {
+            option.NameField.Translations[kvp.Key] = kvp.Value;
+        }
         option.HasDependentQuestion = values.HasDependentQuestion;
 
         if (values.HasDependentQuestion)
         {
-            option.DependentQuestionName = values.DependentQuestionName;
-            option.DependentQuestionNameTranslations = new Dictionary<string, string>(values.DependentQuestionNameTranslations);
+            option.DependentQuestionNameField = new MultilingualField { PrimaryValue = values.DependentQuestionNameField.PrimaryValue };
+            foreach (var kvp in values.DependentQuestionNameField.Translations)
+            {
+                option.DependentQuestionNameField.Translations[kvp.Key] = kvp.Value;
+            }
             option.DependentQuestionType = values.DependentQuestionType;
 
             option.DependentMultipleChoiceOptions =
@@ -356,8 +350,7 @@
         }
         else
         {
-            option.DependentQuestionName = null;
-            option.DependentQuestionNameTranslations.Clear();
+            option.DependentQuestionNameField.Clear();
             option.DependentQuestionType = DependentQuestionType.None;
             option.DependentMultipleChoiceOptions = null;
         }
@@ -370,14 +363,8 @@
         var draft = new MultipleChoiceOptionForm.DraftInput
         {
             DraftId = Guid.NewGuid(),
-            Name = values.Name!,
-            NameTranslations = new Dictionary<string, string>(values.NameTranslations),
             HasDependentQuestion = values.HasDependentQuestion,
             DependentQuestionType = values.HasDependentQuestion ? values.DependentQuestionType : DependentQuestionType.None,
-            DependentQuestionName = values.HasDependentQuestion ? values.DependentQuestionName : null,
-            DependentQuestionNameTranslations = values.HasDependentQuestion 
-                ? new Dictionary<string, string>(values.DependentQuestionNameTranslations)
-                : new Dictionary<string, string>(),
             DependentMultipleChoiceOptions =
                 values.HasDependentQuestion &&
                 (values.DependentQuestionType == DependentQuestionType.SingleSelect ||
@@ -385,6 +372,21 @@
                     ? [..values.DependentMultipleChoiceOptions]
                     : null
         };
+
+        draft.NameField = new MultilingualField { PrimaryValue = values.NameField.PrimaryValue };
+        foreach (var kvp in values.NameField.Translations)
+        {
+            draft.NameField.Translations[kvp.Key] = kvp.Value;
+        }
+
+        if (values.HasDependentQuestion)
+        {
+            draft.DependentQuestionNameField = new MultilingualField { PrimaryValue = values.DependentQuestionNameField.PrimaryValue };
+            foreach (var kvp in values.DependentQuestionNameField.Translations)
+            {
+                draft.DependentQuestionNameField.Translations[kvp.Key] = kvp.Value;
+            }
+        }
 
         input.MultipleChoiceOptions.Add(draft);
     }
@@ -417,24 +419,20 @@
     public class DraftInput
     {
         public Guid DraftId { get; set; }
-        public required string Name { get; set; }
-        public string? Description { get; set; }
+        public MultilingualField NameField { get; set; } = new();
+        public MultilingualField DescriptionField { get; set; } = new();
         public bool IsRequired { get; set; }
         public int SortOrder { get; set; }
         public required QuestionType Type { get; set; }
         public Guid? DraftGroupId { get; set; }
         public int? GroupId { get; set; }
         public IList<MultipleChoiceOptionForm.DraftInput>? MultipleChoiceOptions { get; set; }
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
 
-        public static DraftInput CreateFromQuestion(Question question, Guid? draftGroupId, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? descriptionTranslations = null)
+        public static DraftInput CreateFromQuestion(Question question, Guid? draftGroupId, MultilingualField? nameField = null, MultilingualField? descriptionField = null)
         {
-            return new DraftInput
+            var result = new DraftInput
             {
                 DraftId = Guid.NewGuid(),
-                Name = question.Name,
-                Description = question.Description,
                 IsRequired = question.IsRequired,
                 SortOrder = question.SortOrder,
                 Type = question.Type,
@@ -442,24 +440,48 @@
                 GroupId = question.QuestionGroupId,
                 MultipleChoiceOptions = question.MultipleChoiceOptions?
                     .Select((MultipleChoiceOption o) => MultipleChoiceOptionForm.DraftInput.CreateFromOption(o))
-                    .ToList(),
-                NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
-                DescriptionTranslations = descriptionTranslations ?? new Dictionary<string, string>()
+                    .ToList()
             };
+
+            if (nameField != null)
+            {
+                result.NameField = new MultilingualField { PrimaryValue = nameField.PrimaryValue };
+                foreach (var kvp in nameField.Translations)
+                {
+                    result.NameField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.NameField.PrimaryValue = question.Name;
+            }
+
+            if (descriptionField != null)
+            {
+                result.DescriptionField = new MultilingualField { PrimaryValue = descriptionField.PrimaryValue };
+                foreach (var kvp in descriptionField.Translations)
+                {
+                    result.DescriptionField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.DescriptionField.PrimaryValue = question.Description ?? string.Empty;
+            }
+
+            return result;
         }
     }
 
     public class Input
     {
         public bool HasSubmitted { get; set; }
-        public string? Name { get; set; }
-        public string? Description { get; set; }
+        public MultilingualField NameField { get; set; } = new();
+        public MultilingualField DescriptionField { get; set; } = new();
         public Guid? GroupId { get; set; }
         public bool IsRequired { get; set; }
         public QuestionType Type { get; set; } = QuestionType.FreeForm;
         public IList<MultipleChoiceOptionForm.DraftInput> MultipleChoiceOptions { get; set; } = [];
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> DescriptionTranslations { get; set; } = new();
 
         public static Input CreateFromDraft(QuestionForm.DraftInput? draft)
         {
@@ -475,32 +497,38 @@
 
         public void UpdateFromDraft(QuestionForm.DraftInput draft)
         {
-            Name = draft.Name;
-            Description = draft.Description;
+            NameField = new MultilingualField { PrimaryValue = draft.NameField.PrimaryValue };
+            foreach (var kvp in draft.NameField.Translations)
+            {
+                NameField.Translations[kvp.Key] = kvp.Value;
+            }
+
+            DescriptionField = new MultilingualField { PrimaryValue = draft.DescriptionField.PrimaryValue };
+            foreach (var kvp in draft.DescriptionField.Translations)
+            {
+                DescriptionField.Translations[kvp.Key] = kvp.Value;
+            }
+
             GroupId = draft.DraftGroupId;
             IsRequired = draft.IsRequired;
             Type = draft.Type;
             MultipleChoiceOptions = draft.MultipleChoiceOptions == null ? [] : [..draft.MultipleChoiceOptions];
-            NameTranslations = new Dictionary<string, string>(draft.NameTranslations);
-            DescriptionTranslations = new Dictionary<string, string>(draft.DescriptionTranslations);
         }
 
         public void Trim()
         {
-            Name = Name?.Trim();
-            Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim();
+            NameField.PrimaryValue = NameField.PrimaryValue?.Trim() ?? string.Empty;
+            DescriptionField.PrimaryValue = DescriptionField.PrimaryValue?.Trim() ?? string.Empty;
         }
 
         public void Clear()
         {
-            Name = null;
-            Description = null;
+            NameField.Clear();
+            DescriptionField.Clear();
             GroupId = null;
             IsRequired = false;
             Type = QuestionType.FreeForm;
             MultipleChoiceOptions = [];
-            NameTranslations.Clear();
-            DescriptionTranslations.Clear();
         }
     }
 
@@ -510,7 +538,7 @@
         {
             When(input => input.HasSubmitted, () =>
             {
-                RuleFor(p => p.Name).NotEmpty().WithMessage("Question name is required");
+                RuleFor(p => p.NameField.PrimaryValue).NotEmpty().WithMessage("Question name is required");
 
                 When(p => p.Type != QuestionType.FreeForm, () =>
                         {

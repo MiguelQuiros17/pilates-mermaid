@@ -1,0 +1,581 @@
+@using Aloha.Customer.Web.Components.Common
+@using Aloha.Domain.ApplicationPersons
+@using Aloha.Domain.ApplicationProducts
+@using Aloha.Domain.Applications
+@using Aloha.Domain.Features
+@using Aloha.Domain.Products
+@using Aloha.Customer.Web.Components.Common.Forms
+@using Aloha.Domain.ProductApplications
+@rendermode InteractiveServer
+@inject IApplicationStateProvider stateProvider
+@inject IApplicationStepCompletionManager applicationStepCompletionManager
+@inject IDbContextFactory<AlohaDb> dbFactory
+@inject NavigationManager nav
+@inject IStringLocalizer<LoanOptionsContent> l
+@inject IStringLocalizer<SharedResources> sl
+
+<h1>@l["page-heading"]</h1>
+<RequiredFieldHelper/>
+
+<EditForm EditContext="editContext" FormName="Options" novalidate OnValidSubmit="SubmitForm">
+    <DataAnnotationsValidator/>
+
+    @if (productFeature.LoanNicknamesEnabled && input.LoanNicknameOptions.Count > 0)
+    {
+        <div class="card mb-3">
+            <p class="card-header fw-bold">@l["section-heading-nicknames"]</p>
+            <div class="card-body">
+                @foreach (var option in input.LoanNicknameOptions)
+                {
+                    <div class="mb-3">
+                        <label class="form-label"
+                               for="@($"loanNicknameOption-{option.ProductId}")">
+                            @option.DisplayName
+                        </label>
+                        <InputText @bind-Value="option.Nickname"
+                                   class="form-control"
+                                   id="@($"loanNicknameOption-{option.ProductId}")"
+                                   type="text"/>
+                        <ValidationMessage For="() => option.Nickname"/>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (input.LoanProductOptions.Any())
+    {
+        foreach (var loan in input.LoanProductOptions)
+        {
+            var product = selectedLoanProducts.First(x => x.Id == loan.ProductId);
+
+            <div class="card mb-3">
+                <p class="card-header fw-bold">
+                    @product.ProductDisplayName
+                </p>
+                <div class="card-body">
+                    @if (product.IsVehicleLoan)
+                    {
+                        <div class="mb-3">
+                            <div class="float-end">
+                                @if (loan.LoanVehicle is null)
+                                {
+                                    <button
+                                        @onclick="async () => { await HandleAddOrEditVehiclePressAsync(loan.ApplicationLoanProductId); }"
+                                        class="btn btn-outline-primary"
+                                        type="button"
+                                    >
+                                        @l["button-add-vehicle"]
+                                    </button>
+
+                                    <ValidationMessage For="() => input.VehicleError"/>
+                                }
+                                else
+                                {
+                                    <button aria-expanded="false" class="btn" data-bs-toggle="dropdown" type="button">
+                                        <Icon Name="IconName.ThreeDotsVertical" Size="IconSize.x5"/>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <button
+                                                @onclick="async () => { await HandleAddOrEditVehiclePressAsync(loan.ApplicationLoanProductId); }"
+                                                class="dropdown-item"
+                                                type="button"
+                                            >
+                                                @sl["button-edit"]
+                                            </button>
+                                        </li>
+                                    </ul>
+                                }
+                            </div>
+                            <div class="fw-bold">
+                                @l["label-loan-vehicle"]
+                            </div>
+                            <div class="mb-2">
+                                @if (loan.LoanVehicle is null)
+                                {
+                                    <p>@l["label-no-vehicle-added"]</p>
+                                }
+                            </div>
+                        </div>
+                        <hr class="border border-1 opacity-75">
+                    }
+                    else if (product.IsMortgageLoan)
+                    {
+                        <div class="mb-3">
+                            <div class="float-end">
+                                @if (loan.LoanMortgage is null)
+                                {
+                                    <button @onclick="async () => { await HandleAddOrEditMortgagePressAsync(loan.ApplicationLoanProductId); }"
+                                            class="btn btn-outline-primary"
+                                            type="button">
+                                        @l["button-add-mortgage"]
+                                    </button>
+                                    <ValidationMessage For="() => input.MortgageError" />
+                                }
+                                else
+                                {
+                                    <button aria-expanded="false" class="btn" data-bs-toggle="dropdown" type="button">
+                                        <Icon Name="IconName.ThreeDotsVertical" Size="IconSize.x5" />
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <button @onclick="async () => { await HandleAddOrEditMortgagePressAsync(loan.ApplicationLoanProductId); }"
+                                                    class="dropdown-item"
+                                                    type="button">
+                                                @sl["button-edit"]
+                                            </button>
+                                        </li>
+                                    </ul>
+                                }
+                            </div>
+                            <div class="fw-bold">
+                                @l["label-loan-mortgage"]
+                            </div>
+                            <div class="mb-2">
+                                @if (loan.LoanMortgage is null)
+                                {
+                                    <p>@l["label-no-mortgage-added"]</p>
+                                }
+                            </div>
+                        </div>
+                        <hr class="border border-1 opacity-75">
+                    }
+                    <div class="mb-3">
+                        <label class="form-label" for="@($"loan-amount-{loan.ApplicationLoanProductId}")">
+                            @l["label-loan-amount"]
+                        </label>
+                        <InputCurrency 
+                            @bind-Value="loan.LoanAmount"
+                            class="form-control"
+                            id="@($"loan-amount-{loan.ApplicationLoanProductId}")"
+                            required
+                        />
+                        <ValidationMessage For="() => loan.LoanAmount"/>
+                    </div>
+
+                    @if (product.RequireLoanPurpose)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label" for="@($"loan-purpose-{loan.ApplicationLoanProductId}")">
+                                @l["label-loan-purpose"]
+                            </label>
+                            <InputText @bind-Value="loan.LoanPurpose"
+                                       class="form-control"
+                                       id="@($"loan-{loan.ApplicationLoanProductId}")"
+                                       required="@product.RequireLoanPurpose"
+                                       type="text"/>
+                            <ValidationMessage For="() => loan.LoanPurpose"/>
+                        </div>
+                    }
+                    @if (product.AllowedTerms.Count > 0)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label" for="@($"loan-term-{loan.ApplicationLoanProductId}")">
+                                @l["label-loan-term"]
+                            </label>
+                            <InputSelect @bind-Value="loan.LoanTerm" class="form-select" required="@(product.AllowedTerms.Count > 0)"
+                                         id="@($"loan-term-{loan.ApplicationLoanProductId}")">
+                                <option value="">Select&hellip;</option>
+                                @foreach (var option in product.AllowedTerms)
+                                {
+                                    <option value="@option">@($"{option} Months")</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="() => loan.LoanTerm"/>
+                        </div>
+                    }
+
+                </div>
+            </div>
+        }
+    }
+    
+    <div>
+        <ValidationSummary/>
+    </div>
+    <div class="d-flex justify-content-end">
+        <Button Color="ButtonColor.Primary" Type="@ButtonType.Submit">@sl["button-continue"]</Button>
+    </div>
+    <FormNavigationWarning @ref="formNavigationWarning" ConfirmRequired="editContext.IsModified()"/>
+</EditForm>
+
+@code {
+
+    private EditContext editContext = default!;
+    private Guid appKey = default!;
+    private IList<LoanProduct> selectedLoanProducts = [];
+    private InputFeature inputFeature = InputFeature.Create();
+    private ProductFeature productFeature = ProductFeature.Create();
+    private FieldFeature fieldFeature = FieldFeature.Create();
+    private ValidationMessageStore messageStore = default!;
+    private FormNavigationWarning? formNavigationWarning;
+    private readonly Input input = new();
+
+    protected override void OnInitialized()
+    {
+        editContext = new EditContext(input);
+        messageStore = new ValidationMessageStore(editContext);
+        editContext.OnValidationRequested += (s, e) => messageStore.Clear();
+        editContext.OnFieldChanged += (s, e) => messageStore.Clear(e.FieldIdentifier);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ValidateAndSetAppKey();
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task HandleAddOrEditMortgagePressAsync(int applicationLoanProductId)
+    {
+        var hasSavedChanges = await SaveUnsavedChangesAsync();
+
+        if (hasSavedChanges)
+        {
+            formNavigationWarning?.SkipNavigationWarning();
+            nav.NavigateTo($"/applications/products/loans/mortgage/{applicationLoanProductId}");
+        }
+    }
+
+    private async Task HandleAddOrEditVehiclePressAsync(int applicationLoanProductId)
+    {
+        var hasSavedChanges = await SaveUnsavedChangesAsync();
+
+        if (hasSavedChanges)
+        {
+            formNavigationWarning?.SkipNavigationWarning();
+            nav.NavigateTo($"/applications/products/loans/vehicle/{applicationLoanProductId}");
+        }
+    }
+
+    /// <returns>true if changes were saved, false if validation errors exist</returns>
+    private async Task<bool> SaveUnsavedChangesAsync()
+    {
+        var hasNicknameError = false;
+        var hasLoanError = false;
+
+        foreach (var option in input.LoanNicknameOptions)
+        {
+            if (option.Nickname?.Length > 30)
+            {
+                messageStore.Add(() => option.Nickname!, l["validation-maximum-length-is-reached", 30]);
+                hasNicknameError = true;
+            }
+
+            if (string.IsNullOrWhiteSpace(option.Nickname) ||
+                !inputFeature.HasInvalidNicknameCharacters(option.Nickname, out var nName))
+            {
+                continue;
+            }
+
+            messageStore.Add(() => option.Nickname!, l["validation-characters-not-allowed", nName]);
+            hasNicknameError = true;
+        }
+
+        foreach (var loan in input.LoanProductOptions)
+        {
+            var product = selectedLoanProducts.First(x => x.Id == loan.ProductId);
+
+            if (loan.LoanAmount.HasValue)
+            {
+                if (
+                    product is { MinimumLoanAmount: not null, MaximumLoanAmount: not null } &&
+                    (loan.LoanAmount < product.MinimumLoanAmount || loan.LoanAmount > product.MaximumLoanAmount))
+                {
+                    messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-must-be-between", $"{product.MinimumLoanAmount:0.00}", $"{product.MaximumLoanAmount:0.00}"]);
+                    hasLoanError = true;
+                }
+
+                if (product.MinimumLoanAmount.HasValue && loan.LoanAmount < product.MinimumLoanAmount)
+                {
+                    messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-must-be-greater-than", $"{product.MinimumLoanAmount:0.00}"]);
+                    hasLoanError = true;
+                }
+
+                if (product.MaximumLoanAmount.HasValue && loan.LoanAmount > product.MaximumLoanAmount)
+                {
+                    messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-must-be-less-than", $"{product.MaximumLoanAmount:0.00}"]);
+                    hasLoanError = true;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(loan.LoanPurpose) && loan.LoanPurpose?.Length > 120)
+            {
+                messageStore.Add(() => loan.LoanPurpose!, l["validation-loan-purpose-maximum-length-is-reached", 120]);
+                hasLoanError = true;
+            }
+        }
+
+        if (hasNicknameError || hasLoanError)
+        {
+            return false;
+        }
+        
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var application = await db.UserApplications
+            .Include(x => x.ApplicationAccountOption)
+            .Include(x => x.ProductApplicationType)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+
+        if (application.ApplicationAccountOption is null)
+        {
+            var options = ApplicationAccountOption.Create(application);
+            db.Add(options);
+        }
+
+        var existingLoanSelections = await db.ApplicationLoanProducts
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .ToListAsync();
+
+        foreach (var option in input.LoanNicknameOptions)
+        {
+            var product = existingLoanSelections.First(x => x.LoanProductId == option.ProductId);
+            product.UpdateNickname(option.Nickname);
+        }
+
+        foreach (var option in input.LoanProductOptions)
+        {
+            var product = existingLoanSelections.First(x => x.Id == option.ApplicationLoanProductId);
+            product.UpdateLoanRequest(option.LoanTerm, option.LoanAmount, option.LoanPurpose);
+        }
+
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task SubmitForm()
+    {
+        var hasNicknameError = false;
+        var hasLoanError = false;
+
+        foreach (var option in input.LoanNicknameOptions)
+        {
+            if (option.Nickname?.Length > 30)
+            {
+                messageStore.Add(() => option.Nickname!, l["validation-maximum-length-is-reached", 30]);
+                hasNicknameError = true;
+            }
+
+            if (!inputFeature.HasInvalidNicknameCharacters(option.Nickname, out var nName))
+            {
+                continue;
+            }
+
+            messageStore.Add(() => option.Nickname!, l["validation-characters-not-allowed", nName]);
+            hasNicknameError = true;
+        }
+
+        foreach (var loan in input.LoanProductOptions)
+        {
+            if (!loan.LoanAmount.HasValue)
+            {
+                messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-required"]);
+                hasLoanError = true;
+            }
+
+            var product = selectedLoanProducts.First(x => x.Id == loan.ProductId);
+
+            if (product is { MinimumLoanAmount: not null, MaximumLoanAmount: not null } &&
+                (loan.LoanAmount < product.MinimumLoanAmount || loan.LoanAmount > product.MaximumLoanAmount))
+            {
+                messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-must-be-between", $"{product.MinimumLoanAmount:0.00}", $"{product.MaximumLoanAmount:0.00}"]);
+                hasLoanError = true;
+            }
+            else if (product.MinimumLoanAmount.HasValue && loan.LoanAmount < product.MinimumLoanAmount)
+            {
+                messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-must-be-greater-than", $"{product.MinimumLoanAmount:0.00}"]);
+                hasLoanError = true;
+            }
+            else if (product.MaximumLoanAmount.HasValue && loan.LoanAmount > product.MaximumLoanAmount)
+            {
+                messageStore.Add(() => loan.LoanAmount!, l["validation-loan-amount-must-be-less-than", $"{product.MaximumLoanAmount:0.00}"]);
+                hasLoanError = true;
+            }
+
+            if (product.RequireLoanPurpose && string.IsNullOrWhiteSpace(loan.LoanPurpose))
+            {
+                messageStore.Add(() => loan.LoanPurpose!, l["validation-loan-purpose-required"]);
+                hasLoanError = true;
+            }
+
+            if (loan.LoanPurpose?.Length > 120)
+            {
+                messageStore.Add(() => loan.LoanPurpose!, l["validation-loan-purpose-maximum-length-is-reached", 120]);
+                hasLoanError = true;
+            }
+
+            if (product.AllowedTerms.Any() && !loan.LoanTerm.HasValue)
+            {
+                messageStore.Add(() => loan.LoanTerm!, l["validation-please-select-a-loan-term"]);
+                hasLoanError = true;
+            }
+
+            if (product is not null && product.IsMortgageLoan && loan.LoanMortgage is null)
+            {
+                messageStore.Add(() => loan.LoanMortgage!, l["validation-mortgage-required"]);
+                hasLoanError = true;
+            }
+        }
+        
+        if (hasNicknameError || hasLoanError)
+        {
+            return;
+        }
+        
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var application = await db.UserApplications
+            .Include(x => x.ApplicationAccountOption)
+            .Include(x => x.ProductApplicationType)
+            .Include(x => x.ApplicationPeople)
+            .FirstAsync(x => x.ApplicationKey == appKey);
+
+        if (application.ApplicationAccountOption is null)
+        {
+            var options = ApplicationAccountOption.Create(application);
+            db.Add(options);
+        }
+
+        var existingLoanSelections = await db.ApplicationLoanProducts
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .ToListAsync();
+
+        foreach (var option in input.LoanNicknameOptions)
+        {
+            var product = existingLoanSelections.First(x => x.LoanProductId == option.ProductId);
+            product.UpdateNickname(option.Nickname);
+        }
+
+        foreach (var option in input.LoanProductOptions)
+        {
+            var product = existingLoanSelections.First(x => x.Id == option.ApplicationLoanProductId);
+            product.UpdateLoanRequest(option.LoanTerm, option.LoanAmount, option.LoanPurpose);
+        }
+
+        application.SetStep(UserApplicationStepType.ProductOptions);
+        await db.SaveChangesAsync();
+        await applicationStepCompletionManager.MarkStepAsCompletedAsync(UserApplicationStepType.ProductOptions);
+
+        formNavigationWarning?.SkipNavigationWarning();
+
+        var fieldFeature = await db.FieldFeatures.GetActiveFeatureAsync(application.ProductApplicationTypeId);
+        if (fieldFeature?.ApplicationFieldFeature.IsEligibilityAfterProductSelection == true)
+        {
+            nav.NavigateTo("/applications/eligibility");
+        }
+        else
+        {
+            var primaryPerson = application.ApplicationPeople?.FirstOrDefault(x => x.PersonType == PersonType.Primary);
+            if (primaryPerson == null)
+            {
+                nav.NavigateTo("/applications/people/add");
+                return;
+            }
+
+            nav.NavigateTo($"/applications/people/edit/{primaryPerson.Id}");
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var existingLoanSelections = await db.ApplicationLoanProducts
+            .Include(x => x.LoanProduct)
+            .Include(x => x.LoanProductVehicle)
+            .Include(x => x.LoanProductMortgage)
+            .Where(x => x.UserApplication!.ApplicationKey == appKey)
+            .ToListAsync();
+
+        var systemFeature = await db.SystemFeatures.GetActiveFeatureAsync();
+
+        if (systemFeature is not null)
+        {
+            inputFeature = systemFeature.Input;
+            productFeature = systemFeature.Products;
+        }
+
+        selectedLoanProducts = existingLoanSelections
+            .Select(x => x.LoanProduct!)
+            .ToList();
+
+        input.LoanNicknameOptions = selectedLoanProducts
+            .Select(x => new NicknameOption
+            {
+                ProductId = x.Id,
+                DisplayName = x.ProductDisplayName,
+                Nickname = existingLoanSelections.First(e => e.LoanProductId == x.Id)?.Nickname
+            })
+            .ToList();
+
+        input.LoanProductOptions = existingLoanSelections
+            .Select(x => new LoanProductOption
+            {
+                ProductId = x.LoanProductId,
+                ApplicationLoanProductId = x.Id,
+                LoanAmount = x.RequestedLoanAmount.HasValue ? Math.Round(x.RequestedLoanAmount.Value, 2) : null,
+                LoanPurpose = x.RequestedLoanPurpose,
+                LoanTerm = x.RequestedLoanTerm,
+                LoanMortgage = x.LoanProductMortgage,
+                LoanVehicle = x.LoanProductVehicle
+            })
+            .ToList();
+
+        foreach (var option in input.LoanProductOptions)
+        {
+            var product = selectedLoanProducts.First(x => x.Id == option.ProductId);
+            if (product.AllowedTerms.Count == 1)
+            {
+                option.LoanTerm = product.AllowedTerms.First();
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ValidateAndSetAppKey()
+    {
+        var key = await stateProvider.GetCurrentApplicationKeyAsync();
+
+        if (key is null)
+        {
+            nav.NavigateTo("/", replace: true);
+            return;
+        }
+
+        appKey = key.Value;
+    }
+
+    private record Input
+    {
+        public string? MortgageError { get; set; }
+        public string? VehicleError { get; set; }
+        public IList<NicknameOption> LoanNicknameOptions { get; set; } = [];
+        public IList<LoanProductOption> LoanProductOptions { get; set; } = [];
+    }
+
+    private record LoanProductOption
+    {
+        public int ProductId { get; set; }
+        public int ApplicationLoanProductId { get; set; }
+        public string? LoanPurpose { get; set; }
+        public decimal? LoanAmount { get; set; }
+        public int? LoanTerm { get; set; }
+        public ApplicationLoanProductMortgage? LoanMortgage { get; set; }
+        public ApplicationLoanProductVehicle? LoanVehicle { get; set; }
+    }
+
+    private record NicknameOption
+    {
+        public int ProductId { get; set; }
+        public string DisplayName { get; set; } = default!;
+
+        [MaxLength(30, ErrorMessage = "Maximum 30 characters")]
+        public string? Nickname { get; set; }
+    }
+
+}

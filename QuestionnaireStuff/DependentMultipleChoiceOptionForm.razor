@@ -19,10 +19,8 @@
                        Placeholder="Enter option name"
                        Rows="1"
                        IsDisabled="false"
-                       EnglishValue="@input.Name"
-                       EnglishValueChanged="@((string value) => input.Name = value)"
-                       Translations="@input.NameTranslations"
-                       TranslationsChanged="@((Dictionary<string, string> trans) => input.NameTranslations = trans)"
+                       Field="@input.NameField"
+                       FieldChanged="@((MultilingualField f) => input.NameField = f)"
                        SelectedCultureOverride="@SelectedCulture"
                        SelectedCultureOverrideChanged="@((string culture) => { })" />
 
@@ -42,10 +40,8 @@
                            Placeholder="For example..."
                            Rows="3"
                            IsDisabled="false"
-                           EnglishValue="@input.FreeFormFieldDescription"
-                           EnglishValueChanged="@((string value) => input.FreeFormFieldDescription = value)"
-                           Translations="@input.FreeFormFieldDescriptionTranslations"
-                           TranslationsChanged="@((Dictionary<string, string> trans) => input.FreeFormFieldDescriptionTranslations = trans)"
+                           Field="@input.FreeFormFieldDescriptionField"
+                           FieldChanged="@((MultilingualField f) => input.FreeFormFieldDescriptionField = f)"
                            SelectedCultureOverride="@SelectedCulture"
                            SelectedCultureOverrideChanged="@((string culture) => { })" />
     }
@@ -92,6 +88,9 @@
 
     [Parameter]
     public string SelectedCulture { get; set; } = "en-US";
+
+    [Parameter]
+    public string PrimaryLanguage { get; set; } = "en-US";
 
     protected override void OnInitialized()
     {
@@ -147,25 +146,47 @@
     public class DraftInput
     {
         public required Guid DraftId { get; set; }
-        public required string Name { get; set; }
+        public MultilingualField NameField { get; set; } = new();
         public bool HasFreeFormField { get; set; }
-        public string? FreeFormFieldDescription { get; set; }
+        public MultilingualField FreeFormFieldDescriptionField { get; set; } = new();
         public int SortOrder { get; set; }
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> FreeFormFieldDescriptionTranslations { get; set; } = new();
 
-        public static DraftInput CreateFromDependentOption(DependentMultipleChoiceOption depOption, Dictionary<string, string>? nameTranslations = null, Dictionary<string, string>? freeFormFieldDescriptionTranslations = null)
+        public static DraftInput CreateFromDependentOption(DependentMultipleChoiceOption depOption, MultilingualField? nameField = null, MultilingualField? freeFormFieldDescriptionField = null)
         {
-            return new DraftInput
+            var result = new DraftInput
             {
                 DraftId = Guid.NewGuid(),
-                Name = depOption.Name,
                 SortOrder = depOption.SortOrder,
-                FreeFormFieldDescription = depOption.FreeFormFieldDescription,
-                HasFreeFormField = depOption.HasFreeFormField,
-                NameTranslations = nameTranslations ?? new Dictionary<string, string>(),
-                FreeFormFieldDescriptionTranslations = freeFormFieldDescriptionTranslations ?? new Dictionary<string, string>()
+                HasFreeFormField = depOption.HasFreeFormField
             };
+
+            if (nameField != null)
+            {
+                result.NameField = new MultilingualField { PrimaryValue = nameField.PrimaryValue };
+                foreach (var kvp in nameField.Translations)
+                {
+                    result.NameField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.NameField.PrimaryValue = depOption.Name;
+            }
+
+            if (freeFormFieldDescriptionField != null)
+            {
+                result.FreeFormFieldDescriptionField = new MultilingualField { PrimaryValue = freeFormFieldDescriptionField.PrimaryValue };
+                foreach (var kvp in freeFormFieldDescriptionField.Translations)
+                {
+                    result.FreeFormFieldDescriptionField.Translations[kvp.Key] = kvp.Value;
+                }
+            }
+            else
+            {
+                result.FreeFormFieldDescriptionField.PrimaryValue = depOption.FreeFormFieldDescription ?? string.Empty;
+            }
+
+            return result;
         }
     }
 
@@ -173,11 +194,9 @@
     {
         public bool HasSubmitted { get; set; }
 
-        public string? Name { get; set; }
+        public MultilingualField NameField { get; set; } = new();
         public bool HasFreeFormField { get; set; }
-        public string? FreeFormFieldDescription { get; set; }
-        public Dictionary<string, string> NameTranslations { get; set; } = new();
-        public Dictionary<string, string> FreeFormFieldDescriptionTranslations { get; set; } = new();
+        public MultilingualField FreeFormFieldDescriptionField { get; set; } = new();
 
         public static Input CreateFromDraft(DraftInput? draft)
         {
@@ -193,29 +212,32 @@
 
         public void UpdateFromDraft(DraftInput draft)
         {
-            Name = draft.Name;
+            NameField = new MultilingualField { PrimaryValue = draft.NameField.PrimaryValue };
+            foreach (var kvp in draft.NameField.Translations)
+            {
+                NameField.Translations[kvp.Key] = kvp.Value;
+            }
+
             HasFreeFormField = draft.HasFreeFormField;
-            FreeFormFieldDescription = draft.FreeFormFieldDescription;
-            NameTranslations = new Dictionary<string, string>(draft.NameTranslations);
-            FreeFormFieldDescriptionTranslations = new Dictionary<string, string>(draft.FreeFormFieldDescriptionTranslations);
+
+            FreeFormFieldDescriptionField = new MultilingualField { PrimaryValue = draft.FreeFormFieldDescriptionField.PrimaryValue };
+            foreach (var kvp in draft.FreeFormFieldDescriptionField.Translations)
+            {
+                FreeFormFieldDescriptionField.Translations[kvp.Key] = kvp.Value;
+            }
         }
 
         public void Trim()
         {
-            Name = Name?.Trim();
-
-            FreeFormFieldDescription = string.IsNullOrWhiteSpace(FreeFormFieldDescription)
-                ? null
-                : FreeFormFieldDescription.Trim();
+            NameField.PrimaryValue = NameField.PrimaryValue?.Trim() ?? string.Empty;
+            FreeFormFieldDescriptionField.PrimaryValue = FreeFormFieldDescriptionField.PrimaryValue?.Trim() ?? string.Empty;
         }
 
         public void Clear()
         {
-            Name = null;
+            NameField.Clear();
             HasFreeFormField = false;
-            FreeFormFieldDescription = null;
-            NameTranslations.Clear();
-            FreeFormFieldDescriptionTranslations.Clear();
+            FreeFormFieldDescriptionField.Clear();
         }
     }
 
@@ -225,7 +247,7 @@
         {
             When(input => input.HasSubmitted, () =>
             {
-                RuleFor(p => p.Name).NotEmpty().WithMessage("Dependent option name is required");
+                RuleFor(p => p.NameField.PrimaryValue).NotEmpty().WithMessage("Dependent option name is required");
             });
         }
     }
