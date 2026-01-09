@@ -79,59 +79,59 @@ app.use(helmet({
 
 const DEFAULT_DEV_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 const DEFAULT_PROD_ORIGINS = [
-    'https://pilatesmermaid.com',
-    'https://www.pilatesmermaid.com',
-    // 👇 IMPORTANT: allow the Railway app host too
-    'https://pilates-mermaid-production.up.railway.app'
+  'https://pilatesmermaid.com',
+  'https://www.pilatesmermaid.com',
+  // 👇 IMPORTANT: allow the Railway app host too
+  'https://pilates-mermaid-production.up.railway.app'
 ]
 
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, server-to-server)
-        if (!origin) {
-            return callback(null, true)
-        }
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    if (!origin) {
+      return callback(null, true)
+    }
 
-        const allowedFromEnv = process.env.CORS_ORIGIN
-            ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-            : null
+    const allowedFromEnv = process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : null
 
-        const allowedOrigins = allowedFromEnv || (
-            process.env.NODE_ENV === 'production'
-                ? DEFAULT_PROD_ORIGINS
-                : DEFAULT_DEV_ORIGINS
-        )
+    const allowedOrigins = allowedFromEnv || (
+      process.env.NODE_ENV === 'production'
+        ? DEFAULT_PROD_ORIGINS
+        : DEFAULT_DEV_ORIGINS
+    )
 
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true)
-        }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true)
+    }
 
-        // In production, if CORS_ORIGIN is not set, be more permissive
-        // This allows custom domains to work without explicit configuration
-        // Since Express serves both frontend and API on the same port, same-origin requests should always work
-        if (process.env.NODE_ENV === 'production' && !allowedFromEnv) {
-            console.warn('[CORS] Allowing origin in production (CORS_ORIGIN not set):', origin)
-            return callback(null, true)
-        }
+    // In production, if CORS_ORIGIN is not set, be more permissive
+    // This allows custom domains to work without explicit configuration
+    // Since Express serves both frontend and API on the same port, same-origin requests should always work
+    if (process.env.NODE_ENV === 'production' && !allowedFromEnv) {
+      console.warn('[CORS] Allowing origin in production (CORS_ORIGIN not set):', origin)
+      return callback(null, true)
+    }
 
-        // In non-prod, be permissive so you don't lock yourself out while testing
-        if (process.env.NODE_ENV !== 'production') {
-            console.warn('[CORS] Temporarily allowing unknown origin in non-prod:', origin)
-            return callback(null, true)
-        }
+    // In non-prod, be permissive so you don't lock yourself out while testing
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[CORS] Temporarily allowing unknown origin in non-prod:', origin)
+      return callback(null, true)
+    }
 
-        // Prod with explicit CORS_ORIGIN: log and reject
-        SecurityService.logSecurityEvent('UNAUTHORIZED_ORIGIN', {
-            origin,
-            ip: SecurityService.getClientIP({ headers: { origin }, ip: origin })
-        })
-        return callback(new Error('Not allowed by CORS'))
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: [],
-    maxAge: 86400 // 24 hours
+    // Prod with explicit CORS_ORIGIN: log and reject
+    SecurityService.logSecurityEvent('UNAUTHORIZED_ORIGIN', {
+      origin,
+      ip: SecurityService.getClientIP({ headers: { origin }, ip: origin })
+    })
+    return callback(new Error('Not allowed by CORS'))
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: [],
+  maxAge: 86400 // 24 hours
 }))
 
 // Request logging middleware (development only)
@@ -191,7 +191,7 @@ const loginRateLimit = createRateLimit({
       ip: clientIP,
       userAgent: req.get('user-agent')
     })
-    
+
     res.status(429).json({
       success: false,
       message: 'Demasiados intentos de login. Por favor, intenta de nuevo en 15 minutos.'
@@ -220,7 +220,7 @@ const registerRateLimit = createRateLimit({
       ip: clientIP,
       userAgent: req.get('user-agent')
     })
-    
+
     // NO bloquear IP para registro - solo mostrar mensaje
     res.status(429).json({
       success: false,
@@ -303,12 +303,12 @@ app.use('/api/', limiter)
 */
 
 // Body parsing middleware with size limits
-app.use(express.json({ 
+app.use(express.json({
   limit: '1mb', // Reduced from 10mb for security
   strict: true,
   type: 'application/json'
 }))
-app.use(express.urlencoded({ 
+app.use(express.urlencoded({
   extended: false, // Changed to false for security (no nested objects)
   limit: '1mb',
   parameterLimit: 50 // Limit number of parameters
@@ -317,7 +317,7 @@ app.use(express.urlencoded({
 // IP blocking check middleware - NO bloquear rutas de registro/login
 app.use((req, res, next) => {
   const clientIP = SecurityService.getClientIP(req)
-  
+
   // NO bloquear IPs en rutas de registro o login - permitir que los usuarios se registren
   // Solo verificar bloqueo para otras rutas sensibles
   if (req.path !== '/api/auth/register' && req.path !== '/api/auth/login') {
@@ -333,7 +333,7 @@ app.use((req, res, next) => {
       })
     }
   }
-  
+
   next()
 })
 
@@ -370,7 +370,7 @@ app.use((req, res, next) => {
     }
     return next()
   }
-  
+
   // Full sanitization for other endpoints
   if (req.body && typeof req.body === 'object') {
     try {
@@ -387,7 +387,7 @@ app.use((req, res, next) => {
       })
     }
   }
-  
+
   // Sanitize query parameters
   if (req.query && typeof req.query === 'object') {
     try {
@@ -404,7 +404,7 @@ app.use((req, res, next) => {
       })
     }
   }
-  
+
   next()
 })
 
@@ -412,12 +412,12 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const clientIP = SecurityService.getClientIP(req)
   const timestamp = new Date().toISOString()
-  
+
   // Log all requests for security monitoring
   if (process.env.NODE_ENV === 'production' || req.path.includes('/api/auth')) {
     console.log(`${timestamp} - ${req.method} ${req.path} - IP: ${clientIP}`)
   }
-  
+
   next()
 })
 
@@ -510,9 +510,9 @@ app.post('/api/auth/register', preserveOriginalEmail, [
         referer: req.get('referer')
       })
     }
-    
+
     const clientIP = SecurityService.getClientIP(req)
-    
+
     // Validate inputs with express-validator
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -520,13 +520,13 @@ app.post('/api/auth/register', preserveOriginalEmail, [
         field: err.param || err.path,
         message: err.msg
       }))
-      
+
       SecurityService.logSecurityEvent('VALIDATION_ERROR', {
         path: req.path,
         errors: errorMessages,
         ip: clientIP
       })
-      
+
       return res.status(400).json({
         success: false,
         message: 'Datos de entrada inválidos',
@@ -535,14 +535,14 @@ app.post('/api/auth/register', preserveOriginalEmail, [
     }
 
     let { nombre, numero_de_telefono, password, role, type_of_class = 'Sin paquete', instagram, cumpleanos, lesion_o_limitacion_fisica, genero } = req.body
-    
+
     // CRITICAL: Use original email preserved before validation middleware
     let correo = req.originalEmail ? req.originalEmail.trim() : (req.body.correo ? String(req.body.correo).trim() : '')
 
     // Check role assignments from JSON file
     const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
     let assignedRole = 'cliente' // Default role
-    
+
     try {
       if (fs.existsSync(roleAssignmentsPath)) {
         const roleData = JSON.parse(fs.readFileSync(roleAssignmentsPath, 'utf8'))
@@ -555,7 +555,7 @@ app.post('/api/auth/register', preserveOriginalEmail, [
       console.error('Error reading role assignments:', error)
       // Continue with default 'cliente' role if file read fails
     }
-    
+
     // Use assigned role from JSON file, or default to 'cliente'
     role = assignedRole
 
@@ -670,7 +670,7 @@ app.post('/api/auth/register', preserveOriginalEmail, [
     }
 
     const user = await database.createUser(userData)
-    
+
     // Log successful registration
     SecurityService.logSecurityEvent('USER_REGISTERED', {
       userId: user.id,
@@ -711,7 +711,7 @@ app.post('/api/auth/register', preserveOriginalEmail, [
       'referer': req.get('referer'),
       'user-agent': req.get('user-agent')
     })
-    
+
     const clientIP = SecurityService.getClientIP(req)
     SecurityService.logSecurityEvent('REGISTRATION_ERROR', {
       error: error.message,
@@ -720,18 +720,18 @@ app.post('/api/auth/register', preserveOriginalEmail, [
       path: req.path,
       method: req.method
     })
-    
+
     // In development, return more detailed error information
     const errorResponse = {
       success: false,
       message: 'Error interno del servidor al registrar el usuario'
     }
-    
+
     if (process.env.NODE_ENV !== 'production') {
       errorResponse.error = error.message
       errorResponse.stack = error.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines of stack
     }
-    
+
     res.status(500).json(errorResponse)
   }
 })
@@ -751,7 +751,7 @@ app.post('/api/auth/login', preserveOriginalEmail, [
 ], async (req, res) => {
   try {
     const clientIP = SecurityService.getClientIP(req)
-    
+
     // Validate inputs
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -806,12 +806,12 @@ app.post('/api/auth/login', preserveOriginalEmail, [
         reason: 'invalid_password',
         ip: clientIP
       })
-      
+
       // Block IP after multiple failed attempts
       const failedAttempts = SecurityService.failedLoginAttempts || new Map()
       const userKey = `${user.id}_${clientIP}`
       const attempts = failedAttempts.get(userKey) || 0
-      
+
       if (attempts >= 5) {
         SecurityService.blockIP(clientIP, 60 * 60 * 1000) // 1 hour
         SecurityService.logSecurityEvent('IP_BLOCKED_FROM_LOGIN', {
@@ -825,10 +825,10 @@ app.post('/api/auth/login', preserveOriginalEmail, [
           message: 'Demasiados intentos fallidos. Tu IP ha sido bloqueada temporalmente.'
         })
       }
-      
+
       failedAttempts.set(userKey, attempts + 1)
       SecurityService.failedLoginAttempts = failedAttempts
-      
+
       return res.status(401).json({
         success: false,
         message: 'Credenciales inválidas'
@@ -904,7 +904,7 @@ app.get('/api/auth/verify', requireAuth, async (req, res) => {
 
     // Get fresh user data from database
     const freshUser = await database.getUserById(user.id)
-    
+
     if (!freshUser) {
       SecurityService.logSecurityEvent('VERIFY_TOKEN_USER_NOT_FOUND', {
         userId: user.id,
@@ -939,7 +939,7 @@ app.get('/api/auth/verify', requireAuth, async (req, res) => {
       success: true,
       user: safeUser
     }
-    
+
     // Include new token if one was generated (for expired tokens)
     if (newToken) {
       response.token = newToken
@@ -977,7 +977,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
   try {
     const clientIP = SecurityService.getClientIP(req)
     const errors = validationResult(req)
-    
+
     if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
@@ -997,7 +997,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
 
     // Find user by email
     const user = await database.getUserByEmail(correo)
-    
+
     // Don't reveal if user exists (security best practice)
     if (!user) {
       // Log attempt for non-existent user
@@ -1006,7 +1006,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         reason: 'user_not_found',
         ip: clientIP
       })
-      
+
       // Return success even if user doesn't exist (security)
       return res.json({
         success: true,
@@ -1025,7 +1025,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
       VALUES (?, ?, ?, ?, 0, datetime('now'))
     `, [tokenId, user.id, resetToken, expiresAt.toISOString()])
 
-      // Send password reset email with timeout
+    // Send password reset email with timeout
     try {
       // Log email configuration status (without exposing sensitive data)
       const emailProvider = process.env.EMAIL_PROVIDER || 'gmail'
@@ -1040,12 +1040,12 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
 
       // Add overall timeout for the email operation (25 seconds to be under the 30s frontend timeout)
       const emailPromise = emailService.sendPasswordReset(user.correo, user.nombre, resetToken)
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Email operation timeout')), 25000)
       )
 
       const emailResult = await Promise.race([emailPromise, timeoutPromise])
-      
+
       if (!emailResult || !emailResult.success) {
         const errorMessage = emailResult?.error || 'Unknown error'
         console.error('[Password Reset] Email service returned failure:', errorMessage)
@@ -1054,10 +1054,10 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
           error: errorMessage,
           hasResult: !!emailResult
         })
-        
+
         // Delete token if email fails
         await database.run('DELETE FROM password_reset_tokens WHERE id = ?', [tokenId])
-        
+
         // Log email failure
         SecurityService.logSecurityEvent('PASSWORD_RESET_EMAIL_FAILED', {
           userId: user.id,
@@ -1065,7 +1065,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
           error: errorMessage,
           ip: clientIP
         })
-        
+
         // Return more specific error message
         let userFacingMessage = 'Error al enviar el email de recuperación.'
         if (errorMessage.includes('not configured') || errorMessage.includes('environment variables')) {
@@ -1077,20 +1077,20 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         } else if (errorMessage.includes('connection') || errorMessage.includes('ECONNREFUSED')) {
           userFacingMessage = 'No se pudo conectar al servidor de correo. Verifica la configuración de red.'
         }
-        
+
         return res.status(500).json({
           success: false,
           message: userFacingMessage
         })
       }
-      
+
       // Log successful password reset request
       SecurityService.logSecurityEvent('PASSWORD_RESET_REQUESTED', {
         userId: user.id,
         email: user.correo,
         ip: clientIP
       })
-      
+
       res.json({
         success: true,
         message: 'Si el email existe, recibirás un enlace para restablecer tu contraseña'
@@ -1099,7 +1099,7 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
       console.error('Error sending password reset email:', emailError)
       // Delete token if email fails
       await database.run('DELETE FROM password_reset_tokens WHERE id = ?', [tokenId])
-      
+
       // Log email error
       SecurityService.logSecurityEvent('PASSWORD_RESET_EMAIL_ERROR', {
         userId: user.id,
@@ -1107,24 +1107,24 @@ app.post('/api/auth/forgot-password', preserveOriginalEmail, [
         error: emailError.message,
         ip: clientIP
       })
-      
-        // Check if it's a timeout or connection error
-        const isTimeout = emailError.message && (emailError.message.includes('timeout') || emailError.message.includes('ETIMEDOUT') || emailError.message.includes('ECONNREFUSED'))
-        const isConnectionError = emailError.code === 'ETIMEDOUT' || emailError.code === 'ECONNREFUSED' || emailError.code === 'ECONNRESET'
-        
-        console.error('[Password Reset] Connection error details:', {
-          code: emailError.code,
-          message: emailError.message,
-          isTimeout,
-          isConnectionError
-        })
-        
-        res.status(500).json({
-          success: false,
-          message: isTimeout || isConnectionError
-            ? 'No se pudo conectar al servidor de correo. Railway puede estar bloqueando conexiones SMTP. Considera usar SendGrid o Mailgun en su lugar.'
-            : 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
-        })
+
+      // Check if it's a timeout or connection error
+      const isTimeout = emailError.message && (emailError.message.includes('timeout') || emailError.message.includes('ETIMEDOUT') || emailError.message.includes('ECONNREFUSED'))
+      const isConnectionError = emailError.code === 'ETIMEDOUT' || emailError.code === 'ECONNREFUSED' || emailError.code === 'ECONNRESET'
+
+      console.error('[Password Reset] Connection error details:', {
+        code: emailError.code,
+        message: emailError.message,
+        isTimeout,
+        isConnectionError
+      })
+
+      res.status(500).json({
+        success: false,
+        message: isTimeout || isConnectionError
+          ? 'No se pudo conectar al servidor de correo. Railway puede estar bloqueando conexiones SMTP. Considera usar SendGrid o Mailgun en su lugar.'
+          : 'Error al enviar el email de recuperación. Por favor, intenta de nuevo más tarde.'
+      })
     }
   } catch (error) {
     console.error('Forgot password error:', error)
@@ -1157,7 +1157,7 @@ app.post('/api/auth/reset-password', preserveOriginalEmail, [
   try {
     const clientIP = SecurityService.getClientIP(req)
     const errors = validationResult(req)
-    
+
     if (!errors.isEmpty()) {
       return res.status(400).json({
         success: false,
@@ -1289,7 +1289,7 @@ app.get('/api/users', requireAuth, requireRole(['admin', 'coach']), async (req, 
   try {
     const { role } = req.query
     const users = await database.getAllUsers(role)
-    
+
     // Remove sensitive data
     const safeUsers = users.map(user => ({
       id: user.id,
@@ -1327,16 +1327,16 @@ app.get('/api/users/clients', requireAuth, requireRole(['admin', 'coach']), asyn
     // Fetch all users with role 'cliente' (case-insensitive matching)
     const allUsers = await database.all('SELECT * FROM users ORDER BY created_at DESC', [])
     const clients = allUsers.filter(user => user.role && user.role.toLowerCase() === 'cliente')
-    
+
     console.log(`📋 [GET /api/users/clients] Found ${clients.length} clients out of ${allUsers.length} total users`)
-    
+
     // Fetch active packages for each client
     const clientsWithPackages = await Promise.all(clients.map(async (client) => {
       // Get active group package
       const activeGroupPackage = await database.getActivePackageByUser(client.id, 'Grupal')
       // Get active private package
       const activePrivatePackage = await database.getActivePackageByUser(client.id, 'Privada')
-      
+
       // Remove sensitive data
       return {
         id: client.id,
@@ -1518,7 +1518,7 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
   try {
     const clientIP = SecurityService.getClientIP(req)
     const { id } = req.params
-    
+
     // Validate UUID
     if (!SecurityService.validateUUID(id)) {
       SecurityService.logSecurityEvent('INVALID_UUID_ATTEMPT', {
@@ -1531,11 +1531,11 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
         message: 'ID de usuario inválido'
       })
     }
-    
+
     // Check if user is admin OR updating themselves
     const isAdmin = req.user.role === 'admin'
     const isUpdatingSelf = req.user.id === id
-    
+
     if (!isAdmin && !isUpdatingSelf) {
       SecurityService.logSecurityEvent('UNAUTHORIZED_USER_UPDATE_ATTEMPT', {
         userId: req.user.id,
@@ -1548,13 +1548,13 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
         message: 'No tienes permisos para actualizar este usuario'
       })
     }
-    
+
     // Log incoming request
     console.log('📥 [UPDATE USER] Incoming request body:', JSON.stringify(req.body, null, 2))
     console.log('📥 [UPDATE USER] Original email from middleware:', req.originalEmail)
-    
+
     let updates = { ...req.body }
-    
+
     // CRITICAL: Preserve original email format if updating email (use preserved value)
     // Always use preserved email if available, otherwise use from body
     if (req.originalEmail) {
@@ -1564,13 +1564,13 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
       updates.correo = String(updates.correo).trim()
       console.log('🔍 [UPDATE USER] Using email from request body:', updates.correo)
     }
-    
+
     // Ensure email is not empty if it was provided
     if (updates.correo === '') {
       delete updates.correo
       console.log('⚠️ [UPDATE USER] Email was empty string, removing from updates')
     }
-    
+
     console.log('📦 [UPDATE USER] Updates object after email processing:', JSON.stringify(updates, null, 2))
 
     // Get target user once at the beginning (needed for multiple validations)
@@ -1581,9 +1581,9 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
         message: 'Usuario no encontrado'
       })
     }
-    
+
     console.log('👤 [UPDATE USER] Target user loaded:', targetUser.id, 'Current email:', targetUser.correo)
-    
+
     // Prevent role escalation - Only admin can change roles, and only to valid roles
     if (updates.role) {
       // Non-admin users cannot change roles at all (including their own)
@@ -1612,7 +1612,7 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
             message: 'Rol inválido'
           })
         }
-        
+
         // Prevent changing own role (even admins)
         if (req.user.id === id && updates.role !== targetUser.role) {
           SecurityService.logSecurityEvent('SELF_ROLE_CHANGE_ATTEMPT', {
@@ -1625,7 +1625,7 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
             message: 'No puedes cambiar tu propio rol'
           })
         }
-        
+
         // Log role changes
         if (updates.role !== targetUser.role) {
           SecurityService.logSecurityEvent('ROLE_CHANGED', {
@@ -1729,11 +1729,11 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
         }
         return lower
       }
-      
+
       const currentEmailNormalized = normalizeEmailForComparison(targetUser.correo)
       const newEmailNormalized = normalizeEmailForComparison(updates.correo)
       const emailIsChanging = currentEmailNormalized !== newEmailNormalized
-      
+
       console.log('📧 [UPDATE USER] Email comparison:', {
         current: targetUser.correo,
         currentNormalized: currentEmailNormalized,
@@ -1742,19 +1742,19 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
         isChanging: emailIsChanging,
         updatingSelf: req.user.id === id
       })
-      
+
       if (emailIsChanging) {
         // Email is actually changing to a different email account
         // Check for duplicates using normalized comparison
         const allUsers = await database.all('SELECT id, correo FROM users', [])
-        
+
         // Check if any other user (not the current user) has the same normalized email
         const duplicateUser = allUsers.find(u => {
           if (u.id === id) return false // Skip current user
           const existingNormalized = normalizeEmailForComparison(u.correo)
           return existingNormalized === newEmailNormalized
         })
-        
+
         if (duplicateUser) {
           console.log('❌ [UPDATE USER] Duplicate email detected:', {
             duplicateUserId: duplicateUser.id,
@@ -1775,31 +1775,31 @@ app.put('/api/users/:id', requireAuth, preserveOriginalEmail, async (req, res) =
         console.log('ℹ️ [UPDATE USER] Email format update (same email account, different format). Preserving exact format:', updates.correo)
       }
     }
-    
+
     // Ensure email is in updates if it was provided
     if (!updates.correo && req.originalEmail) {
       console.log('⚠️ [UPDATE USER] Email was in request but missing from updates, adding it back')
       updates.correo = req.originalEmail.trim()
     }
-    
+
     // Final check: ensure email field exists and is not empty
     if (updates.correo) {
       console.log('✅ [UPDATE USER] Email confirmed in updates object:', updates.correo)
     } else {
       console.log('⚠️ [UPDATE USER] No email in updates object')
     }
-    
+
     console.log('💾 [UPDATE USER] Final updates object before save:', JSON.stringify(updates, null, 2))
     console.log('💾 [UPDATE USER] Fields to update:', Object.keys(updates).filter(k => k !== 'id' && k !== 'historial_de_clases'))
     const updatedUser = await database.updateUser(id, updates)
-    
+
     if (!updatedUser) {
       return res.status(404).json({
         success: false,
         message: 'Usuario no encontrado'
       })
     }
-    
+
     console.log('✅ [UPDATE USER] User updated successfully. New email:', updatedUser.correo)
 
     // Remove sensitive data
@@ -1873,8 +1873,8 @@ app.delete('/api/users/:id', requireAuth, requireRole(['admin', 'coach']), async
       await database.run('DELETE FROM payment_history WHERE user_id = ?', [userId])
       await database.run('DELETE FROM notification_settings WHERE user_id = ?', [userId])
       // Optional tables – ignore errors if they don't exist
-      await database.run('DELETE FROM notification_log WHERE user_id = ?', [userId]).catch(() => {})
-      await database.run('DELETE FROM private_class_requests WHERE user_id = ?', [userId]).catch(() => {})
+      await database.run('DELETE FROM notification_log WHERE user_id = ?', [userId]).catch(() => { })
+      await database.run('DELETE FROM private_class_requests WHERE user_id = ?', [userId]).catch(() => { })
     } catch (cleanupError) {
       console.error('Error cleaning up user-related data:', cleanupError)
       // Continue with user deletion even if some cleanup fails
@@ -1903,7 +1903,7 @@ app.post('/api/whatsapp/generate-url', [
   try {
     const { message } = req.body
     const url = WhatsAppService.generateWhatsAppUrl(message)
-    
+
     res.json({
       success: true,
       url
@@ -1923,18 +1923,18 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
     const users = await database.getAllUsers()
     const clients = users.filter(u => u.role === 'cliente')
     const coaches = users.filter(u => u.role === 'coach')
-    
+
     // Get total classes (scheduled)
     const classes = await database.all("SELECT COUNT(*) as count FROM classes WHERE status = 'scheduled'")
     const totalClasses = classes[0]?.count || 0
-    
+
     // Get revenue for current month
     const today = new Date()
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     const firstDayStr = firstDayOfMonth.toISOString().split('T')[0]
     const lastDayStr = lastDayOfMonth.toISOString().split('T')[0]
-    
+
     const payments = await database.all(`
       SELECT SUM(amount) as total FROM payments 
       WHERE type = 'income' 
@@ -1942,29 +1942,29 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
         AND date BETWEEN ? AND ?
     `, [firstDayStr, lastDayStr])
     const totalRevenue = payments[0]?.total || 0
-    
+
     // Get upcoming birthdays (next 30 days)
     const upcomingBirthdays = []
     for (const client of clients) {
       if (!client.cumpleanos) continue
-      
+
       try {
         const birthday = new Date(client.cumpleanos)
         const currentYear = today.getFullYear()
         const currentMonth = today.getMonth()
         const currentDate = today.getDate()
-        
+
         // Set birthday to current year
         birthday.setFullYear(currentYear)
-        
+
         // If birthday already passed this year, set to next year
         if (birthday < today) {
           birthday.setFullYear(currentYear + 1)
         }
-        
+
         // Calculate days until birthday
         const daysUntil = Math.ceil((birthday - today) / (1000 * 60 * 60 * 24))
-        
+
         // Include birthdays within next 30 days
         if (daysUntil >= 0 && daysUntil <= 30) {
           upcomingBirthdays.push({
@@ -1980,13 +1980,13 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
         console.error(`Error processing birthday for ${client.nombre}:`, error)
       }
     }
-    
+
     // Sort by days until birthday
     upcomingBirthdays.sort((a, b) => a.daysUntil - b.daysUntil)
-    
+
     // Get recent activity (last 10 activities)
     const recentActivity = []
-    
+
     // Recent clients (last 7 days)
     const recentClients = await database.all(`
       SELECT id, nombre, correo, created_at, 'client_registered' as type
@@ -1996,7 +1996,7 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
       ORDER BY created_at DESC
       LIMIT 5
     `)
-    
+
     for (const client of recentClients) {
       const createdDate = new Date(client.created_at)
       const hoursAgo = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60))
@@ -2009,7 +2009,7 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
         timestamp: client.created_at
       })
     }
-    
+
     // Recent bookings (last 7 days)
     const recentBookings = await database.all(`
       SELECT b.id, b.created_at, u.nombre as client_name, c.title as class_title, c.date, c.time
@@ -2021,7 +2021,7 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
       ORDER BY b.created_at DESC
       LIMIT 5
     `)
-    
+
     for (const booking of recentBookings) {
       const createdDate = new Date(booking.created_at)
       const hoursAgo = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60))
@@ -2034,7 +2034,7 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
         timestamp: booking.created_at
       })
     }
-    
+
     // Recent payments (last 7 days)
     const recentPayments = await database.all(`
       SELECT id, concept, amount, type, method, date, created_at
@@ -2044,7 +2044,7 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
       ORDER BY created_at DESC
       LIMIT 5
     `)
-    
+
     for (const payment of recentPayments) {
       const createdDate = new Date(payment.created_at)
       const hoursAgo = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60))
@@ -2057,10 +2057,10 @@ app.get('/api/dashboard/stats', requireAuth, requireRole(['admin', 'coach']), as
         timestamp: payment.created_at
       })
     }
-    
+
     // Sort all activities by timestamp (most recent first)
     recentActivity.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    
+
     // Get classes for current month only (for dashboard display) - reuse variables from above
     const monthlyClasses = await database.all(`
       SELECT COUNT(*) as count FROM classes 
@@ -2098,12 +2098,12 @@ app.get('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coach
   try {
     const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
     const dataDir = path.dirname(roleAssignmentsPath)
-    
+
     // Ensure data directory exists
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true })
     }
-    
+
     if (!fs.existsSync(roleAssignmentsPath)) {
       // Create default file if it doesn't exist
       const defaultData = { assignments: [] }
@@ -2124,11 +2124,11 @@ app.get('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coach
       roleData = { assignments: [] }
       fs.writeFileSync(roleAssignmentsPath, JSON.stringify(roleData, null, 2), 'utf8')
     }
-    
+
     if (!Array.isArray(roleData.assignments)) {
       roleData.assignments = []
     }
-    
+
     res.json({
       success: true,
       assignments: roleData.assignments || []
@@ -2173,10 +2173,10 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
     }
 
     let { role } = req.body
-    
+
     // CRITICAL: Use original email preserved before validation middleware
     let email = req.originalEmail ? req.originalEmail.trim() : (req.body.email ? String(req.body.email).trim() : '')
-    
+
     // Validate user is authenticated
     if (!req.user) {
       console.error('User not authenticated - req.user is:', req.user)
@@ -2185,10 +2185,10 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
         message: 'Usuario no autenticado'
       })
     }
-    
+
     // Get user email - check both email and correo properties
     const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
-    
+
     if (!userEmail) {
       console.error('User object missing email property. User object:', JSON.stringify(req.user, null, 2))
       console.error('User object keys:', Object.keys(req.user))
@@ -2197,12 +2197,12 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
         message: 'Información de usuario incompleta'
       })
     }
-    
+
     // Preserve email as-is (just trim whitespace, preserve periods and original case structure)
     email = email ? email.trim() : ''
     const protectedEmail = 'pilatesmermaidweb@gmail.com'
     const emailLower = email.toLowerCase()
-    
+
     // Validate email is provided
     if (!email || !emailLower) {
       return res.status(400).json({
@@ -2210,7 +2210,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
         message: 'Email es requerido'
       })
     }
-    
+
     // Check if trying to modify protected email
     if (emailLower === protectedEmail.toLowerCase()) {
       return res.status(403).json({
@@ -2218,7 +2218,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
         message: 'No se puede modificar el email principal del sistema'
       })
     }
-    
+
     // Check if trying to modify own email
     if (emailLower === userEmail) {
       return res.status(403).json({
@@ -2229,12 +2229,12 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
 
     const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
     const dataDir = path.dirname(roleAssignmentsPath)
-    
+
     // Ensure data directory exists
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true })
     }
-    
+
     // Read existing assignments
     let roleData = { assignments: [] }
     if (fs.existsSync(roleAssignmentsPath)) {
@@ -2264,7 +2264,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
       // Check if existing assignment is protected
       const existingAssignment = roleData.assignments[existingIndex]
       if (existingAssignment.email.toLowerCase() === protectedEmail.toLowerCase() ||
-          existingAssignment.email.toLowerCase() === userEmail) {
+        existingAssignment.email.toLowerCase() === userEmail) {
         return res.status(403).json({
           success: false,
           message: 'No se puede modificar este email'
@@ -2324,7 +2324,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
     console.error('Error type:', typeof error)
     console.error('Error is null?', error === null)
     console.error('Error is undefined?', error === undefined)
-    
+
     if (error) {
       console.error('Error message:', error.message)
       console.error('Error name:', error.name)
@@ -2334,13 +2334,13 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
       console.error('ERROR OBJECT IS NULL OR UNDEFINED!')
     }
     console.error('=================================================')
-    
+
     // Always include error details - convert error to string safely
     let errorMessage = 'Unknown error'
     let errorType = 'Error'
     let errorCode = 'NO_CODE'
     let errorStack = undefined
-    
+
     if (error) {
       try {
         errorMessage = error.message || String(error) || JSON.stringify(error) || 'Unknown error'
@@ -2354,7 +2354,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
     } else {
       errorMessage = 'Error object is null or undefined'
     }
-    
+
     const errorResponse = {
       success: false,
       message: 'Error al guardar asignación de rol',
@@ -2362,7 +2362,7 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
       errorType: errorType,
       errorCode: errorCode
     }
-    
+
     // Add full error info in development/non-production
     if (process.env.NODE_ENV !== 'production') {
       if (errorStack) {
@@ -2379,9 +2379,9 @@ app.post('/api/admin/role-assignments', requireAuth, requireRole(['admin', 'coac
         }
       }
     }
-    
+
     console.log('Sending error response:', JSON.stringify(errorResponse, null, 2))
-    
+
     // Make sure response hasn't been sent yet
     if (!res.headersSent) {
       res.status(500).json(errorResponse)
@@ -2409,7 +2409,7 @@ app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin',
     const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
     const protectedEmail = 'pilatesmermaidweb@gmail.com'
     const emailLower = email.toLowerCase()
-    
+
     // Prevent changing role of protected email or self
     if (emailLower === protectedEmail.toLowerCase() || emailLower === userEmail) {
       return res.status(403).json({
@@ -2417,9 +2417,9 @@ app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin',
         message: 'No puedes modificar el rol de este email'
       })
     }
-    
+
     const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
-    
+
     if (!fs.existsSync(roleAssignmentsPath)) {
       return res.status(404).json({
         success: false,
@@ -2428,21 +2428,21 @@ app.put('/api/admin/role-assignments/:email', requireAuth, requireRole(['admin',
     }
 
     const roleData = JSON.parse(fs.readFileSync(roleAssignmentsPath, 'utf8'))
-    
+
     // Find and update assignment
     const assignmentIndex = roleData.assignments.findIndex(
       (a) => a.email.toLowerCase() === emailLower
     )
-    
+
     if (assignmentIndex === -1) {
       return res.status(404).json({
         success: false,
         message: 'Asignación no encontrada'
       })
     }
-    
+
     roleData.assignments[assignmentIndex].role = role
-    
+
     // Write back to file
     fs.writeFileSync(roleAssignmentsPath, JSON.stringify(roleData, null, 2), 'utf8')
 
@@ -2481,7 +2481,7 @@ app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admi
     const userEmail = (req.user.email || req.user.correo || req.user._user?.correo)?.toLowerCase()
     const protectedEmail = 'pilatesmermaidweb@gmail.com'
     const emailLower = email.toLowerCase()
-    
+
     // Prevent deletion of protected email
     if (emailLower === protectedEmail.toLowerCase()) {
       return res.status(403).json({
@@ -2489,7 +2489,7 @@ app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admi
         message: 'No se puede eliminar el email principal del sistema'
       })
     }
-    
+
     // Prevent deletion of own email
     if (emailLower === userEmail) {
       return res.status(403).json({
@@ -2497,9 +2497,9 @@ app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admi
         message: 'No puedes eliminar tu propio email'
       })
     }
-    
+
     const roleAssignmentsPath = path.join(__dirname, '..', 'data', 'role-assignments.json')
-    
+
     if (!fs.existsSync(roleAssignmentsPath)) {
       return res.status(404).json({
         success: false,
@@ -2508,7 +2508,7 @@ app.delete('/api/admin/role-assignments/:email', requireAuth, requireRole(['admi
     }
 
     const roleData = JSON.parse(fs.readFileSync(roleAssignmentsPath, 'utf8'))
-    
+
     // Remove assignment
     roleData.assignments = roleData.assignments.filter(
       (a) => a.email.toLowerCase() !== emailLower
@@ -2545,14 +2545,14 @@ app.get('/api/packages', requireAuth, async (req, res) => {
   try {
     const user = req.user
     const isAdmin = user.role === 'admin'
-    
+
     // Return all packages - let the frontend filter based on is_active for clients
     let packages = await database.getPackages({
       includeInactive: true,   // Include all packages
       includeScheduled: true,  // Include scheduled packages
       onlyLive: false,         // Don't filter by is_live
     })
-    
+
     // Process scheduled/expired packages: activate those past live_from, deactivate and clear dates for expired live_until
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
@@ -2593,12 +2593,12 @@ app.get('/api/packages', requireAuth, async (req, res) => {
 
       // Only include if still active after cleanup
       // Handle SQLite returning 0/1 as numbers, booleans, or strings ('1', 'true', 'false', etc.)
-      const isActive = pkg.is_active === 1 || 
-                       pkg.is_active === true || 
-                       pkg.is_active === '1' || 
-                       pkg.is_active === 'true' ||
-                       (typeof pkg.is_active === 'string' && pkg.is_active.toLowerCase() === 'true') ||
-                       Number(pkg.is_active) === 1
+      const isActive = pkg.is_active === 1 ||
+        pkg.is_active === true ||
+        pkg.is_active === '1' ||
+        pkg.is_active === 'true' ||
+        (typeof pkg.is_active === 'string' && pkg.is_active.toLowerCase() === 'true') ||
+        Number(pkg.is_active) === 1
       if (isActive) {
         cleanedPackages.push(pkg)
       } else {
@@ -2625,7 +2625,7 @@ app.get('/api/packages', requireAuth, async (req, res) => {
         category: p.category
       })))
     }
-    
+
     res.json({ success: true, packages })
   } catch (error) {
     console.error('Get packages error:', error)
@@ -2647,7 +2647,7 @@ app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (r
     // Sensible fallbacks to avoid empty required fields causing 400s in production
     const finalCategory = safeCategory || 'Grupal'
     const finalType = safeType || (finalCategory === 'Privada' ? 'private' : 'group')
-    
+
     if (!safeName || !finalType || !classes_included || !price || !validity_months || !finalCategory) {
       console.error('[POST /api/packages] Missing required fields:', {
         name: !!safeName,
@@ -2659,7 +2659,7 @@ app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (r
       })
       return res.status(400).json({ success: false, message: 'Faltan datos del paquete' })
     }
-    
+
     const pkg = await database.createPackage({
       name: safeName,
       type: finalType,
@@ -2676,7 +2676,7 @@ app.post('/api/packages', requireAuth, requireRole(['admin', 'coach']), async (r
       sale_price: sale_price || null,
       is_active
     })
-    
+
     res.json({ success: true, package: pkg })
   } catch (error) {
     console.error('Create package error:', error)
@@ -2699,7 +2699,7 @@ app.put('/api/packages/:id', requireAuth, requireRole(['admin', 'coach']), async
     if (updates.description) updates.description = decodeHtmlEntities(updates.description)
     if (updates.category) updates.category = decodeHtmlEntities(updates.category)
     if (updates.type) updates.type = decodeHtmlEntities(updates.type)
-    
+
     const pkg = await database.updatePackage(id, updates)
     res.json({ success: true, package: pkg })
   } catch (error) {
@@ -2729,9 +2729,9 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
   try {
     const user = req.user
     const isAdmin = user.role === 'admin'
-    
+
     console.log('[Get Bundles] User:', user.role, 'isAdmin:', isAdmin, 'includeInactive:', isAdmin, 'onlyLive:', !isAdmin)
-    
+
     // For debugging: get all bundles first to see what exists
     const allBundles = await database.getAllPackageBundles({
       includeInactive: true,
@@ -2748,14 +2748,14 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
         live_until: b.live_until
       })))
     }
-    
+
     // Get ALL bundles from database (no filtering at DB level)
     // We'll do all filtering in JavaScript so we can see what exists
     let bundles = await database.getAllPackageBundles({
       includeInactive: true, // Get all bundles
       onlyLive: false // Don't filter by is_live
     })
-    
+
     // Process scheduled/expired bundles: activate those past live_from, deactivate and clear dates for expired live_until
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
@@ -2816,7 +2816,7 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
         })
       })
     }
-    
+
     // For clients, filter by active status and date ranges
     let filteredBundles = bundles
     if (!isAdmin) {
@@ -2828,10 +2828,10 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
           console.log('[Get Bundles] Filtered out bundle (inactive):', b.id, b.name, 'is_active:', b.is_active)
           return false
         }
-        
+
         // Check date ranges (only if set) - use local date parsing to avoid timezone issues
         const now = new Date()
-        
+
         if (b.live_from) {
           // Parse as local date (YYYY-MM-DD format)
           const [year, month, day] = b.live_from.split('-').map(Number)
@@ -2850,13 +2850,13 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
             return false
           }
         }
-        
+
         console.log('[Get Bundles] Keeping bundle:', b.id, b.name, 'is_active:', b.is_active)
         return true
       })
       console.log('[Get Bundles] After client filtering:', filteredBundles.length, 'bundles')
     }
-    
+
     console.log('[Get Bundles] Found', bundles.length, 'total bundles,', filteredBundles.length, 'after filtering for', user.role)
     if (bundles.length > 0) {
       console.log('[Get Bundles] Bundle details:', bundles.map(b => ({
@@ -2867,32 +2867,32 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
         category: b.category || 'unknown'
       })))
     }
-    
+
     // Add calculated savings to each bundle
     const bundlesWithSavings = filteredBundles.map(bundle => {
       // Calculate regular total based on both packages with separate months
       const groupMonthlyPrice = bundle.group_package_price || 0
       const privateMonthlyPrice = bundle.private_package_price || 0
-      
+
       // Use separate months if available, otherwise fall back to months_included
-      const groupMonths = bundle.group_months_included !== null && bundle.group_months_included !== undefined 
-        ? bundle.group_months_included 
+      const groupMonths = bundle.group_months_included !== null && bundle.group_months_included !== undefined
+        ? bundle.group_months_included
         : (bundle.months_included || 0)
-      const privateMonths = bundle.private_months_included !== null && bundle.private_months_included !== undefined 
-        ? bundle.private_months_included 
+      const privateMonths = bundle.private_months_included !== null && bundle.private_months_included !== undefined
+        ? bundle.private_months_included
         : (bundle.months_included || 0)
-      
+
       // Calculate regular total: (group price * group months) + (private price * private months)
       const groupTotal = groupMonthlyPrice * groupMonths
       const privateTotal = privateMonthlyPrice * privateMonths
       const regularTotal = groupTotal + privateTotal
-      
+
       // Combined monthly price for display (average if both exist)
       const combinedMonthlyPrice = (groupMonthlyPrice + privateMonthlyPrice) || groupMonthlyPrice || privateMonthlyPrice
-      
+
       const savings = regularTotal - bundle.price
       const percentOff = regularTotal > 0 ? Math.round((savings / regularTotal) * 100) : 0
-      
+
       return {
         ...bundle,
         regular_total: regularTotal,
@@ -2904,7 +2904,7 @@ app.get('/api/package-bundles', requireAuth, async (req, res) => {
         is_combo: !!(bundle.group_package_id && bundle.private_package_id)
       }
     })
-    
+
     res.json({ success: true, bundles: bundlesWithSavings })
   } catch (error) {
     console.error('Get bundles error:', error)
@@ -2920,12 +2920,12 @@ app.post('/api/package-bundles', requireAuth, requireRole(['admin', 'coach']), a
     // Decode any HTML entities introduced by sanitization
     const safeName = decodeHtmlEntities(name)
     const safeDescription = decodeHtmlEntities(description)
-    
+
     // Need at least one package (group, private, or legacy package_id)
     if (!name || (!package_id && !group_package_id && !private_package_id) || price === undefined) {
       return res.status(400).json({ success: false, message: 'Faltan datos del bundle. Se requiere nombre, al menos un paquete y precio.' })
     }
-    
+
     // Validate months: if group_package_id is set, group_months_included is required
     // If private_package_id is set, private_months_included is required
     // If only legacy package_id is set, months_included is required
@@ -2938,7 +2938,7 @@ app.post('/api/package-bundles', requireAuth, requireRole(['admin', 'coach']), a
     if (package_id && !group_package_id && !private_package_id && (!months_included || months_included < 1)) {
       return res.status(400).json({ success: false, message: 'Se requiere especificar cuántos meses están incluidos.' })
     }
-    
+
     // Set is_live to match is_active (they're now the same thing)
     const bundle = await database.createPackageBundle({
       name: safeName,
@@ -2955,7 +2955,7 @@ app.post('/api/package-bundles', requireAuth, requireRole(['admin', 'coach']), a
       live_until: live_until || null,
       is_active: is_active !== undefined ? is_active : true
     })
-    
+
     res.json({ success: true, bundle })
   } catch (error) {
     console.error('Create bundle error:', error)
@@ -2968,14 +2968,14 @@ app.put('/api/package-bundles/:id', requireAuth, requireRole(['admin', 'coach'])
   try {
     const { id } = req.params
     const updates = req.body || {}
-    
+
     // Sync is_live with is_active (they're now the same thing)
     if (updates.is_active !== undefined) {
       updates.is_live = updates.is_active
     }
-    
+
     console.log('[Update Bundle] ID:', id, 'Updates:', JSON.stringify(updates))
-    
+
     const bundle = await database.updatePackageBundle(id, updates)
     res.json({ success: true, bundle })
   } catch (error) {
@@ -3006,26 +3006,26 @@ app.get('/api/classes/:id/attendance', requireAuth, requireRole(['admin', 'coach
   try {
     const { id } = req.params
     const { occurrence_date } = req.query
-    
+
     console.log('[Get Attendance] Class:', id, 'Occurrence query:', occurrence_date)
-    
+
     const cls = await database.getClassById(id)
     if (!cls) {
       return res.status(404).json({ success: false, message: 'Clase no encontrada' })
     }
-    
+
     // Use occurrence_date if provided.
     // For non-recurring classes, keep it null so bookings with NULL occurrence_date match.
     const effectiveDate = occurrence_date || (cls.is_recurring ? cls.date : null)
     console.log('[Get Attendance] Effective date:', effectiveDate)
-    
+
     const attendanceSheet = await database.getClassAttendanceSheet(id, effectiveDate)
     const attendanceRecords = await database.getClassAttendance(id, effectiveDate)
-    
+
     console.log('[Get Attendance] Found', attendanceSheet?.length || 0, 'attendees,', attendanceRecords?.length || 0, 'records')
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       class: cls,
       attendanceSheet,
       attendanceRecords
@@ -3041,26 +3041,26 @@ app.post('/api/classes/:id/attendance', requireAuth, requireRole(['admin', 'coac
   try {
     const { id } = req.params
     const { occurrence_date, user_id, status, notes } = req.body
-    
+
     if (!user_id || !status) {
       return res.status(400).json({ success: false, message: 'Usuario y estado son requeridos' })
     }
-    
+
     const validStatuses = ['present', 'absent', 'late_cancel', 'excused']
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Estado de asistencia inválido' })
     }
-    
+
     const cls = await database.getClassById(id)
     if (!cls) {
       return res.status(404).json({ success: false, message: 'Clase no encontrada' })
     }
-    
+
     const user = await database.getUserById(user_id)
     if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado' })
     }
-    
+
     const record = await database.setAttendance({
       classId: id,
       occurrenceDate: occurrence_date || cls.date,
@@ -3070,7 +3070,7 @@ app.post('/api/classes/:id/attendance', requireAuth, requireRole(['admin', 'coac
       markedBy: req.user.nombre || req.user.correo,
       notes
     })
-    
+
     // Also update booking status if applicable
     const bookingStatus = status === 'present' ? 'attended' : status === 'absent' ? 'no_show' : 'cancelled'
     await database.run(`
@@ -3079,7 +3079,7 @@ app.post('/api/classes/:id/attendance', requireAuth, requireRole(['admin', 'coac
       WHERE class_id = ? AND user_id = ? 
         AND (occurrence_date = ? OR (occurrence_date IS NULL AND ? IS NULL))
     `, [bookingStatus, id, user_id, occurrence_date, occurrence_date])
-    
+
     res.json({ success: true, record })
   } catch (error) {
     console.error('Set attendance error:', error)
@@ -3092,18 +3092,18 @@ app.post('/api/classes/:id/attendance/bulk', requireAuth, requireRole(['admin', 
   try {
     const { id } = req.params
     const { occurrence_date, attendances } = req.body
-    
+
     console.log('[Bulk Attendance] Class:', id, 'Occurrence:', occurrence_date, 'Attendances:', JSON.stringify(attendances))
-    
+
     if (!Array.isArray(attendances)) {
       return res.status(400).json({ success: false, message: 'Lista de asistencias requerida' })
     }
-    
+
     const cls = await database.getClassById(id)
     if (!cls) {
       return res.status(404).json({ success: false, message: 'Clase no encontrada' })
     }
-    
+
     const results = []
     for (const att of attendances) {
       try {
@@ -3112,10 +3112,10 @@ app.post('/api/classes/:id/attendance/bulk', requireAuth, requireRole(['admin', 
           console.log('[Bulk Attendance] User not found:', att.user_id)
           continue
         }
-        
+
         const markedBy = req.user.nombre || req.user.correo || req.user.email || 'Admin'
         console.log('[Bulk Attendance] Setting attendance for:', user.nombre, 'status:', att.status, 'markedBy:', markedBy)
-        
+
         const record = await database.setAttendance({
           classId: id,
           occurrenceDate: occurrence_date || cls.date,
@@ -3125,7 +3125,7 @@ app.post('/api/classes/:id/attendance/bulk', requireAuth, requireRole(['admin', 
           markedBy: markedBy,
           notes: att.notes
         })
-        
+
         // Update booking status
         const bookingStatus = att.status === 'present' ? 'attended' : att.status === 'absent' ? 'no_show' : 'cancelled'
         await database.run(`
@@ -3134,13 +3134,13 @@ app.post('/api/classes/:id/attendance/bulk', requireAuth, requireRole(['admin', 
           WHERE class_id = ? AND user_id = ? 
             AND (occurrence_date = ? OR (occurrence_date IS NULL AND ? IS NULL))
         `, [bookingStatus, id, att.user_id, occurrence_date, occurrence_date])
-        
+
         results.push(record)
       } catch (attErr) {
         console.error('[Bulk Attendance] Error for user', att.user_id, ':', attErr)
       }
     }
-    
+
     res.json({ success: true, records: results })
   } catch (error) {
     console.error('Bulk attendance error:', error)
@@ -3154,13 +3154,13 @@ app.post('/api/classes/:id/attendance/remove', requireAuth, requireRole(['admin'
   try {
     const { id } = req.params
     const { occurrence_date, user_id } = req.body
-    
+
     if (!user_id) {
       return res.status(400).json({ success: false, message: 'ID de usuario requerido' })
     }
-    
+
     console.log('[Remove from Attendance] Class:', id, 'Occurrence:', occurrence_date, 'User:', user_id)
-    
+
     // Get the booking to check if credit was deducted
     const booking = await database.get(`
       SELECT * FROM bookings 
@@ -3168,27 +3168,27 @@ app.post('/api/classes/:id/attendance/remove', requireAuth, requireRole(['admin'
         AND (occurrence_date = ? OR (occurrence_date IS NULL AND ? IS NULL))
         AND status IN ('confirmed', 'attended')
     `, [id, user_id, occurrence_date, occurrence_date])
-    
+
     if (!booking) {
       return res.status(404).json({ success: false, message: 'Reserva no encontrada' })
     }
-    
+
     // Cancel the booking
     await database.run(`
       UPDATE bookings SET status = 'cancelled', updated_at = datetime('now')
       WHERE id = ?
     `, [booking.id])
-    
+
     // Delete any attendance record for this user/class/occurrence
     await database.run(`
       DELETE FROM attendance_records 
       WHERE class_id = ? AND user_id = ? AND occurrence_date = ?
     `, [id, user_id, occurrence_date])
-    
+
     // Refund if credit was deducted
     const shouldRefund = booking.credit_deducted === 1 || booking.credit_deducted === '1' || booking.credit_deducted === true
     let refunded = false
-    
+
     if (shouldRefund) {
       const cls = await database.getClassById(id)
       const classType = cls?.type === 'private' ? 'private' : 'group'
@@ -3233,11 +3233,11 @@ app.post('/api/classes/:id/attendance/remove', requireAuth, requireRole(['admin'
       await database.run(`UPDATE classes SET assigned_client_ids = ? WHERE id = ?`, [assignedJson, id])
       console.log(`[Remove from Attendance] Updated assigned_client_ids to`, assignedJson)
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: refunded ? 'Usuario removido y clase reembolsada' : 'Usuario removido (sin crédito para reembolsar)',
-      refunded 
+      refunded
     })
   } catch (error) {
     console.error('Remove from attendance error:', error)
@@ -3249,16 +3249,16 @@ app.post('/api/classes/:id/attendance/remove', requireAuth, requireRole(['admin'
 app.get('/api/users/:id/attendance-record', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
-    
+
     const user = await database.getUserById(id)
     if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado' })
     }
-    
+
     const record = await database.getUserAttendanceRecord(id)
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       user: { id: user.id, nombre: user.nombre, correo: user.correo },
       ...record
     })
@@ -3272,13 +3272,13 @@ app.get('/api/users/:id/attendance-record', requireAuth, requireRole(['admin', '
 app.get('/api/my-attendance', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id
-    
+
     const attendance = await database.all(`
       SELECT ar.class_id, ar.occurrence_date, ar.attendance_status
       FROM attendance_records ar
       WHERE ar.user_id = ?
     `, [userId])
-    
+
     res.json({ success: true, attendance })
   } catch (error) {
     console.error('Get my attendance error:', error)
@@ -3309,7 +3309,7 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin', 'coach']), a
     if (!selectedPackage || selectedPackage.is_active === 0) {
       return res.status(400).json({ success: false, message: 'Paquete no válido o inactivo' })
     }
-    
+
     // Validate schedule if live
     const todayStr = new Date().toISOString().split('T')[0]
     if (selectedPackage.is_live === 0) {
@@ -3331,7 +3331,7 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin', 'coach']), a
       })
     }
 
-    const currentCount = selectedPackage.category === 'Grupal' 
+    const currentCount = selectedPackage.category === 'Grupal'
       ? (user.group_classes_remaining || 0)
       : (user.private_classes_remaining || 0)
 
@@ -3350,7 +3350,7 @@ app.post('/api/packages/assign', requireAuth, requireRole(['admin', 'coach']), a
       AND package_category = ?
       AND status = 'active'
     `, [clientId, selectedPackage.category])
-    
+
     // Expire all active packages of this category
     for (const pkg of activePackages) {
       await database.updatePackageStatus(pkg.id, 'expired')
@@ -3539,23 +3539,24 @@ app.put('/api/packages/:id/auto-renew', requireAuth, requireRole(['admin', 'coac
 app.get('/api/payments', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const payments = await database.all('SELECT * FROM payments ORDER BY date DESC')
-    
+
     // Convertir ID a string y asegurar que todos los campos estén presentes
     const formattedPayments = payments.map(payment => {
       const normalizedMethod = payment.method === 'transfer' ? 'transfer' : 'cash'
       return {
-      id: String(payment.id),
-      date: payment.date,
-      concept: payment.concept || '',
-      amount: payment.amount || 0,
-      type: payment.type || 'income',
-      method: normalizedMethod,
-      status: payment.status || 'pending',
-      client_name: payment.client_name || null,
-      coach_name: payment.coach_name || null,
-      description: payment.description || ''
-    }})
-    
+        id: String(payment.id),
+        date: payment.date,
+        concept: payment.concept || '',
+        amount: payment.amount || 0,
+        type: payment.type || 'income',
+        method: normalizedMethod,
+        status: payment.status || 'pending',
+        client_name: payment.client_name || null,
+        coach_name: payment.coach_name || null,
+        description: payment.description || ''
+      }
+    })
+
     res.json({
       success: true,
       payments: formattedPayments
@@ -3855,7 +3856,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
     const activeGroupPackage = await database.getActivePackageByUser(id, 'Grupal')
     const activePrivatePackage = await database.getActivePackageByUser(id, 'Privada')
     let activePackage = activeGroupPackage || activePrivatePackage // For backward compatibility
-    
+
     console.log(`[Package History] User ${id}:`)
     console.log(`  - Package history count: ${packageHistory ? packageHistory.length : 0}`)
     console.log(`  - Active package found: ${activePackage ? 'YES' : 'NO'}`)
@@ -3866,7 +3867,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
     } else {
       console.log(`  - ⚠️  No active package found in database for user ${id}`)
     }
-    
+
     // Si no hay paquete activo en package_history pero el usuario tiene type_of_class,
     // verificar si debería tener uno basado en los datos del usuario
     if (!activePackage) {
@@ -3883,15 +3884,15 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
             } else {
               expirationDate = new Date(userData.expiration_date)
             }
-            
+
             const today = new Date()
             today.setHours(0, 0, 0, 0)
             expirationDate.setHours(0, 0, 0, 0)
-            
+
             console.log(`  - User expiration date: ${userData.expiration_date}, parsed: ${expirationDate.toISOString().split('T')[0]}`)
             console.log(`  - Today: ${today.toISOString().split('T')[0]}`)
             console.log(`  - Comparison: ${expirationDate >= today}`)
-            
+
             // Solo crear si la fecha de expiración es futura o es hoy
             if (expirationDate >= today) {
               // Obtener información del paquete
@@ -3909,7 +3910,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
                 '15 Clases Privadas': { name: '15 Clases Privadas', type: '15 Clases Privadas', classes_included: 15 },
                 '20 Clases Privadas': { name: '20 Clases Privadas', type: '20 Clases Privadas', classes_included: 20 }
               }
-              
+
               const packageInfo = packages[userData.type_of_class]
               if (packageInfo) {
                 // Calcular fecha de inicio (30 días antes de la expiración o hoy si la expiración es muy lejana)
@@ -3918,7 +3919,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
                 if (startDate > today) {
                   startDate.setTime(today.getTime())
                 }
-                
+
                 try {
                   // Crear registro en package_history
                   activePackage = await database.addPackageHistory({
@@ -3932,7 +3933,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
                     amount_paid: 0,
                     status: 'active'
                   })
-                  
+
                   console.log(`✅ Created package history for user ${id}: ${packageInfo.name}`)
                 } catch (error) {
                   console.error('❌ Error creating package history:', error)
@@ -3977,7 +3978,7 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
     } else {
       console.log(`  - Active package will be sent to client: NO (null)`)
     }
-    
+
     const response = {
       success: true,
       packageHistory: packageHistory || [],
@@ -3985,9 +3986,9 @@ app.get('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'co
       activeGroupPackage: activeGroupPackage || null,
       activePrivatePackage: activePrivatePackage || null
     }
-    
+
     console.log(`  - Response JSON:`, JSON.stringify(response, null, 2))
-    
+
     res.json(response)
   } catch (error) {
     console.error('Get package history error:', error)
@@ -4032,7 +4033,7 @@ app.post('/api/users/:id/package-history', requireAuth, requireRole(['admin', 'c
       amount_paid: parseFloat(amount_paid),
       status: status || 'active'
     })
-    
+
     console.log(`  - ✅ Package history created: ${packageHistory.id}`)
     console.log(`  - ✅ Package user_id: ${packageHistory.user_id}`)
     console.log(`  - ✅ Package status: ${packageHistory.status}`)
@@ -4107,23 +4108,23 @@ app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['a
   try {
     const { id } = req.params
     const { renewal_months } = req.body
-    
+
     console.log(`[Update Renewal] Package ID: ${id}, Renewal months: ${renewal_months}`)
-    
+
     if (renewal_months === undefined || renewal_months === null) {
       return res.status(400).json({
         success: false,
         message: 'Meses restantes requeridos'
       })
     }
-    
+
     if (renewal_months < 1 || renewal_months > 999) {
       return res.status(400).json({
         success: false,
         message: 'Los meses restantes deben estar entre 1 y 999'
       })
     }
-    
+
     // Get the package
     const pkg = await database.getPackageHistoryById(id)
     if (!pkg) {
@@ -4133,14 +4134,14 @@ app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['a
         message: 'Paquete no encontrado'
       })
     }
-    
+
     console.log(`[Update Renewal] Package found:`, {
       id: pkg.id,
       status: pkg.status,
       package_category: pkg.package_category,
       user_id: pkg.user_id
     })
-    
+
     // If this is an active package, cancel all other active packages of the same category
     if (pkg.status === 'active' && pkg.package_category) {
       try {
@@ -4151,9 +4152,9 @@ app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['a
           AND status = 'active'
           AND id != ?
         `, [pkg.user_id, pkg.package_category, id])
-        
+
         console.log(`[Update Renewal] Found ${otherActivePackages.length} other active packages to expire`)
-        
+
         // Expire all other active packages of this category
         for (const otherPkg of otherActivePackages) {
           await database.updatePackageStatus(otherPkg.id, 'expired')
@@ -4163,16 +4164,16 @@ app.post('/api/package-history/:id/update-renewal', requireAuth, requireRole(['a
         // Continue with the update even if this fails
       }
     }
-    
+
     // Update renewal_months
     await database.run(`
       UPDATE package_history 
       SET renewal_months = ?
       WHERE id = ?
     `, [renewal_months, id])
-    
+
     console.log(`[Update Renewal] Successfully updated package ${id}`)
-    
+
     res.json({
       success: true,
       message: 'Meses restantes actualizados exitosamente'
@@ -4220,7 +4221,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin', 'c
     for (const activePkg of activePackages) {
       await database.updatePackageStatus(activePkg.id, 'expired')
     }
-    
+
     // Calculate new end date (from today + validity days from original package)
     const originalPackage = await database.getPackageById(pkg.package_id)
     const validityDays = originalPackage ? originalPackage.validity_days : 30
@@ -4267,7 +4268,7 @@ app.post('/api/package-history/:id/renew', requireAuth, requireRole(['admin', 'c
 app.post('/api/package-history/:id/cancel', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
-    
+
     // Check if package exists and is active
     const pkg = await database.getPackageHistoryById(id)
     if (!pkg) {
@@ -4276,17 +4277,17 @@ app.post('/api/package-history/:id/cancel', requireAuth, requireRole(['admin', '
         message: 'Paquete no encontrado'
       })
     }
-    
+
     if (pkg.status !== 'active') {
       return res.status(400).json({
         success: false,
         message: 'Solo se pueden cancelar paquetes activos'
       })
     }
-    
+
     // Mark as expired
     await database.updatePackageStatus(id, 'expired')
-    
+
     res.json({
       success: true,
       message: 'Paquete cancelado exitosamente'
@@ -4307,12 +4308,12 @@ app.delete('/api/package-history/:id', requireAuth, requireRole(['admin', 'coach
 
     const pkg = await database.getPackageHistoryById(id)
     if (!pkg) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Paquete no encontrado' 
+      return res.status(404).json({
+        success: false,
+        message: 'Paquete no encontrado'
       })
     }
-    
+
     if (pkg.status === 'active') {
       return res.status(400).json({
         success: false,
@@ -4322,15 +4323,15 @@ app.delete('/api/package-history/:id', requireAuth, requireRole(['admin', 'coach
 
     await database.run('DELETE FROM package_history WHERE id = ?', [id])
 
-    res.json({ 
-      success: true, 
-      message: 'Registro de paquete eliminado exitosamente' 
+    res.json({
+      success: true,
+      message: 'Registro de paquete eliminado exitosamente'
     })
   } catch (error) {
     console.error('Delete package history error:', error)
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error al eliminar registro de paquete' 
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar registro de paquete'
     })
   }
 })
@@ -4349,7 +4350,7 @@ app.get('/api/users/:id/notification-settings', requireAuth, requireRole(['admin
     }
 
     let settings = await database.getNotificationSettings(id)
-    
+
     // Si no existen configuraciones, crear unas por defecto
     if (!settings) {
       settings = await database.updateNotificationSettings(id, {
@@ -4473,22 +4474,22 @@ app.put('/api/users/:id/notification-settings', requireAuth, requireRole(['admin
 app.post('/api/admin/security/unblock-ip', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { ip } = req.body
-    
+
     if (!ip) {
       return res.status(400).json({
         success: false,
         message: 'IP requerida'
       })
     }
-    
+
     SecurityService.unblockIP(ip)
-    
+
     SecurityService.logSecurityEvent('IP_UNBLOCKED', {
       ip,
       adminId: req.user.id,
       adminEmail: req.user.email || req.user.correo || req.user._user?.correo
     })
-    
+
     res.json({
       success: true,
       message: `IP ${ip} desbloqueada exitosamente`
@@ -4505,12 +4506,12 @@ app.post('/api/admin/security/unblock-ip', requireAuth, requireRole(['admin', 'c
 app.post('/api/admin/security/clear-blocked-ips', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     SecurityService.clearBlockedIPs()
-    
+
     SecurityService.logSecurityEvent('ALL_IPS_UNBLOCKED', {
       adminId: req.user.id,
       adminEmail: req.user.email || req.user.correo || req.user._user?.correo
     })
-    
+
     res.json({
       success: true,
       message: 'Todas las IPs bloqueadas han sido desbloqueadas'
@@ -4532,7 +4533,7 @@ app.get('/api/admin/security/blocked-ips', requireAuth, requireRole(['admin', 'c
       blockedUntil: new Date(blockedUntil).toISOString(),
       isBlocked: SecurityService.isIPBlocked(ip)
     })).filter(item => item.isBlocked)
-    
+
     res.json({
       success: true,
       blockedIPs,
@@ -4551,7 +4552,7 @@ app.get('/api/admin/expiring-packages', requireAuth, requireRole(['admin', 'coac
   try {
     const { days = 7 } = req.query
     const expiringPackages = await database.getExpiringPackages(parseInt(days))
-    
+
     res.json({
       success: true,
       expiringPackages,
@@ -4568,15 +4569,15 @@ app.post('/api/admin/send-expiration-notifications', requireAuth, requireRole(['
   try {
     const { days = 7 } = req.body
     const expiringPackages = await database.getExpiringPackages(parseInt(days))
-    
+
     let notificationsSent = 0
-    
+
     for (const packageInfo of expiringPackages) {
       // Enviar email de notificación
       await sendExpirationNotificationEmail(packageInfo)
       notificationsSent++
     }
-    
+
     res.json({
       success: true,
       message: `Notificaciones enviadas a ${notificationsSent} usuarios`,
@@ -4666,10 +4667,10 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
       })
     }
 
-    const currentRemaining = classType === 'private' 
+    const currentRemaining = classType === 'private'
       ? (user.private_classes_remaining || 0)
       : (user.group_classes_remaining || 0)
-    
+
     const newRemaining = currentRemaining - 1
 
     // Check if user is at maximum overdraft limit (-2)
@@ -4727,7 +4728,7 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
     // For recurring classes, check by occurrence_date; for regular classes, check by class_id only (no occurrence_date)
     // Note: isRecurring was already declared above, so we reuse it
     let existingBooking
-    
+
     if (isRecurring && occurrence_date) {
       // Recurring class with occurrence_date - check for that specific occurrence
       existingBooking = await database.get(
@@ -4750,7 +4751,7 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
         [userId, class_id]
       )
     }
-    
+
     if (existingBooking) {
       console.log(`[BOOKING] User ${userId} already has booking for class ${class_id}, isRecurring: ${isRecurring}, occurrence_date: ${occurrence_date || 'none'}, existing booking:`, existingBooking)
       return res.status(400).json({
@@ -4777,7 +4778,7 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
     // Para clases recurrentes, el conteo se calcula dinámicamente por occurrence_date
     // Note: isRecurring was already declared above, so we reuse it
     if (!isRecurring) {
-    await database.run(`
+      await database.run(`
       UPDATE classes 
       SET current_bookings = current_bookings + 1, updated_at = datetime('now')
       WHERE id = ?
@@ -4786,7 +4787,7 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
 
     // Descontar una clase del paquete del usuario según el tipo (allow overdraft)
     await database.deductClassFromUser(userId, classType, true)
-    
+
     // Get updated user to return current balance
     const updatedUser = await database.getUserById(userId)
     const updatedRemaining = classType === 'private'
@@ -4804,7 +4805,7 @@ app.post('/api/bookings', requireAuth, requireRole(['cliente', 'admin']), async 
         classInfo.coach_name || 'Coach',
         classInfo.type || 'group'
       )
-      
+
       // Log notification sent
       await database.run(`
         INSERT INTO notification_log (id, user_id, type, subject, sent_at, status, created_at)
@@ -4855,7 +4856,7 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
   console.log('[Cancel Booking] Endpoint hit')
   console.log('[Cancel Booking] User:', req.user)
   console.log('[Cancel Booking] Body:', req.body)
-  
+
   try {
     // Check role manually to avoid any middleware issues
     if (req.user.role !== 'cliente' && req.user.role !== 'admin') {
@@ -4881,7 +4882,7 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
     console.log('[Cancel Booking] Getting class info...')
     const classInfo = await database.getClassById(class_id)
     console.log('[Cancel Booking] Class info:', classInfo)
-    
+
     if (!classInfo) {
       return res.status(404).json({
         success: false,
@@ -4902,8 +4903,8 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
     } else {
       booking = await database.get(
         `SELECT * FROM bookings WHERE user_id = ? AND class_id = ? AND (occurrence_date IS NULL OR occurrence_date = '') AND status = 'confirmed'`,
-      [userId, class_id]
-    )
+        [userId, class_id]
+      )
     }
 
     console.log('[Cancel Booking] Found booking:', booking)
@@ -4955,13 +4956,13 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
     // Handle late cancellation (within 15 minutes)
     if (within15Minutes) {
       console.log('[Cancel Booking] Late cancellation - marking as no-show')
-      
+
       // Mark booking as late cancellation
       await database.run(
         `UPDATE bookings SET late_cancellation = 1 WHERE id = ?`,
         [booking.id]
       )
-      
+
       // Create attendance record for late cancellation
       const user = await database.getUserById(userId)
       await database.setAttendance({
@@ -4973,7 +4974,7 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
         markedBy: 'Sistema (cancelación tardía)',
         notes: 'Cancelado menos de 15 minutos antes de la clase'
       })
-      
+
       return res.json({
         success: true,
         message: 'Reserva cancelada exitosamente. Nota: No se reembolsó la clase automáticamente debido a la cancelación de último momento.',
@@ -4983,7 +4984,7 @@ app.post('/api/bookings/cancel', requireAuth, async (req, res) => {
     } else {
       console.log('[Cancel Booking] Refunding class...')
       try {
-      await database.addClassToUser(userId, classType)
+        await database.addClassToUser(userId, classType)
         console.log('[Cancel Booking] Class refunded')
       } catch (refundErr) {
         console.error('[Cancel Booking] Refund error:', refundErr)
@@ -5135,7 +5136,7 @@ app.post('/api/private-class-requests', requireAuth, requireRole(['cliente']), a
 app.get('/api/private-class-requests/pending', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const pendingRequests = await database.getPendingPrivateClassRequests()
-    
+
     res.json({
       success: true,
       requests: pendingRequests
@@ -5252,15 +5253,15 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
       : (Number.isFinite(requestedMax) && requestedMax >= 1
         ? Math.min(Math.max(requestedMax, 1), 9999)
         : 10)
-    
+
     // Properly parse is_recurring (could be boolean, string "true"/"false", or number 1/0)
     const isRecurringBool = is_recurring === true || is_recurring === 1 || is_recurring === '1' || is_recurring === 'true'
-    
+
     // For private classes with a client, start with 1 booking; otherwise 0
     const currentBookings = (type === 'private' && client_id) ? 1 : 0
-    
+
     console.log(`[Create Class] type=${type}, is_recurring=${is_recurring}, isRecurringBool=${isRecurringBool}, client_id=${client_id}, currentBookings=${currentBookings}`)
-    
+
     const normalizedInstructors = Array.isArray(instructors)
       ? JSON.stringify(instructors.slice(0, 10))
       : instructors
@@ -5271,8 +5272,8 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
     let recurrenceDaysArray = []
     if (recurrence_days_of_week) {
       try {
-        recurrenceDaysArray = typeof recurrence_days_of_week === 'string' 
-          ? JSON.parse(recurrence_days_of_week) 
+        recurrenceDaysArray = typeof recurrence_days_of_week === 'string'
+          ? JSON.parse(recurrence_days_of_week)
           : recurrence_days_of_week
       } catch (e) {
         console.error('Error parsing recurrence_days_of_week:', e)
@@ -5281,7 +5282,7 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
 
     // For recurring classes, create only ONE entry (not individual occurrences)
     // The date field stores the start date of the recurrence period
-    
+
     // Calculate is_public value (matching edit endpoint logic)
     let isPublicValue = 1 // default
     if (is_public !== undefined) {
@@ -5290,14 +5291,14 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
     } else {
       isPublicValue = type === 'group' ? 1 : 1
     }
-    
+
     // Calculate walk_ins_welcome value (matching edit endpoint logic)
     let walkInsValue = type === 'group' ? 1 : 0 // default
     if (walk_ins_welcome !== undefined) {
       const walkInsBool = (walk_ins_welcome === true || walk_ins_welcome === 1 || walk_ins_welcome === '1')
       walkInsValue = walkInsBool ? 1 : 0
     }
-    
+
     console.log('[Create Class] is_public received:', is_public, 'type:', typeof is_public, 'converted to:', isPublicValue)
     console.log('[Create Class] walk_ins_welcome received:', walk_ins_welcome, 'type:', typeof walk_ins_welcome, 'converted to:', walkInsValue)
 
@@ -5457,32 +5458,32 @@ app.post('/api/classes', requireAuth, requireRole(['admin', 'coach']), async (re
 app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
   try {
     const { filter } = req.query
-    
+
     // Log the request for tracking
     console.log(`[GET /api/classes] Request from ${req.user?.correo || req.user?.id} (${req.user?.role}) - filter: ${filter || 'none'}`)
-    
+
     // First, get total count from DB before any filtering
     const totalCountBefore = await database.get('SELECT COUNT(*) as count FROM classes')
     console.log(`[GET /api/classes] Total classes in database: ${totalCountBefore?.count || 0}`)
-    
+
     let query = `
       SELECT c.*, u.nombre as coach_name 
       FROM classes c 
       LEFT JOIN users u ON c.coach_id = u.id 
     `
-    
+
     // Show ALL classes regardless of date (including past classes)
     // Past classes will be marked as non-bookable on the frontend
     // No date filtering - show everything
-    query += ` ORDER BY c.date ASC, c.time ASC LIMIT 5000`
-    
+    query += ` ORDER BY c.date ASC, c.time ASC`
+
     const rawClasses = await database.all(query)
-    
+
     // Log class counts for debugging
     const recurringCount = rawClasses.filter(c => c.is_recurring === 1 || c.is_recurring === '1' || c.is_recurring === true).length
     const nonRecurringCount = rawClasses.length - recurringCount
     console.log(`[GET /api/classes] Loaded ${rawClasses.length} classes (${recurringCount} recurring, ${nonRecurringCount} non-recurring) from database`)
-    
+
     if (totalCountBefore && totalCountBefore.count !== rawClasses.length) {
       console.warn(`[GET /api/classes] ⚠️  WARNING: Query returned ${rawClasses.length} classes but DB has ${totalCountBefore.count} total!`)
     }
@@ -5502,14 +5503,14 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
           }
         }
       }
-      
+
       // For recurring classes, current_bookings is not accurate (it's for the template)
       // We'll keep it as-is and calculate per-occurrence counts on the frontend
       // The frontend will calculate it dynamically based on bookings with occurrence_date
-      
+
       return { ...cls, instructors }
     }))
-    
+
     res.json({
       success: true,
       classes
@@ -5527,7 +5528,7 @@ app.get('/api/classes', requireAuth, requireRole(['admin', 'coach', 'cliente']),
 app.get('/api/recurring-classes/:id/booking-counts', requireAuth, requireRole(['admin', 'coach', 'cliente']), async (req, res) => {
   try {
     const { id } = req.params
-    
+
     // Get all confirmed bookings for this recurring class with occurrence_date
     const bookings = await database.all(`
       SELECT occurrence_date, COUNT(*) as count
@@ -5535,13 +5536,13 @@ app.get('/api/recurring-classes/:id/booking-counts', requireAuth, requireRole(['
       WHERE class_id = ? AND occurrence_date IS NOT NULL AND occurrence_date != '' AND status = 'confirmed'
       GROUP BY occurrence_date
     `, [id])
-    
+
     // Convert to object for easy lookup
     const counts = {}
     bookings.forEach((b) => {
       counts[b.occurrence_date] = b.count
     })
-    
+
     res.json({
       success: true,
       booking_counts: counts
@@ -5560,7 +5561,7 @@ app.get('/api/classes/:id/bookings', requireAuth, requireRole(['admin', 'coach']
   try {
     const { id } = req.params
     const { occurrence_date } = req.query
-    
+
     let query = `
       SELECT b.*, u.nombre as user_name, u.correo as user_email
       FROM bookings b
@@ -5568,17 +5569,17 @@ app.get('/api/classes/:id/bookings', requireAuth, requireRole(['admin', 'coach']
       WHERE b.class_id = ? AND b.status != 'cancelled'
     `
     const params = [id]
-    
+
     // If occurrence_date is provided, filter by it (for recurring class occurrences)
     if (occurrence_date) {
       query += ` AND b.occurrence_date = ?`
       params.push(occurrence_date)
     }
-    
+
     query += ` ORDER BY u.nombre ASC`
-    
+
     const bookings = await database.all(query, params)
-    
+
     res.json({
       success: true,
       bookings: bookings
@@ -5597,15 +5598,15 @@ app.post('/api/classes/:id/occurrence-bookings', requireAuth, requireRole(['admi
   try {
     const { id } = req.params
     const { occurrence_date, client_ids } = req.body
-    
+
     if (!occurrence_date) {
       return res.status(400).json({ success: false, message: 'Fecha de ocurrencia requerida' })
     }
-    
+
     const clientIds = Array.isArray(client_ids) ? client_ids : []
-    
+
     console.log(`[Occurrence Bookings] Class: ${id}, Date: ${occurrence_date}, Clients: ${clientIds.join(', ')}`)
-    
+
     // Get existing bookings for this occurrence
     const existingBookings = await database.all(`
       SELECT b.*, u.nombre as user_name
@@ -5613,27 +5614,27 @@ app.post('/api/classes/:id/occurrence-bookings', requireAuth, requireRole(['admi
       JOIN users u ON b.user_id = u.id
       WHERE b.class_id = ? AND b.occurrence_date = ? AND b.status IN ('confirmed', 'attended')
     `, [id, occurrence_date])
-    
+
     console.log('[Occurrence Bookings] Existing bookings:', existingBookings.map(b => ({ user_id: b.user_id, credit_deducted: b.credit_deducted })))
-    
+
     const existingClientIds = existingBookings.map(b => b.user_id)
-    
+
     // Find clients to add and clients to remove
     const clientsToAdd = clientIds.filter(cid => !existingClientIds.includes(cid))
     const clientsToRemove = existingClientIds.filter(cid => !clientIds.includes(cid))
-    
+
     console.log(`[Occurrence Bookings] Adding: ${clientsToAdd.length}, Removing: ${clientsToRemove.length}`)
-    
+
     // Remove bookings for clients no longer in the list (refund them only if credit was deducted)
     for (const clientId of clientsToRemove) {
       // Check if credit was deducted for this booking
       const booking = existingBookings.find(b => b.user_id === clientId)
       const shouldRefund = booking && (booking.credit_deducted === 1 || booking.credit_deducted === '1' || booking.credit_deducted === true)
-      
+
       await database.run(`
         UPDATE bookings SET status = 'cancelled' WHERE class_id = ? AND occurrence_date = ? AND user_id = ?
       `, [id, occurrence_date, clientId])
-      
+
       if (shouldRefund) {
         await database.addClassToUser(clientId, 'group')
         console.log(`[Occurrence Bookings] Removed and refunded client ${clientId}`)
@@ -5641,7 +5642,7 @@ app.post('/api/classes/:id/occurrence-bookings', requireAuth, requireRole(['admi
         console.log(`[Occurrence Bookings] Removed client ${clientId} (no credit to refund)`)
       }
     }
-    
+
     // Add bookings for new clients
     const errors = []
     for (const clientId of clientsToAdd) {
@@ -5652,11 +5653,11 @@ app.post('/api/classes/:id/occurrence-bookings', requireAuth, requireRole(['admi
           // Log warning but still add them
           console.log(`[Occurrence Bookings] Warning: Client ${clientId} has no group classes remaining (${userClasses?.groupRemaining || 0})`)
         }
-        
+
         // Create booking
         const bookingId = require('uuid').v4()
         const today = new Date().toISOString().split('T')[0]
-        
+
         // Try to deduct class from user
         let creditDeducted = 0
         try {
@@ -5668,19 +5669,19 @@ app.post('/api/classes/:id/occurrence-bookings', requireAuth, requireRole(['admi
           // Still add them but mark that no credit was deducted
           creditDeducted = 0
         }
-        
+
         await database.run(`
           INSERT INTO bookings (id, class_id, user_id, booking_date, status, occurrence_date, credit_deducted, created_at)
           VALUES (?, ?, ?, ?, 'confirmed', ?, ?, CURRENT_TIMESTAMP)
         `, [bookingId, id, clientId, today, occurrence_date, creditDeducted])
-        
+
         console.log(`[Occurrence Bookings] Added client ${clientId}, creditDeducted: ${creditDeducted}`)
       } catch (err) {
         console.error(`[Occurrence Bookings] Error adding client ${clientId}:`, err)
         errors.push(`Error al agregar cliente: ${err.message}`)
       }
     }
-    
+
     res.json({
       success: true,
       message: `Asistentes actualizados: ${clientsToAdd.length} agregados, ${clientsToRemove.length} removidos`,
@@ -5741,7 +5742,7 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
     if (coach_id !== undefined) updates.coach_id = coach_id
     // Note: coach_name is not a column in the classes table, it's computed from a JOIN
     // So we don't update it directly - it will be derived from coach_id
-    
+
     // Group class specific fields - only update if it's a group class
     if (existingClass.type === 'group') {
       // Always set these fields for group classes (even if 0/false)
@@ -5751,7 +5752,7 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
         const recurringValue = (is_recurring === true || is_recurring === 1 || is_recurring === '1')
         updates.is_recurring = recurringValue ? 1 : 0
       }
-    if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
+      if (recurrence_end_date !== undefined) updates.recurrence_end_date = recurrence_end_date
       // Always update is_public if provided (even if 0/false)
       if (is_public !== undefined) {
         // Explicitly handle all possible values: true/1/'1'/'true' -> 1, everything else -> 0
@@ -5786,7 +5787,7 @@ app.put('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), async 
           updates.assigned_client_ids = cleaned
         }
       }
-    if (max_capacity !== undefined) updates.max_capacity = max_capacity
+      if (max_capacity !== undefined) updates.max_capacity = max_capacity
       if (req.body.recurrence_days_of_week !== undefined) {
         // Parse and store recurrence days
         let recurrenceDaysArray = []
@@ -6044,7 +6045,7 @@ app.post('/api/classes/:id/reinstate', requireAuth, requireRole(['admin', 'coach
     // For private classes, check assigned_client_ids first
     if (cls.type === 'private' && cls.assigned_client_ids) {
       console.log(`[Reinstate] Private class with assigned_client_ids: ${cls.assigned_client_ids}`)
-      
+
       try {
         // assigned_client_ids can be a single ID or JSON array
         let clientIds = []
@@ -6369,16 +6370,16 @@ app.delete('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), asy
     console.log(`[DELETE /api/classes/:id] Deleting class ${id} (type: ${classType}, recurring: ${isRecurring})`)
     console.log(`[DELETE /api/classes/:id] User: ${req.user?.correo || req.user?.id} (${req.user?.role})`)
     console.log(`[DELETE /api/classes/:id] IP: ${req.ip || req.connection?.remoteAddress}`)
-    
+
     await database.run('DELETE FROM attendance_records WHERE class_id = ?', [id])
     await database.run('DELETE FROM class_history WHERE class_id = ?', [id])
     await database.run('DELETE FROM bookings WHERE class_id = ?', [id])
     await database.run('DELETE FROM recurring_class_cancellations WHERE class_id = ?', [id])
     await database.run('DELETE FROM classes WHERE id = ?', [id])
-    
+
     console.log(`[DELETE /api/classes/:id] ✅ Successfully deleted class ${id}`)
 
-    const message = isRecurring 
+    const message = isRecurring
       ? `Clase recurrente eliminada. ${refundedCount} estudiante(s) reembolsados.`
       : `Clase eliminada. ${refundedCount} estudiante(s) reembolsados.`
 
@@ -6400,7 +6401,7 @@ app.delete('/api/classes/:id', requireAuth, requireRole(['admin', 'coach']), asy
 app.get('/api/attendance/class/:classId', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { classId } = req.params
-    
+
     const attendance = await database.all(`
       SELECT 
         a.id,
@@ -6419,7 +6420,7 @@ app.get('/api/attendance/class/:classId', requireAuth, requireRole(['admin', 'co
       WHERE a.classId = ? 
       ORDER BY a.created_at DESC
     `, [classId])
-    
+
     res.json({
       success: true,
       attendance: attendance
@@ -6556,15 +6557,15 @@ app.post('/api/attendance/record', requireAuth, requireRole(['admin', 'coach']),
           classId, className, date, time, coach, clientId, clientName, status, reason, notes, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `, [
-        booking.class_id, 
-        booking.className, 
-        booking.classDate, 
+        booking.class_id,
+        booking.className,
+        booking.classDate,
         booking.classTime,
-        coachName, 
-        booking.clientId, 
-        booking.clientName, 
-        attendanceStatus, 
-        reason || null, 
+        coachName,
+        booking.clientId,
+        booking.clientName,
+        attendanceStatus,
+        reason || null,
         notes || null
       ])
     }
@@ -6700,45 +6701,45 @@ app.post('/api/email/send-expiration-notification', async (req, res) => {
 app.get('/api/reports', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { startDate, endDate } = req.query
-    
+
     // Get financial summary
-    const paymentsQuery = startDate && endDate 
+    const paymentsQuery = startDate && endDate
       ? `SELECT * FROM payments WHERE date BETWEEN ? AND ?`
       : `SELECT * FROM payments`
-    
+
     const paymentsParams = startDate && endDate ? [startDate, endDate] : []
     const payments = await database.all(paymentsQuery, paymentsParams)
-    
+
     // Calculate totals
     const totalIncome = payments
       .filter(p => p.type === 'income' && p.status === 'confirmed')
       .reduce((sum, p) => sum + p.amount, 0)
-    
+
     const totalExpenses = payments
       .filter(p => p.type === 'expense' && p.status === 'confirmed')
       .reduce((sum, p) => sum + p.amount, 0)
-    
+
     const netProfit = totalIncome - totalExpenses
-    
+
     // Get client count
     const clientsQuery = startDate && endDate
       ? `SELECT COUNT(*) as count FROM users WHERE role = 'cliente' AND created_at BETWEEN ? AND ?`
       : `SELECT COUNT(*) as count FROM users WHERE role = 'cliente'`
-    
+
     const clientsParams = startDate && endDate ? [startDate, endDate] : []
     const clientCount = await database.get(clientsQuery, clientsParams)
-    
+
     // Get attendance summary
     const attendanceQuery = startDate && endDate
       ? `SELECT * FROM attendance WHERE date BETWEEN ? AND ?`
       : `SELECT * FROM attendance`
-    
+
     const attendanceParams = startDate && endDate ? [startDate, endDate] : []
     const attendance = await database.all(attendanceQuery, attendanceParams)
-    
+
     const totalClasses = new Set(attendance.map(a => a.classId)).size
     const averageClassSize = attendance.length > 0 ? (attendance.length / totalClasses).toFixed(1) : 0
-    
+
     res.json({
       success: true,
       report: {
@@ -6805,7 +6806,7 @@ app.get('/api/coach-payments', requireAuth, requireRole(['admin', 'coach']), asy
       SELECT * FROM coach_payments 
       ORDER BY period_start DESC, coach_name ASC
     `)
-    
+
     res.json({
       success: true,
       payments: payments
@@ -6822,7 +6823,7 @@ app.get('/api/coach-payments', requireAuth, requireRole(['admin', 'coach']), asy
 app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { period_start, period_end, coach_name } = req.body
-    
+
     if (!period_start || !coach_name) {
       return res.status(400).json({
         success: false,
@@ -6833,7 +6834,7 @@ app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'co
     // Calcular el período (por defecto mensual)
     const startDate = new Date(period_start)
     const endDate = period_end ? new Date(period_end) : new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0)
-    
+
     // Obtener estudiantes que asistieron a clases del coach en el período
     const students = await database.all(`
       SELECT a.clientId, a.clientName, COUNT(*) as classes_attended
@@ -6851,7 +6852,7 @@ app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'co
     let totalStudents = 0
     let firstThreeStudents = 0
     let additionalStudents = 0
-    
+
     for (const student of students) {
       totalStudents++
       if (totalStudents <= 3) {
@@ -6860,14 +6861,14 @@ app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'co
         additionalStudents++
       }
     }
-    
+
     const firstThreeAmount = firstThreeStudents * 250
     const additionalAmount = additionalStudents * 40
     const totalAmount = firstThreeAmount + additionalAmount
 
     // Crear o actualizar el registro de pago
     const paymentId = uuidv4()
-    
+
     await database.run(`
       INSERT OR REPLACE INTO coach_payments (
         id, coach_name, period_start, period_end, total_students, 
@@ -6875,8 +6876,8 @@ app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'co
         additional_amount, total_amount, status, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
-      paymentId, coach_name, startDate.toISOString().split('T')[0], 
-      endDate.toISOString().split('T')[0], totalStudents, firstThreeStudents, 
+      paymentId, coach_name, startDate.toISOString().split('T')[0],
+      endDate.toISOString().split('T')[0], totalStudents, firstThreeStudents,
       additionalStudents, firstThreeAmount, additionalAmount, totalAmount, 'pending'
     ])
 
@@ -6909,7 +6910,7 @@ app.post('/api/coach-payments/calculate', requireAuth, requireRole(['admin', 'co
 app.put('/api/coach-payments/:id/mark-paid', requireAuth, requireRole(['admin', 'coach']), async (req, res) => {
   try {
     const { id } = req.params
-    
+
     await database.run(`
       UPDATE coach_payments 
       SET status = 'paid', payment_date = datetime('now')
@@ -6989,12 +6990,12 @@ if (process.env.NODE_ENV !== 'production') {
 // Serve Next.js frontend in production (after all API routes)
 if (process.env.NODE_ENV === 'production') {
   const next = require('next')
-  const nextApp = next({ 
+  const nextApp = next({
     dev: false,
     dir: path.join(__dirname, '..')
   })
   const nextHandler = nextApp.getRequestHandler()
-  
+
   nextApp.prepare().then(() => {
     // Serve Next.js pages for all non-API routes
     // API routes are already handled above, so this catches everything else
@@ -7010,7 +7011,7 @@ if (process.env.NODE_ENV === 'production') {
       // Handle all other routes with Next.js
       return nextHandler(req, res)
     })
-    
+
     // Start server
     app.listen(PORT, () => {
       console.log(`🚀 PilatesMermaid server running on port ${PORT}`)
@@ -7041,7 +7042,7 @@ if (process.env.NODE_ENV === 'production') {
       message: 'Endpoint no encontrado'
     })
   })
-  
+
   // Development: Only start API server
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 PilatesMermaid API server running on port ${PORT}`)
